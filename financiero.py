@@ -16,8 +16,8 @@ warnings.filterwarnings('ignore')
 
 import plotly.graph_objects as go
 
-from datetime import datetime
 from collections import defaultdict
+from typing import Mapping, Optional
 
 class Account:
     def __init__(self, name):
@@ -98,6 +98,63 @@ saldos_iniciales = {
     'Revolut': 0.0,
     'Ahorro': 4680.999999999999
 }
+
+
+def crear_presupuesto_desde_saldos(
+    saldos: Mapping[str, float],
+    *,
+    fecha: Optional[datetime] = None,
+    descripcion: str = "Saldo inicial",
+    categoria: str = "Saldo Inicial",
+) -> Budget:
+    """Crear un presupuesto con cuentas y saldos iniciales.
+
+    Parameters
+    ----------
+    saldos:
+        Mapeo con los nombres de las cuentas como claves y los saldos
+        correspondientes como valores.
+    fecha:
+        Fecha que se asignará a las transacciones de saldo inicial. Si no se
+        proporciona, se utilizará ``datetime.now()``.
+    descripcion:
+        Descripción de las transacciones que reflejan los saldos iniciales.
+    categoria:
+        Categoría asociada a las transacciones de saldo inicial.
+
+    Returns
+    -------
+    Budget
+        Instancia de :class:`Budget` con las cuentas y transacciones iniciales
+        ya registradas.
+
+    Notes
+    -----
+    Los saldos nulos (por ejemplo ``0``) no generan una transacción, aunque la
+    cuenta sí se crea en el presupuesto. Esto evita añadir entradas vacías al
+    historial de transacciones.
+    """
+
+    presupuesto = Budget()
+    timestamp = fecha or datetime.now()
+
+    for nombre_cuenta, saldo in saldos.items():
+        cuenta = Account(nombre_cuenta)
+        presupuesto.add_account(cuenta)
+
+        if not saldo:
+            continue
+
+        transaccion_inicial = Transaction(
+            saldo,
+            descripcion,
+            categoria,
+            cuenta,
+            timestamp,
+        )
+        presupuesto.add_transaction(transaccion_inicial)
+
+    return presupuesto
 
 
 def clasificar_ingreso(fila):
