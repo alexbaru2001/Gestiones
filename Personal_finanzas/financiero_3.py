@@ -31,52 +31,70 @@ from pathlib import Path
 
 hoy = str(pd.Timestamp.today().to_period('M'))
 
-Path_root = os.getcwd()
+REGISTROS_DIR = Path(__file__).resolve().parent / "Data" / "Registros"
+ARCHIVO_BASE_REGISTROS = REGISTROS_DIR / "Inicio.xlsx"
+HOJAS_REGISTRO = ["Gastos", "Ingresos", "Transferencias"]
 
-carpeta = Path(Path_root + '/Data/Registros')
-def obtener_nombres_archivos(carpeta):
-    return [archivo for archivo in os.listdir(carpeta) if os.path.isfile(os.path.join(carpeta, archivo)) and '.xlsx' in archivo]
 
-archivos = obtener_nombres_archivos(carpeta)
+def _limpiar_dataframe_registro(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza un DataFrame de registros para facilitar la fusión."""
+    df = df.dropna(how="all")
 
-# Nombre del archivo base
-archivo_base = carpeta / "Inicio.xlsx"
+    if "Fecha y hora" in df.columns:
+        df["Fecha y hora"] = pd.to_datetime(df["Fecha y hora"], errors="coerce")
+        df = df.dropna(subset=["Fecha y hora"])
+        df = df.sort_values("Fecha y hora", ascending=False)
 
-# Hojas a procesar
-hojas = ["Gastos", "Ingresos", "Transferencias"]
+    # No usamos ``drop_duplicates`` porque hay movimientos reales (p.ej. traspasos fraccionados)
+    # que comparten exactamente la misma información en todas las columnas.
+    return df.reset_index(drop=True)
 
-# Leemos el base (incluyendo cabeceras)
-dataframes = {hoja: pd.read_excel(archivo_base, sheet_name=hoja) for hoja in hojas}
 
-# Recorremos el resto de archivos
-for archivo in carpeta.glob("*.xlsx"):
-    if archivo == archivo_base:
-        continue  # saltamos el base
-    for hoja in hojas:
-        # Leemos saltando las dos primeras filas
-        df_temp = pd.read_excel(archivo, sheet_name=hoja, skiprows=1)
-        # Concatenamos debajo del contenido de Inicio
-        
-        # dataframes[hoja]["fecha"] = pd.to_datetime(dataframes['Gastos']['Fecha y hora'], errors="coerce")
-        # dataframes[hoja]["fecha"] = dataframes[hoja]["fecha"].dt.to_period('M').astype(str)
-        # dataframes[hoja].loc[dataframes[hoja]['fecha'] < hoy]
-        
-        # # nueva_fila = pd.DataFrame([{col: pd.NA for col in dataframes[hoja].columns}])
-        # # nueva_fila["fecha"] = pd.NaT
-        # # nueva_fila["Fecha y hora"] = pd.NaT
-        
-        # dataframes[hoja] = dataframes[hoja].drop(columns=["fecha"])
-        dataframes[hoja] = pd.concat([dataframes[hoja], df_temp], ignore_index=True)
-        
-        
-# Borramos todos los Excel de la carpeta
-for archivo in carpeta.glob("*.xlsx"):
-    archivo.unlink()
+def fusionar_archivos_registro() -> None:
+    """Fusiona los registros descargados con el archivo base ``Inicio.xlsx``."""
+    if not ARCHIVO_BASE_REGISTROS.exists():
+        raise FileNotFoundError(
+            f"No se encontró el archivo base requerido: {ARCHIVO_BASE_REGISTROS}"
+        )
 
-# Guardamos solo el nuevo Inicio.xlsx en la misma carpeta
-with pd.ExcelWriter(archivo_base) as writer:
-    for hoja, df in dataframes.items():
-        df.to_excel(writer, sheet_name=hoja, index=False)
+    dataframes = {}
+    columnas_por_hoja = {}
+
+    for hoja in HOJAS_REGISTRO:
+        df_base = pd.read_excel(ARCHIVO_BASE_REGISTROS, sheet_name=hoja)
+        columnas_por_hoja[hoja] = df_base.columns
+        dataframes[hoja] = _limpiar_dataframe_registro(df_base)
+
+    archivos_a_fusionar = sorted(
+        archivo
+        for archivo in REGISTROS_DIR.glob("*.xlsx")
+        if archivo != ARCHIVO_BASE_REGISTROS
+    )
+
+    if not archivos_a_fusionar:
+        return
+
+    for archivo in archivos_a_fusionar:
+        for hoja in HOJAS_REGISTRO:
+            df_temp = pd.read_excel(archivo, sheet_name=hoja, skiprows=1)
+            df_temp = df_temp.reindex(columns=columnas_por_hoja[hoja])
+            df_temp = _limpiar_dataframe_registro(df_temp)
+
+            if df_temp.empty:
+                continue
+
+            combinado = pd.concat([dataframes[hoja], df_temp], ignore_index=True)
+            dataframes[hoja] = _limpiar_dataframe_registro(combinado)
+
+    with pd.ExcelWriter(ARCHIVO_BASE_REGISTROS, engine="openpyxl") as writer:
+        for hoja, df in dataframes.items():
+            df.to_excel(writer, sheet_name=hoja, index=False)
+
+    for archivo in archivos_a_fusionar:
+        archivo.unlink()
+
+
+fusionar_archivos_registro()
 
 
 
@@ -490,15 +508,15 @@ def crear_historial_cuentas_virtuales(
     fecha_inicio='2024-10-01',
     porcentaje_gasto=0.3,
     porcentaje_inversion=0.1,
-    porcentaje_vacaciones = 0.05,
+    porcentaje_vacaciones=0.05,
     saldos_iniciales=None,
     output_path="Data/historial.csv"
 ):
-    """
-    Versión que mantiene la aritmética original y añade robustez:
-    - No cambia ninguna fórmula ni el flujo del fondo de reserva.
-    - Mantiene escritura de CSV del primer mes y nombres de columnas.
-    - Añade compatibilidad con 'saldos_iniciales' por defecto si existe global.
+    """Genera el histórico mensual de cuentas virtuales optimizando su cálculo.
+
+    La aritmética original se conserva, pero se precalculan todas las series
+    mensuales necesarias para reducir filtros reiterativos sobre los
+    ``DataFrame`` de gastos e ingresos.
     """
 
     # Compatibilidad con tu firma original si existía una variable global del mismo nombre
@@ -515,6 +533,55 @@ def crear_historial_cuentas_virtuales(
     # Mes como string YYYY-MM
     df_gastos['mes'] = df_gastos['fecha'].dt.to_period('M').astype(str)
     df_ingresos['mes'] = df_ingresos['fecha'].dt.to_period('M').astype(str)
+
+    #Agrupaciones recurrentes para evitar filtros repetitivos en cada iteración
+    gastos_por_mes = {mes: grupo.copy() for mes, grupo in df_gastos.groupby('mes')}
+    ingresos_por_mes = {mes: grupo.copy() for mes, grupo in df_ingresos.groupby('mes')}
+    meses_disponibles = sorted(set(gastos_por_mes) | set(ingresos_por_mes))
+
+    # Series auxiliares agregadas
+    regalos_gasto = (
+        df_gastos[df_gastos['tipo_logico'] == 'Regalos']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+    regalos_ingreso = (
+        df_ingresos[df_ingresos['tipo_logico'] == 'Regalos']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+    vacaciones_gasto = (
+        df_gastos[df_gastos['etiquetas'] == 'Vacaciones']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+    vacaciones_ingreso = (
+        df_ingresos[df_ingresos['tipo_logico'] == 'Vacaciones']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+    fondo_reserva_gasto = (
+        df_gastos[df_gastos['categoria'] == 'FondoReserva']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+    intereses_ingreso = (
+        df_ingresos[df_ingresos['tipo_logico'] == 'Rendimiento Financiero']
+        .groupby('mes')['cantidad']
+        .sum()
+    )
+
+    empty_gastos = df_gastos.head(0)
+    empty_ingresos = df_ingresos.head(0)
+    gastos_netos_por_mes = {}
+    for mes in meses_disponibles:
+        gastos_mes = gastos_por_mes.get(mes, empty_gastos)
+        ingresos_mes = ingresos_por_mes.get(mes, empty_ingresos)
+        gastos_netos_por_mes[mes] = calcular_gastos_netos(gastos_mes, ingresos_mes)
+
+
+
+
 
     # Fechas
     fecha_actual = max(df_ingresos['fecha'].max(), df_gastos['fecha'].max())
@@ -557,44 +624,29 @@ def crear_historial_cuentas_virtuales(
         mes_anterior = (mes_actual - 1).strftime('%Y-%m')
 
         # REGALOS
-        gasto_regalos = df_gastos.loc[
-            (df_gastos['tipo_logico'] == 'Regalos') & (df_gastos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
-        ingreso_regalos = df_ingresos.loc[
-            (df_ingresos['tipo_logico'] == 'Regalos') & (df_ingresos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
+        gasto_regalos = regalos_gasto.get(mes_actual_str, 0.0)
+        ingreso_regalos = regalos_ingreso.get(mes_actual_str, 0.0)
         regalos_mes = ingreso_regalos - gasto_regalos
         regalos += regalos_mes
 
         # INGRESOS (como en tu versión)
         # Vacaciones
-        gasto_vacaciones = df_gastos.loc[
-            (df_gastos['etiquetas'] == 'Vacaciones') & (df_gastos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
+        gasto_vacaciones = vacaciones_gasto.get(mes_actual_str, 0.0)
        
         if mes_actual >= pd.Timestamp("2025-09-01").to_period('M'):
             vacaciones_mensual = ingresos_reales_mensual.get(mes_actual_str, 0) * porcentaje_vacaciones
         else:
             vacaciones_mensual = 0
-        vacaciones_ingresos = df_ingresos.loc[
-            (df_ingresos['tipo_logico'] == 'Vacaciones') & (df_ingresos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
+        
+        vacaciones_ingresos = vacaciones_ingreso.get(mes_actual_str, 0.0)
         vacaciones += vacaciones_ingresos + vacaciones_mensual - gasto_vacaciones
 
         # FONDO DE RESERVA
-        gasto_fondo_reserva = df_gastos.loc[
-            (df_gastos['categoria'] == 'FondoReserva') & (df_gastos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
+        gasto_fondo_reserva = fondo_reserva_gasto.get(mes_actual_str, 0.0)
        
         # GASTOS netos (igual a tu cálculo restando vacaciones/regalos)
-        gasto_total_mes_actual_aux = calcular_gastos_netos(
-            df_gastos[df_gastos['mes'] == mes_actual_str],
-            df_ingresos[df_ingresos['mes'] == mes_actual_str]
+        gasto_total_mes_actual_aux = gastos_netos_por_mes.get(
+            mes_actual_str, pd.Series(dtype=float)
         ).sum()
         gasto_total_mes_actual = gasto_total_mes_actual_aux - gasto_vacaciones - gasto_regalos - gasto_fondo_reserva
 
@@ -611,10 +663,7 @@ def crear_historial_cuentas_virtuales(
         deuda_acumulada = nueva_deuda
 
         # Inversiones (desde 2025-05 como en tu código)
-        interes = df_ingresos.loc[
-            (df_ingresos['tipo_logico'] == 'Rendimiento Financiero') & (df_ingresos['mes'] == mes_actual_str),
-            'cantidad'
-        ].sum()
+        interes = intereses_ingreso.get(mes_actual_str, 0.0)
         if mes_actual >= pd.Timestamp("2025-05-01").to_period('M'):
             inv_mensual = ingresos_reales_mensual.get(mes_actual_str, 0) * porcentaje_inversion
         else:
@@ -627,11 +676,9 @@ def crear_historial_cuentas_virtuales(
        
 
         # Ahorro (misma fórmula)
-        ingreso_total = ingresos_reales[ingresos_reales['mes'] == mes_actual_str]['cantidad'].sum()
-        gastos_netos_total = calcular_gastos_netos(
-            df_gastos[df_gastos['mes'] == mes_actual_str],
-            df_ingresos[df_ingresos['mes'] == mes_actual_str]
-        ).sum()
+        ingreso_total = ingresos_reales_mensual.get(mes_actual_str, 0.0)
+        gastos_netos_total = gastos_netos_por_mes.get(
+            mes_actual_str, pd.Series(dtype=float)).sum()
 
         presupuesto_efectivo = max(0, presupuesto_disponible - gasto_total_mes_actual)
 
@@ -650,20 +697,23 @@ def crear_historial_cuentas_virtuales(
 
         # Fondo de reserva (MISMA lógica: sin tope explícito, suma mensual de fondo_cargado_ini + ahorro_emergencia)
         if mes_actual == pd.Timestamp('2024-10-01').to_period('M'):
-            pass
+            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
         else:
-            porcentaje = fondo_cargado / fondo_reserva
-            if porcentaje != 1:
-                ahorro_emergencia = ahorro_transaccional * 0.1
-                fondo_cargado += fondo_cargado_ini + ahorro_emergencia - gasto_fondo_reserva
+            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
+            if porcentaje < 1.0:
+                ahorro_emergencia = max(0.0, ahorro_transaccional * 0.1)
+                fondo_cargado += ahorro_emergencia - gasto_fondo_reserva
+                fondo_cargado = max(0.0, fondo_cargado)
             else:
-                fondo_cargado = fondo_reserva - gasto_fondo_reserva
-                ahorro_emergencia = 0
+                fondo_cargado = max(0.0, fondo_reserva - gasto_fondo_reserva)
+                ahorro_emergencia = 0.0
+
+            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
        
         ahorro += ahorro_transaccional - ahorro_emergencia
 
         total = regalos + vacaciones + inversiones + ahorro + fondo_cargado - dinero_invertido
-
+        # total = regalos + vacaciones + inversiones + ahorro + fondo_cargado
         resumen = {
             'mes': mes_actual_str,
             '🎁 Regalos': round(regalos, 2),
@@ -705,79 +755,139 @@ def crear_historial_cuentas_virtuales(
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         df_resumen.to_csv(output_path, index=False)
-   
+        
+   # Actualizar el histórico del fondo de reserva con la instantánea recién calculada
+    fondo_reserva_general(
+        lectura=False,
+        historial=df_resumen,
+        fondo_cargado_actual=float(df_resumen.iloc[-1]['Fondo de reserva cargado'])
+    )
     print("Es posible que los valores no sean precisos para el fondo de reserva, se debe observar cuando se ha obtenido el ingreso de fin de mes.")
     return df_resumen
 
 
 
 
-def fondo_reserva_general(carpeta_data='Data', lectura = True):
-    # Verifica si la carpeta existe, si no, créala
-    if not os.path.exists(carpeta_data):
-        os.makedirs(carpeta_data)
+def fondo_reserva_general(carpeta_data='Data', lectura=True, historial=None, fondo_cargado_actual=None):
+    """Calcula la situación del fondo de reserva y actualiza su histórico.
 
-    # Ruta al archivo CSV
-    archivo_csv = os.path.join(carpeta_data, 'fondo_reserva.csv')
-   
-    historial = pd.read_csv(os.path.join('Data', 'historial.csv'))
-    # Calcula el fondo de reserva
-    gastos_disponibles = historial['Gasto del mes']
+    La función garantiza la existencia de la carpeta destino, lee (o crea) el
+    fichero ``fondo_reserva.csv`` y devuelve la última instantánea disponible.
+    Además corrige el flujo de actualización cuando no han transcurrido tres
+    meses desde el último registro (antes duplicaba filas en cada llamada).
+    """
+
+    base_dir = Path(__file__).resolve().parent
+
+    carpeta = Path(carpeta_data)
+    if not carpeta.is_absolute():
+        carpeta = base_dir / carpeta
+    carpeta.mkdir(parents=True, exist_ok=True)
+
+    archivo_csv = carpeta / 'fondo_reserva.csv'
+    historial_path = base_dir / 'Data' / 'historial.csv'
+
+    if historial is not None:
+        historial_df = historial.copy()
+    elif historial_path.exists():
+        historial_df = pd.read_csv(historial_path)
+    else:
+        historial_df = None
+
+    if historial_df is None:
+        raise FileNotFoundError(
+            "No se encontró un historial válido de cuentas virtuales para calcular el fondo de reserva."
+        )
+
+    if historial_df.empty:
+        raise ValueError("El historial de cuentas virtuales está vacío; no se puede calcular el fondo de reserva.")
+
+    if 'Mes' in historial_df.columns:
+        gastos_disponibles = historial_df['Gasto del mes']
+        fondo_historial = historial_df['Fondo de reserva cargado']
+    else:
+        gastos_disponibles = historial_df['Gasto del mes']
+        fondo_historial = historial_df['Fondo de reserva cargado']
+        
     media_gastos_mensuales = gastos_disponibles.mean()
     fondo_reserva = media_gastos_mensuales * 6
-    fondo_cargado = historial.iloc[-1]['Fondo de reserva cargado']
+    
+    if fondo_cargado_actual is not None:
+        fondo_cargado = float(fondo_cargado_actual)
+    elif not fondo_historial.empty:
+        fondo_cargado = float(fondo_historial.iloc[-1])
+    elif archivo_csv.exists():
+        df_existente = pd.read_csv(archivo_csv)
+        if df_existente.empty:
+            fondo_cargado = 0.0
+        else:
+            fondo_cargado = float(df_existente.iloc[-1]['Cantidad cargada'])
+    else:
+        fondo_cargado = 0.0
 
-    # Comprueba si el archivo CSV existe
-    if os.path.exists(archivo_csv):
+    columnas_fondo = ['fecha de creacion', 'Cantidad del fondo', 'Cantidad cargada', 'Porcentaje']
+
+    if archivo_csv.exists():
         df_fondo = pd.read_csv(archivo_csv)
+        if list(df_fondo.columns) != columnas_fondo:
+            df_fondo.columns = columnas_fondo
+        
+        if not df_fondo.empty:
+            df_fondo['fecha de creacion'] = pd.to_datetime(df_fondo['fecha de creacion'])
+        else:
+            df_fondo = pd.DataFrame(
+                {
+                    'fecha de creacion': pd.to_datetime([datetime.now()]),
+                    'Cantidad del fondo': [fondo_reserva],
+                    'Cantidad cargada': [fondo_cargado],
+                    'Porcentaje': [0.0],
+                }
+            )
+    else:
+        df_fondo = pd.DataFrame(
+            {
+                'fecha de creacion': pd.to_datetime([datetime.now()]),
+                'Cantidad del fondo': [fondo_reserva],
+                'Cantidad cargada': [fondo_cargado],
+                'Porcentaje': [0.0],
+            }
+        )
 
-        # Convertir fechas a datetime
-        df_fondo['fecha de creacion'] = pd.to_datetime(df_fondo['fecha de creacion'])
-
+    hoy = pd.Timestamp(datetime.now())
+    if df_fondo.empty:
+        ultima_fecha = None
+        fondo_reserva_ultima_fecha = 0.0
+    else:
         ultima_fecha = df_fondo['fecha de creacion'].max()
-        fondo_reserva_ultima_fecha = df_fondo.iloc[-1]['Cantidad del fondo']
-        hoy = datetime.now()
+        fondo_reserva_ultima_fecha = df_fondo.loc[
+            df_fondo['fecha de creacion'].idxmax(), 'Cantidad del fondo'
+        ]
 
-        # Comparar si la última entrada fue hace más de 3 meses
-        if hoy - ultima_fecha >= timedelta(days=90):
-            porcentaje = fondo_cargado/fondo_reserva
-           
-            # Si pasos más de 3 meses, añadir un nuevo registro
-            nuevo_registro = pd.DataFrame({
+    porcentaje = 0.0 if fondo_reserva == 0 else fondo_cargado / fondo_reserva
+
+    if ultima_fecha is None or hoy - ultima_fecha >= timedelta(days=90):
+        nuevo_registro = pd.DataFrame(
+            {
                 'fecha de creacion': [hoy],
                 'Cantidad del fondo': [fondo_reserva],
                 'Cantidad cargada': [fondo_cargado],
-                'Porcentaje':[porcentaje]
-            })
-        else:
-            porcentaje = fondo_cargado/fondo_reserva_ultima_fecha
-            nuevo_registro = pd.DataFrame({
-                'fecha de creacion': [ultima_fecha],
-                'Cantidad del fondo': [fondo_reserva_ultima_fecha],
-                'Cantidad cargada': [fondo_cargado],
-                'Porcentaje':[porcentaje]
-            })
-            df_fondo = pd.concat([df_fondo, nuevo_registro])
-            df_fondo.to_csv(archivo_csv, index=False)
-
+                'Porcentaje': [porcentaje],
+            }
+        )
+        df_fondo = pd.concat([df_fondo, nuevo_registro], ignore_index=True)
     else:
-        # Si el archivo no existe, créalo
-        nuevo_registro = pd.DataFrame({
-            'fecha de creacion': [datetime.now()],
-            'Cantidad del fondo': [fondo_reserva],
-            'Cantidad cargada': [0],
-            'Porcentaje':[0]
-        })
-        nuevo_registro.to_csv(archivo_csv, index=False)
+        idx_ultima = df_fondo['fecha de creacion'].idxmax()
+        df_fondo.loc[idx_ultima, 'Cantidad del fondo'] = fondo_reserva
+        df_fondo.loc[idx_ultima, 'Cantidad cargada'] = fondo_cargado
+        df_fondo.loc[idx_ultima, 'Porcentaje'] = porcentaje
 
-        # En caso de ser la primera creacion
-        df_fondo = nuevo_registro
+    df_fondo = df_fondo.sort_values('fecha de creacion').reset_index(drop=True)
+    df_fondo.to_csv(archivo_csv, index=False)
 
-    # Devolver el registro con la fecha más actual
-    registro_actual = df_fondo.sort_values('fecha de creacion', ascending=False).iloc[0]
+    registro_actual = df_fondo.iloc[-1]
     if lectura:
-        print('Última actualización:', registro_actual.reset_index().iloc[0,1].strftime('%d-%m-%Y'))
-        print(f'Cantidad del fondo requerida: {round(registro_actual.reset_index().iloc[1,1])}€')
+        print('Última actualización:', registro_actual['fecha de creacion'].strftime('%d-%m-%Y'))
+        print(f"Cantidad del fondo requerida: {round(registro_actual['Cantidad del fondo'])}€")
     return registro_actual
 
 def resumen_global(presupuesto, fecha):
