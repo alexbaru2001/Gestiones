@@ -12,7 +12,9 @@ Created on Sun Jul  6 12:02:06 2025
 
 @author: abarragan1
 """
+import json
 import os
+import re
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -27,14 +29,435 @@ from collections import defaultdict
 from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
 from pathlib import Path
-
+from typing import Union
 
 hoy = str(pd.Timestamp.today().to_period('M'))
 
 REGISTROS_DIR = Path(__file__).resolve().parent / "Data" / "Registros"
 ARCHIVO_BASE_REGISTROS = REGISTROS_DIR / "Inicio.xlsx"
 HOJAS_REGISTRO = ["Gastos", "Ingresos", "Transferencias"]
+OBJETIVOS_VISTA_CONFIG_PATH = Path(__file__).resolve().parent / "Data" / "objetivos_vista.json"
 
+
+def _normalizar_lista(valor):
+    if valor is None:
+        return []
+    if isinstance(valor, (list, tuple, set)):
+        return [str(v).strip() for v in valor if str(v).strip()]
+    return [str(valor).strip()]
+
+
+def _normalizar_objetivos(datos):
+    if isinstance(datos, dict):
+        datos = datos.get("objetivos", [])
+    objetivos = []
+    for objetivo in datos:
+        nombre = str(objetivo.get("nombre", "")).strip()
+        if not nombre:
+            continue
+
+        etiquetas = [e.lower() for e in _normalizar_lista(objetivo.get("etiquetas"))]
+        porcentaje = float(objetivo.get("porcentaje_ingreso", 0.0))
+        if porcentaje < 0 or porcentaje > 1:
+            raise ValueError(
+                f"El objetivo '{nombre}' tiene un porcentaje fuera del rango [0, 1]."
+            )
+
+        saldo_inicial = float(objetivo.get("saldo_inicial", 0.0))
+        objetivo_total = objetivo.get("objetivo_total")
+        horizonte_meses = objetivo.get("horizonte_meses")
+
+        mes_inicio_raw = objetivo.get("mes_inicio")
+        mes_inicio = None
+        if mes_inicio_raw not in (None, ""):
+            try:
+                if isinstance(mes_inicio_raw, pd.Period):
+                    mes_inicio = mes_inicio_raw
+                elif isinstance(mes_inicio_raw, pd.Timestamp):
+                    mes_inicio = mes_inicio_raw.to_period("M")
+                else:
+                    mes_inicio = pd.Period(str(mes_inicio_raw), freq="M")
+            except Exception as exc:  # noqa: BLE001 (queremos informar del valor inválido)
+                raise ValueError(
+                    f"El objetivo '{nombre}' tiene un mes_inicio inválido: {mes_inicio_raw}"
+                ) from exc
+
+        objetivos.append(
+            {
+                "nombre": nombre,
+                "etiquetas": etiquetas,
+                "porcentaje_ingreso": porcentaje,
+                "saldo_inicial": saldo_inicial,
+                "objetivo_total": float(objetivo_total) if objetivo_total is not None else None,
+                "horizonte_meses": int(horizonte_meses) if horizonte_meses else None,
+                "mes_inicio": mes_inicio,
+            }
+        )
+
+    return objetivos
+
+
+def cargar_objetivos_vista(config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH):
+    """Lee la configuración de objetivos vista desde disco."""
+
+    if config_path is None:
+        return []
+
+    if isinstance(config_path, (list, tuple, set, dict)):
+        return _normalizar_objetivos(config_path)
+
+    ruta = Path(config_path)
+    if not ruta.is_absolute():
+        ruta = Path(__file__).resolve().parent / ruta
+
+    if not ruta.exists():
+        plantilla = {
+            "objetivos": [
+                {
+                    "nombre": "Coche",
+                    "etiquetas": ["coche"],
+                    "porcentaje_ingreso": 0.0,
+                    "saldo_inicial": 0.0,
+                    "objetivo_total": 12000.0,
+                    "horizonte_meses": 24,
+                    "mes_inicio": str(pd.Timestamp.today().to_period("M")),
+                }
+            ]
+        }
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text(json.dumps(plantilla, indent=2, ensure_ascii=False), encoding="utf-8")
+        datos = plantilla["objetivos"]
+    else:
+        try:
+            contenido = ruta.read_text(encoding="utf-8")
+            datos = json.loads(contenido)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"El archivo de objetivos vista {ruta} no contiene JSON válido: {exc}"
+            ) from exc
+
+    return _normalizar_objetivos(datos)
+
+def _objetivo_a_serializable(objetivo: dict) -> dict:
+    """Convierte un objetivo normalizado en un diccionario apto para JSON."""
+
+    mes_inicio = objetivo.get("mes_inicio")
+    if isinstance(mes_inicio, pd.Period):
+        mes_inicio = mes_inicio.strftime("%Y-%m")
+    elif isinstance(mes_inicio, pd.Timestamp):
+        mes_inicio = mes_inicio.to_period("M").strftime("%Y-%m")
+    elif mes_inicio in ("", None):
+        mes_inicio = None
+    else:
+        mes_inicio = str(mes_inicio)
+
+    return {
+        "nombre": objetivo.get("nombre", ""),
+        "etiquetas": list(objetivo.get("etiquetas", [])),
+        "porcentaje_ingreso": float(objetivo.get("porcentaje_ingreso", 0.0)),
+        "saldo_inicial": float(objetivo.get("saldo_inicial", 0.0)),
+        "objetivo_total": (
+            float(objetivo.get("objetivo_total"))
+            if objetivo.get("objetivo_total") is not None
+            else None
+        ),
+        "horizonte_meses": (
+            int(objetivo.get("horizonte_meses"))
+            if objetivo.get("horizonte_meses") not in (None, "")
+            else None
+        ),
+        "mes_inicio": mes_inicio,
+    }
+
+
+def guardar_objetivos_vista(
+    objetivos: list[dict] | dict,
+    config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH,
+) -> list[dict]:
+    """Sobrescribe la configuración de objetivos vista tras validar su contenido."""
+
+    if config_path is None:
+        raise ValueError("Se requiere una ruta válida para guardar los objetivos vista.")
+
+    objetivos_normalizados = _normalizar_objetivos(objetivos)
+    objetivos_serializables = [
+        _objetivo_a_serializable(obj) for obj in objetivos_normalizados
+    ]
+
+    ruta = Path(config_path)
+    if not ruta.is_absolute():
+        ruta = Path(__file__).resolve().parent / ruta
+
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    ruta.write_text(
+        json.dumps({"objetivos": objetivos_serializables}, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    return objetivos_serializables
+
+
+def crear_widget_gestor_objetivos(
+    config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH,
+):
+    """Crea un widget interactivo para gestionar objetivos vista desde un notebook."""
+
+    try:
+        import ipywidgets as widgets
+        from traitlets import TraitError
+    except ImportError as exc:  # pragma: no cover - dependemos del entorno del cuaderno
+        raise ImportError(
+            "ipywidgets es necesario para usar el gestor interactivo de objetivos vista."
+        ) from exc
+
+    objetivos_config = [
+        _objetivo_a_serializable(obj) for obj in cargar_objetivos_vista(config_path)
+    ]
+
+    ruta = Path(config_path)
+    if not ruta.is_absolute():
+        ruta = Path(__file__).resolve().parent / ruta
+
+    status = widgets.HTML()
+    porcentaje_total_label = widgets.HTML()
+
+    lista_objetivos = widgets.Select(
+        options=[obj["nombre"] for obj in objetivos_config],
+        description="Objetivos",
+        rows=min(10, max(4, len(objetivos_config) or 4)),
+        layout=widgets.Layout(width="30%"),
+    )
+
+    nombre_input = widgets.Text(description="Nombre", placeholder="Nuevo objetivo")
+    etiquetas_input = widgets.Text(
+        description="Etiquetas",
+        placeholder="Separadas por comas",
+    )
+    porcentaje_input = widgets.BoundedFloatText(
+        description="% ingreso",
+        min=0.0,
+        max=1.0,
+        step=0.01,
+        value=0.0,
+    )
+    saldo_inicial_input = widgets.FloatText(description="Saldo inicial", value=0.0)
+    objetivo_total_input = widgets.Text(
+        description="Meta",
+        placeholder="Importe objetivo (opcional)",
+    )
+    horizonte_input = widgets.Text(
+        description="Horizonte",
+        placeholder="Meses objetivo (opcional)",
+    )
+    mes_inicio_input = widgets.Text(
+        description="Mes inicio",
+        placeholder="AAAA-MM (opcional)",
+    )
+
+    guardar_memoria_btn = widgets.Button(
+        description="Guardar cambios",
+        button_style="success",
+        icon="save",
+    )
+    guardar_archivo_btn = widgets.Button(
+        description="Guardar en disco",
+        button_style="info",
+        icon="cloud-upload",
+    )
+    nuevo_btn = widgets.Button(description="Nuevo", icon="plus", button_style="primary")
+    eliminar_btn = widgets.Button(description="Eliminar", icon="trash", button_style="danger")
+
+    selected_name = {"valor": None}
+
+    def actualizar_porcentaje_total():
+        total = sum(obj.get("porcentaje_ingreso", 0.0) for obj in objetivos_config)
+        total_real = total + 0.45
+        color = "green" if total_real <= 1.0 else "red"
+        porcentaje_total_label.value = (
+            f"<b>Porcentaje acumulado:</b> <span style='color:{color}'>"
+            f"{total_real:.1%}</span>"
+        )
+
+    def mostrar_mensaje(texto: str, exito: bool = True):
+        color = "green" if exito else "red"
+        status.value = f"<span style='color:{color}'>{texto}</span>"
+
+    def rellenar_formulario(nombre: str | None):
+        if not nombre:
+            nombre_input.value = ""
+            etiquetas_input.value = ""
+            porcentaje_input.value = 0.0
+            saldo_inicial_input.value = 0.0
+            objetivo_total_input.value = ""
+            horizonte_input.value = ""
+            mes_inicio_input.value = ""
+            selected_name["valor"] = None
+            return
+
+        for obj in objetivos_config:
+            if obj["nombre"] == nombre:
+                nombre_input.value = obj["nombre"]
+                etiquetas_input.value = ", ".join(obj.get("etiquetas", []))
+                porcentaje_input.value = obj.get("porcentaje_ingreso", 0.0)
+                saldo_inicial_input.value = obj.get("saldo_inicial", 0.0)
+                objetivo_total_input.value = (
+                    "" if obj.get("objetivo_total") is None else str(obj["objetivo_total"])
+                )
+                horizonte_input.value = (
+                    "" if obj.get("horizonte_meses") is None else str(obj["horizonte_meses"])
+                )
+                mes_inicio_input.value = obj.get("mes_inicio") or ""
+                selected_name["valor"] = nombre
+                return
+
+        mostrar_mensaje("No se encontró el objetivo seleccionado.", exito=False)
+
+    def refrescar_lista(nombre_a_seleccionar: str | None = None):
+        opciones = [obj["nombre"] for obj in objetivos_config]
+        lista_objetivos.options = opciones
+        try:
+            if nombre_a_seleccionar and nombre_a_seleccionar in opciones:
+                lista_objetivos.value = nombre_a_seleccionar
+            elif opciones:
+                lista_objetivos.value = opciones[0]
+            else:
+                lista_objetivos.value = None
+        except TraitError:
+            lista_objetivos.value = None
+        rellenar_formulario(lista_objetivos.value)
+        actualizar_porcentaje_total()
+
+    def obtener_datos_formulario() -> dict:
+        etiquetas = [e.strip().lower() for e in etiquetas_input.value.split(",") if e.strip()]
+        objetivo_total_txt = objetivo_total_input.value.strip()
+        horizonte_txt = horizonte_input.value.strip()
+        mes_inicio_txt = mes_inicio_input.value.strip()
+        return {
+            "nombre": nombre_input.value.strip(),
+            "etiquetas": etiquetas,
+            "porcentaje_ingreso": porcentaje_input.value or 0.0,
+            "saldo_inicial": saldo_inicial_input.value or 0.0,
+            "objetivo_total": float(objetivo_total_txt) if objetivo_total_txt else None,
+            "horizonte_meses": int(horizonte_txt) if horizonte_txt else None,
+            "mes_inicio": mes_inicio_txt or None,
+        }
+
+    def on_guardar_memoria(_):
+        datos = obtener_datos_formulario()
+        if not datos["nombre"]:
+            mostrar_mensaje("El objetivo necesita un nombre.", exito=False)
+            return
+
+        try:
+            objetivo_normalizado = _normalizar_objetivos([datos])[0]
+        except ValueError as exc:
+            mostrar_mensaje(str(exc), exito=False)
+            return
+
+        objetivo_serial = _objetivo_a_serializable(objetivo_normalizado)
+
+        nombres_existentes = {obj["nombre"] for obj in objetivos_config}
+        nombre_actual = selected_name["valor"]
+
+        if objetivo_serial["nombre"] != nombre_actual and objetivo_serial["nombre"] in nombres_existentes:
+            mostrar_mensaje(
+                f"Ya existe un objetivo llamado '{objetivo_serial['nombre']}'.",
+                exito=False,
+            )
+            return
+
+        total_propuesto = objetivo_serial["porcentaje_ingreso"]
+        for obj in objetivos_config:
+            if obj["nombre"] == nombre_actual:
+                continue
+            total_propuesto += obj.get("porcentaje_ingreso", 0.0)
+
+        if total_propuesto > 1.0 + 1e-6:
+            mostrar_mensaje(
+                "La suma de porcentajes de ingreso supera el 100%. Ajusta los valores.",
+                exito=False,
+            )
+            return
+
+        actualizado = False
+        for idx, obj in enumerate(objetivos_config):
+            if obj["nombre"] == nombre_actual:
+                objetivos_config[idx] = objetivo_serial
+                actualizado = True
+                break
+
+        if not actualizado:
+            objetivos_config.append(objetivo_serial)
+
+        mostrar_mensaje("Objetivo actualizado en la sesión.")
+        refrescar_lista(objetivo_serial["nombre"])
+
+    def on_guardar_archivo(_):
+        try:
+            guardados = guardar_objetivos_vista(
+                objetivos_config,
+                config_path=ruta,
+            )
+        except Exception as exc:  # noqa: BLE001 - queremos mostrar el error al usuario
+            mostrar_mensaje(f"Error al guardar: {exc}", exito=False)
+            return
+
+        objetivos_config[:] = guardados
+        mostrar_mensaje(f"Objetivos guardados en {ruta}.")
+        refrescar_lista(lista_objetivos.value)
+
+    def on_nuevo(_):
+        lista_objetivos.value = None
+        rellenar_formulario(None)
+        mostrar_mensaje("Introduce los datos del nuevo objetivo y pulsa 'Guardar cambios'.", exito=False)
+
+    def on_eliminar(_):
+        nombre = lista_objetivos.value
+        if not nombre:
+            mostrar_mensaje("Selecciona un objetivo para eliminarlo.", exito=False)
+            return
+
+        objetivos_config[:] = [obj for obj in objetivos_config if obj["nombre"] != nombre]
+        mostrar_mensaje(f"Objetivo '{nombre}' eliminado de la sesión.")
+        refrescar_lista(None)
+
+    def on_seleccion(change):
+        if change.get("name") == "value":
+            rellenar_formulario(change.get("new"))
+
+    lista_objetivos.observe(on_seleccion, names="value")
+    guardar_memoria_btn.on_click(on_guardar_memoria)
+    guardar_archivo_btn.on_click(on_guardar_archivo)
+    nuevo_btn.on_click(on_nuevo)
+    eliminar_btn.on_click(on_eliminar)
+
+    formulario = widgets.VBox(
+        [
+            nombre_input,
+            etiquetas_input,
+            porcentaje_input,
+            saldo_inicial_input,
+            objetivo_total_input,
+            horizonte_input,
+            mes_inicio_input,
+            widgets.HBox([guardar_memoria_btn, guardar_archivo_btn]),
+        ],
+        layout=widgets.Layout(width="65%"),
+    )
+
+    acciones_lista = widgets.VBox([lista_objetivos, widgets.HBox([nuevo_btn, eliminar_btn])])
+
+    contenedor = widgets.VBox(
+        [
+            widgets.HBox([acciones_lista, formulario]),
+            porcentaje_total_label,
+            status,
+        ]
+    )
+
+    refrescar_lista(lista_objetivos.options[0] if lista_objetivos.options else None)
+
+    return contenedor
 
 def _limpiar_dataframe_registro(df: pd.DataFrame) -> pd.DataFrame:
     """Normaliza un DataFrame de registros para facilitar la fusión."""
@@ -510,18 +933,75 @@ def crear_historial_cuentas_virtuales(
     porcentaje_inversion=0.1,
     porcentaje_vacaciones=0.05,
     saldos_iniciales=None,
-    output_path="Data/historial.csv"
+    output_path="Data/historial.csv",
+    objetivos_config=None,
 ):
     """Genera el histórico mensual de cuentas virtuales optimizando su cálculo.
 
     La aritmética original se conserva, pero se precalculan todas las series
     mensuales necesarias para reducir filtros reiterativos sobre los
-    ``DataFrame`` de gastos e ingresos.
+    ``DataFrame`` de gastos e ingresos. Además incorpora un motor de
+    *objetivos vista* para repartir parte de los ingresos en sobres
+    etiquetados ("Coche", "Boda", etc.) y descontar automáticamente los
+    gastos asociados a esas etiquetas.
     """
 
     # Compatibilidad con tu firma original si existía una variable global del mismo nombre
     if saldos_iniciales is None:
         saldos_iniciales = globals().get('saldos_iniciales', {}) or {}
+
+    objetivos_config = cargar_objetivos_vista(objetivos_config)
+    objetivos_nombres = [cfg['nombre'] for cfg in objetivos_config]
+    porcentaje_objetivos = sum(cfg['porcentaje_ingreso'] for cfg in objetivos_config)
+
+    porcentaje_total = porcentaje_gasto + porcentaje_inversion + porcentaje_vacaciones + porcentaje_objetivos
+    if porcentaje_total > 1 + 1e-6:
+        raise ValueError(
+            "La suma de porcentajes (gasto, inversiones, vacaciones y objetivos vista) supera el 100%."
+        )
+
+    objetivos_por_nombre = {cfg['nombre']: cfg for cfg in objetivos_config}
+    if len(objetivos_por_nombre) != len(objetivos_config):
+        raise ValueError("Los objetivos vista deben tener nombres únicos.")
+    objetivos_meta = {
+        nombre: {
+            'objetivo_total': cfg.get('objetivo_total'),
+            'horizonte_meses': cfg.get('horizonte_meses'),
+            'mes_inicio': cfg.get('mes_inicio'),
+        }
+        for nombre, cfg in objetivos_por_nombre.items()
+    }
+    objetivos_saldos = {nombre: 0.0 for nombre in objetivos_por_nombre}
+    objetivos_saldo_inicial = {nombre: cfg['saldo_inicial'] for nombre, cfg in objetivos_por_nombre.items()}
+    objetivos_mes_inicio = {nombre: cfg.get('mes_inicio') for nombre, cfg in objetivos_por_nombre.items()}
+    objetivos_inicial_aplicado = {nombre: False for nombre in objetivos_por_nombre}
+
+    def _renombrar_columnas_historial(df: pd.DataFrame) -> pd.DataFrame:
+        columnas_base = {
+            'Mes': 'Mes',
+            '🎁 Regalos': 'Regalos',
+            '💼 Vacaciones': 'Vacaciones',
+            '📈 Inversiones': 'Inversiones',
+            'Dinero Invertido': 'Dinero Invertido',
+            '💰 Ahorros': 'Ahorros',
+            'Fondo de reserva cargado': 'Fondo de reserva cargado',
+            'total': 'total',
+            '💳 Gasto del mes': 'Gasto del mes',
+            '💸 Presupuesto Mes': 'Presupuesto Mes',
+            '🧾 Presupuesto Disponible': 'Presupuesto Disponible',
+            '📉 Deuda Presupuestaria mensual': 'Deuda Presupuestaria mensual',
+            '📉 Deuda Presupuestaria acumulada': 'Deuda Presupuestaria acumulada',
+        }
+
+        renombradas = {}
+        for columna in df.columns:
+            if columna in columnas_base:
+                renombradas[columna] = columnas_base[columna]
+            elif columna.startswith('🎯 '):
+                nombre_objetivo = columna.split(' ', 1)[1] if ' ' in columna else columna.replace('🎯', '').strip()
+                renombradas[columna] = f"Objetivo {nombre_objetivo}"
+
+        return df.rename(columns=renombradas)
 
     # Copias defensivas
     df_gastos = df_gastos.copy()
@@ -571,6 +1051,53 @@ def crear_historial_cuentas_virtuales(
         .sum()
     )
 
+    objetivos_gastos_por_mes = {}
+    objetivos_ingresos_por_mes = {}
+    objetivos_ingresos_reales_por_mes = {}
+
+    if objetivos_config:
+        etiquetas_gastos = df_gastos['etiquetas'].fillna('').str.lower()
+        etiquetas_ingresos = df_ingresos['etiquetas'].fillna('').str.lower()
+
+    for cfg in objetivos_config:
+        etiquetas = cfg['etiquetas']
+        if etiquetas:
+            patron = "|".join(re.escape(et) for et in etiquetas if et)
+        else:
+            patron = ""
+
+        if patron:
+            mask_gastos = etiquetas_gastos.str.contains(patron, regex=True)
+            mask_ingresos = etiquetas_ingresos.str.contains(patron, regex=True)
+        else:
+            mask_gastos = pd.Series(False, index=df_gastos.index)
+            mask_ingresos = pd.Series(False, index=df_ingresos.index)
+
+        gastos_obj = (
+            df_gastos.loc[mask_gastos].groupby('mes')['cantidad'].sum()
+            if mask_gastos.any()
+            else pd.Series(dtype=float)
+        )
+        ingresos_obj = (
+            df_ingresos.loc[mask_ingresos].groupby('mes')['cantidad'].sum()
+            if mask_ingresos.any()
+            else pd.Series(dtype=float)
+        )
+
+        if mask_ingresos.any():
+            mask_ingresos_reales = mask_ingresos & (df_ingresos['tipo_logico'] == 'Ingreso Real')
+            ingresos_reales_obj = (
+                df_ingresos.loc[mask_ingresos_reales].groupby('mes')['cantidad'].sum()
+                if mask_ingresos_reales.any()
+                else pd.Series(dtype=float)
+            )
+        else:
+            ingresos_reales_obj = pd.Series(dtype=float)
+
+        objetivos_gastos_por_mes[cfg['nombre']] = gastos_obj
+        objetivos_ingresos_por_mes[cfg['nombre']] = ingresos_obj
+        objetivos_ingresos_reales_por_mes[cfg['nombre']] = ingresos_reales_obj
+
     empty_gastos = df_gastos.head(0)
     empty_ingresos = df_ingresos.head(0)
     gastos_netos_por_mes = {}
@@ -578,9 +1105,6 @@ def crear_historial_cuentas_virtuales(
         gastos_mes = gastos_por_mes.get(mes, empty_gastos)
         ingresos_mes = ingresos_por_mes.get(mes, empty_ingresos)
         gastos_netos_por_mes[mes] = calcular_gastos_netos(gastos_mes, ingresos_mes)
-
-
-
 
 
     # Fechas
@@ -598,20 +1122,26 @@ def crear_historial_cuentas_virtuales(
     ahorro = 0.0
     ahorro_inicial = sum(v for k, v in saldos_iniciales.items() if k != 'Metálico')
     ahorro += ahorro_inicial
+    
+    if objetivos_saldos:
+        ahorro -= sum(objetivos_saldos.values())
 
     inversiones = 0.0
     resumenes = []
 
+    ahorro_emergencia = 0.0
+
+    df_Fondo_reserva = fondo_reserva_general(lectura=False)
+    fondo_cargado_inicial = float(df_Fondo_reserva.get('Cantidad cargada', 0.0))
+    fondo_reserva = float(df_Fondo_reserva.get('Cantidad del fondo', 0.0))
+    porcentaje = df_Fondo_reserva.get('Porcentaje', 0.0)
+
     # Solo si arranca en 2024-10, igual que tu if
     if fecha_inicio.to_period('M') == pd.Timestamp('2024-10-01').to_period('M'):
-        ahorro_emergencia = 0
-        fondo_cargado = 0
+        fondo_cargado = 0.0
+    else:
+        fondo_cargado = fondo_cargado_inicial    
 
-    # Fondo de reserva (idéntico estilo de acceso)
-    df_Fondo_reserva = fondo_reserva_general()
-    fondo_cargado_ini = df_Fondo_reserva['Cantidad cargada']
-    fondo_reserva = df_Fondo_reserva['Cantidad del fondo']
-    porcentaje = df_Fondo_reserva['Porcentaje']  # aunque luego se sobreescribe, lo conservo por fidelidad
 
     # Precalculo (no altera resultados)
     ingresos_reales = df_ingresos[df_ingresos['tipo_logico'] == 'Ingreso Real']
@@ -694,6 +1224,82 @@ def crear_historial_cuentas_virtuales(
                 ingreso_total - gastos_netos_total - presupuesto_efectivo - inv_mensual - vacaciones_mensual
                 + gasto_vacaciones + gasto_regalos
             )
+            
+            
+        # Objetivos vista: aportaciones y gastos etiquetados
+        total_aporte_salario = 0.0
+        total_aporte_ingresos_reales = 0.0
+        total_gasto_objetivos = 0.0
+        resumen_objetivos_mes = {}
+
+        for nombre in objetivos_nombres:
+            cfg = objetivos_por_nombre[nombre]
+            mes_inicio_objetivo = objetivos_mes_inicio.get(nombre)
+            objetivo_activo = mes_inicio_objetivo is None or mes_actual >= mes_inicio_objetivo
+
+            if not objetivo_activo:
+                resumen_objetivos_mes[nombre] = 0.0
+                continue
+
+            if not objetivos_inicial_aplicado[nombre]:
+                saldo_inicial_obj = objetivos_saldo_inicial[nombre]
+                if saldo_inicial_obj:
+                    ahorro_transaccional -= saldo_inicial_obj
+                objetivos_saldos[nombre] += saldo_inicial_obj
+                objetivos_inicial_aplicado[nombre] = True
+
+            aporte_salario_teorico = ingreso_total * cfg['porcentaje_ingreso']
+
+            ingresos_etiquetados = objetivos_ingresos_por_mes.get(nombre, pd.Series(dtype=float))
+            ingresos_etiquetados_mes = float(ingresos_etiquetados.get(mes_actual_str, 0.0))
+
+            ingresos_etiquetados_reales = objetivos_ingresos_reales_por_mes.get(nombre, pd.Series(dtype=float))
+            ingresos_etiquetados_reales_mes = float(ingresos_etiquetados_reales.get(mes_actual_str, 0.0))
+
+            gastos_etiquetados = objetivos_gastos_por_mes.get(nombre, pd.Series(dtype=float))
+            gastos_etiquetados_mes = float(gastos_etiquetados.get(mes_actual_str, 0.0))
+
+            objetivo_total_meta = objetivos_meta.get(nombre, {}).get('objetivo_total')
+            saldo_actual_obj = objetivos_saldos[nombre]
+
+            capacidad_restante = None
+            if objetivo_total_meta is not None and objetivo_total_meta > 0:
+                capacidad_restante = max(0.0, float(objetivo_total_meta) - saldo_actual_obj)
+
+            if capacidad_restante is not None and capacidad_restante <= 1e-9:
+                capacidad_restante = 0.0
+                aporte_salario_real = 0.0
+                aporte_ingresos_real = 0.0
+            else:
+                aporte_salario_real = aporte_salario_teorico
+                if capacidad_restante is not None:
+                    aporte_salario_real = min(aporte_salario_real, capacidad_restante)
+                    capacidad_restante -= aporte_salario_real
+                    capacidad_restante = max(0.0, capacidad_restante)
+
+                aporte_ingresos_real = ingresos_etiquetados_mes
+                if capacidad_restante is not None:
+                    aporte_ingresos_real = min(aporte_ingresos_real, capacidad_restante)
+
+            objetivos_saldos[nombre] += aporte_salario_real + aporte_ingresos_real - gastos_etiquetados_mes
+            resumen_objetivos_mes[nombre] = round(objetivos_saldos[nombre], 2)
+
+            total_aporte_salario += aporte_salario_real
+
+            if ingresos_etiquetados_mes > 0 and aporte_ingresos_real > 0:
+                proporcion_reales = aporte_ingresos_real / ingresos_etiquetados_mes
+                proporcion_reales = min(max(proporcion_reales, 0.0), 1.0)
+                aporte_ingresos_reales_real = ingresos_etiquetados_reales_mes * proporcion_reales
+            else:
+                aporte_ingresos_reales_real = 0.0
+
+            total_aporte_ingresos_reales += aporte_ingresos_reales_real
+            total_gasto_objetivos += gastos_etiquetados_mes
+
+        if objetivos_nombres:
+            ahorro_transaccional -= total_aporte_salario + total_aporte_ingresos_reales
+            ahorro_transaccional += total_gasto_objetivos
+        
 
         # Fondo de reserva (MISMA lógica: sin tope explícito, suma mensual de fondo_cargado_ini + ahorro_emergencia)
         if mes_actual == pd.Timestamp('2024-10-01').to_period('M'):
@@ -712,10 +1318,18 @@ def crear_historial_cuentas_virtuales(
        
         ahorro += ahorro_transaccional - ahorro_emergencia
 
-        total = regalos + vacaciones + inversiones + ahorro + fondo_cargado - dinero_invertido
-        # total = regalos + vacaciones + inversiones + ahorro + fondo_cargado
+        # ``inversiones`` refleja únicamente el dinero líquido reservado para
+        # futuras aportaciones. El capital que ya salió de las cuentas reales y
+        # vive en la cuenta "Invertido" se reporta en ``dinero_invertido`` pero
+        # no forma parte de los saldos disponibles. Por eso el total debe
+        # sumar directamente todas las bolsas de efectivo sin volver a restar
+        # ``dinero_invertido`` (hacerlo descontaba dos veces las compras
+        # efectivas de inversión).
+        total_objetivos = sum(objetivos_saldos.values()) if objetivos_saldos else 0.0
+        total = regalos + vacaciones + inversiones + ahorro + fondo_cargado + total_objetivos
+        
         resumen = {
-            'mes': mes_actual_str,
+            'Mes': mes_actual_str,
             '🎁 Regalos': round(regalos, 2),
             '💼 Vacaciones': round(vacaciones, 2),
             '📈 Inversiones': round(inversiones, 2),
@@ -729,15 +1343,35 @@ def crear_historial_cuentas_virtuales(
             '📉 Deuda Presupuestaria mensual': round(deuda_mensual, 2) if deuda_mensual > 0 else 0.0,
             '📉 Deuda Presupuestaria acumulada': round(deuda_acumulada, 2) if deuda_acumulada > 0 else 0.0
         }
+        
+        for nombre in objetivos_nombres:
+            saldo_objetivo = resumen_objetivos_mes.get(nombre, round(objetivos_saldos.get(nombre, 0.0), 2))
+            resumen[f"🎯 {nombre}"] = saldo_objetivo
+
+            meta = objetivos_meta.get(nombre)
+            objetivo_total_meta = meta.get('objetivo_total') if meta else None
+            mes_inicio_objetivo = objetivos_mes_inicio.get(nombre)
+            objetivo_activo = mes_inicio_objetivo is None or mes_actual >= mes_inicio_objetivo
+            if objetivo_total_meta and objetivo_total_meta > 0 and objetivo_activo:
+                progreso = max(0.0, min(1.0, objetivos_saldos[nombre] / objetivo_total_meta))
+                resumen[f"% Objetivo {nombre}"] = round(progreso * 100, 2)
+            elif objetivo_total_meta and objetivo_total_meta > 0:
+                resumen[f"% Objetivo {nombre}"] = 0.0
+
+        resumen.update(
+            {
+                'total': round(total, 2),
+                '💳 Gasto del mes': round(gasto_total_mes_actual, 2),
+                '💸 Presupuesto Mes': round(presupuesto_teorico, 2),
+                '🧾 Presupuesto Disponible': round(presupuesto_efectivo, 2),
+                '📉 Deuda Presupuestaria mensual': round(deuda_mensual, 2) if deuda_mensual > 0 else 0.0,
+                '📉 Deuda Presupuestaria acumulada': round(deuda_acumulada, 2) if deuda_acumulada > 0 else 0.0,
+            }
+        )
 
         if mes_actual == pd.Timestamp('2024-10-01').to_period('M'):
             df_resumen_sep = pd.DataFrame([resumen]).copy(deep=True)
-            df_resumen_sep.columns = [
-                'Mes', 'Regalos', 'Vacaciones', 'Inversiones', 'Dinero Invertido', 'Ahorros',
-                'Fondo de reserva cargado', 'total', 'Gasto del mes',
-                'Presupuesto Mes', 'Presupuesto Disponible',
-                'Deuda Presupuestaria mensual', 'Deuda Presupuestaria acumulada'
-            ]
+            df_resumen_sep = _renombrar_columnas_historial(df_resumen_sep)
             if output_path:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 df_resumen_sep.to_csv(output_path, index=False)
@@ -746,12 +1380,7 @@ def crear_historial_cuentas_virtuales(
         mes_actual += 1
 
     df_resumen = pd.DataFrame(resumenes).copy(deep=True)
-    df_resumen.columns = [
-        'Mes', 'Regalos', 'Vacaciones', 'Inversiones', 'Dinero Invertido', 'Ahorros',
-        'Fondo de reserva cargado', 'total', 'Gasto del mes',
-        'Presupuesto Mes', 'Presupuesto Disponible',
-        'Deuda Presupuestaria mensual', 'Deuda Presupuestaria acumulada'
-    ]
+    df_resumen = _renombrar_columnas_historial(df_resumen)
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         df_resumen.to_csv(output_path, index=False)
