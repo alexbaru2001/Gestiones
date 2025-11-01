@@ -97,7 +97,7 @@ def _normalizar_objetivos(datos):
     return objetivos
 
 
-def cargar_objetivos_vista(config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH):
+def cargar_objetivos_vista(config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFIG_PATH):
     """Lee la configuración de objetivos vista desde disco."""
 
     if config_path is None:
@@ -171,8 +171,8 @@ def _objetivo_a_serializable(objetivo: dict) -> dict:
 
 
 def guardar_objetivos_vista(
-    objetivos: list[dict] | dict,
-    config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH,
+    objetivos: Union[list[dict], dict],
+    config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFIG_PATH,
 ) -> list[dict]:
     """Sobrescribe la configuración de objetivos vista tras validar su contenido."""
 
@@ -198,7 +198,7 @@ def guardar_objetivos_vista(
 
 
 def crear_widget_gestor_objetivos(
-    config_path: Path | str = OBJETIVOS_VISTA_CONFIG_PATH,
+    config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFIG_PATH,
 ):
     """Crea un widget interactivo para gestionar objetivos vista desde un notebook."""
 
