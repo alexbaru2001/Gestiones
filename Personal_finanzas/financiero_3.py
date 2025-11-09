@@ -1194,7 +1194,7 @@ def crear_historial_cuentas_virtuales(
 
         # Inversiones (desde 2025-05 como en tu código)
         interes = intereses_ingreso.get(mes_actual_str, 0.0)
-        if mes_actual >= pd.Timestamp("2025-05-01").to_period('M'):
+        if mes_actual >= pd.Timestamp("2024-10-01").to_period('M'):
             inv_mensual = ingresos_reales_mensual.get(mes_actual_str, 0) * porcentaje_inversion
         else:
             inv_mensual = 0
