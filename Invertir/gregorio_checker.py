@@ -77,27 +77,45 @@ def dividend_streak_years(series_by_year: pd.Series) -> int:
 # --- Scoring helpers ---
 
 def _band_score(val, min_v=None, max_v=None, prefer_mid=False):
-    """Normaliza 0-100. Si prefer_mid=True, premia estar en el rango medio."""
-    if pd.isna(val): 
+    """
+    Normaliza a 0-100.
+    - Dos cotas: 100 dentro del rango; si prefer_mid=True, pico en el centro del rango.
+    - Solo mínima: 0 si val < min, 100 si val >= min (maneja min_v==0 sin divisiones).
+    - Solo máxima: 100 si val <= max, 0 si val > max (maneja max_v==0 sin divisiones).
+    - NaN -> 0.
+    """
+    if pd.isna(val):
         return 0.0
-    if min_v is None and max_v is None:
-        return 50.0
+
+    # Dos cotas
     if min_v is not None and max_v is not None:
-        if val < min_v:  # por debajo del rango
-            return max(0.0, 100.0*(val/min_v))  # cae lineal
-        if val > max_v:  # por encima del rango
-            return max(0.0, 100.0*(max_v/val))
-        # dentro del rango
+        if val < min_v:
+            # caída lineal hacia 0 (evita divisiones por 0)
+            if min_v == 0:
+                return 0.0
+            return max(0.0, 100.0 * (val / min_v))
+        if val > max_v:
+            if val == 0:
+                return 0.0
+            return max(0.0, 100.0 * (max_v / val))
+        # Dentro del rango
         if prefer_mid:
-            mid = (min_v + max_v)/2
-            # campana simple: pico en el centro
-            return 100.0 - 100.0*abs(val-mid)/((max_v-min_v)/2)
+            mid = (min_v + max_v) / 2.0
+            half = (max_v - min_v) / 2.0 if (max_v - min_v) != 0 else 1.0
+            return max(0.0, 100.0 - 100.0 * abs(val - mid) / half)
         return 100.0
-    if min_v is not None:  # solo cota mínima
-        return max(0.0, min(100.0, 100.0*(val/min_v)))
-    if max_v is not None:  # solo cota máxima
-        return max(0.0, min(100.0, 100.0*(max_v/val)))
+
+    # Solo mínima
+    if min_v is not None:
+        return 100.0 if val >= min_v else 0.0
+
+    # Solo máxima
+    if max_v is not None:
+        return 100.0 if val <= max_v else 0.0
+
+    # Sin cotas
     return 50.0
+
 
 def red_flags(metrics) -> list:
     flags = []
@@ -114,45 +132,176 @@ def red_flags(metrics) -> list:
         flags.append("Recortes/ausencia de crecimiento del dividendo")
     return flags
 
+def _rng(a, b, units=""):
+    if a is None and b is None:
+        return "—"
+    if a is None:  # solo máx
+        return f"≤ {b}{units}".strip()
+    if b is None:  # solo mín
+        return f"≥ {a}{units}".strip()
+    return f"{a}–{b}{units}".strip()
+
 def score_company(metrics, rules):
-    """Devuelve (score_total, breakdown_dict) en escala 0-100."""
-    # 1) Dividendo (40%)
-    s_rpd   = _band_score(metrics.rpd_forward if pd.notna(getattr(metrics, "rpd_forward", np.nan)) else metrics.rpd_ttm,
-                          rules.rpd_min, rules.rpd_max, prefer_mid=True)
-    s_dgr5  = _band_score(metrics.dgr5, rules.dgr5_min, None)
-    s_dgr10 = _band_score(metrics.dgr10, 0.0, None)  # que no sea negativo
-    # payout: queremos dentro de banda
-    s_payout = _band_score(metrics.payout, rules.payout_min, rules.payout_max, prefer_mid=True)
-    # payout FCF pesa más si existe
-    s_payout_fcf = _band_score(getattr(metrics, "payout_fcf", np.nan), 40.0, 70.0, prefer_mid=True) if pd.notna(getattr(metrics, "payout_fcf", np.nan)) else s_payout
-    score_div = 0.4*(0.35*s_rpd + 0.30*s_dgr5 + 0.15*s_dgr10 + 0.20*s_payout_fcf)
+    """
+    Devuelve:
+      - total (0-100)
+      - breakdown (dict con 4 bloques)
+      - details (dict con tablas por bloque para UI)
+    """
+    details = {"Dividendo": [], "Solidez": [], "Valoración": [], "Historial": []}
 
-    # 2) Solidez (25%)
-    s_debt  = _band_score(metrics.de_ratio, None, rules.de_max)
-    s_roe   = _band_score(metrics.roe, rules.roe_min, None)
-    s_streak_pay = _band_score(metrics.streak_years, rules.streak_min, None)
-    s_streak_growth = _band_score(getattr(metrics, "streak_growth", np.nan), 5.0, None)  # p.ej. al menos 5 años creciendo
-    score_solid = 0.25*(0.35*s_debt + 0.30*s_roe + 0.20*s_streak_pay + 0.15*s_streak_growth)
+    # ---------- DIVIDENDO (40%) ----------
+    # pesos internos del bloque Dividendo
+    w_rpd, w_dgr5, w_dgr10, w_payout = 0.35, 0.30, 0.15, 0.20
 
-    # 3) Valoración (15%) -> usa PER o EV/EBITDA + FCF yield
+    rpd_val = metrics.rpd_forward if pd.notna(getattr(metrics, "rpd_forward", np.nan)) else metrics.rpd_ttm
+    sc_rpd = _band_score(rpd_val, rules.rpd_min, rules.rpd_max, prefer_mid=True)
+    details["Dividendo"].append({
+        "Métrica": "RPD (usa forward si hay)",
+        "Valor": None if pd.isna(rpd_val) else f"{rpd_val:.2f} %",
+        "Rango": _rng(rules.rpd_min, rules.rpd_max, "%"),
+        "Peso bloq.": f"{int(w_rpd*100)}%",
+        "Sub-score": f"{sc_rpd:.0f}"
+    })
+
+    sc_dgr5 = _band_score(metrics.dgr5, rules.dgr5_min, None)
+    details["Dividendo"].append({
+        "Métrica": "DGR 5 años",
+        "Valor": "s/d" if pd.isna(metrics.dgr5) else f"{metrics.dgr5:.2f} %",
+        "Rango": _rng(rules.dgr5_min, None, "%"),
+        "Peso bloq.": f"{int(w_dgr5*100)}%",
+        "Sub-score": f"{sc_dgr5:.0f}"
+    })
+
+    # Solo exigimos no negativo en DGR10
+    sc_dgr10 = _band_score(metrics.dgr10, 0.0, None)
+    details["Dividendo"].append({
+        "Métrica": "DGR 10 años",
+        "Valor": "s/d" if pd.isna(metrics.dgr10) else f"{metrics.dgr10:.2f} %",
+        "Rango": "≥ 0 %",
+        "Peso bloq.": f"{int(w_dgr10*100)}%",
+        "Sub-score": f"{sc_dgr10:.0f}"
+    })
+
+    payout_pref = getattr(metrics, "payout_fcf", np.nan)
+    use_payout_fcf = pd.notna(payout_pref)
+    sc_payout = _band_score(payout_pref if use_payout_fcf else metrics.payout,
+                            40.0 if use_payout_fcf else rules.payout_min,
+                            70.0 if use_payout_fcf else rules.payout_max,
+                            prefer_mid=True)
+    details["Dividendo"].append({
+        "Métrica": "Payout (FCF si hay, si no contable)",
+        "Valor": ("s/d" if (pd.isna(payout_pref) and pd.isna(metrics.payout))
+                  else f"{(payout_pref if use_payout_fcf else metrics.payout):.2f} %"),
+        "Rango": _rng(40.0 if use_payout_fcf else rules.payout_min,
+                      70.0 if use_payout_fcf else rules.payout_max, "%"),
+        "Peso bloq.": f"{int(w_payout*100)}%",
+        "Sub-score": f"{sc_payout:.0f}"
+    })
+
+    score_div = 0.4 * (w_rpd*sc_rpd + w_dgr5*sc_dgr5 + w_dgr10*sc_dgr10 + w_payout*sc_payout)
+
+    # ---------- SOLIDEZ (25%) ----------
+    w_debt, w_roe, w_streak_pay, w_streak_grow = 0.35, 0.30, 0.20, 0.15
+
+    sc_debt = _band_score(metrics.de_ratio, None, rules.de_max)
+    details["Solidez"].append({
+        "Métrica": "Deuda/Patrimonio",
+        "Valor": "s/d" if pd.isna(metrics.de_ratio) else f"{metrics.de_ratio:.2f} x",
+        "Rango": _rng(None, rules.de_max, "x"),
+        "Peso bloq.": f"{int(w_debt*100)}%",
+        "Sub-score": f"{sc_debt:.0f}"
+    })
+
+    sc_roe = _band_score(metrics.roe, rules.roe_min, None)
+    details["Solidez"].append({
+        "Métrica": "ROE",
+        "Valor": "s/d" if pd.isna(metrics.roe) else f"{metrics.roe:.2f} %",
+        "Rango": _rng(rules.roe_min, None, "%"),
+        "Peso bloq.": f"{int(w_roe*100)}%",
+        "Sub-score": f"{sc_roe:.0f}"
+    })
+
+    sc_streak_pay = _band_score(metrics.streak_years, rules.streak_min, None)
+    details["Solidez"].append({
+        "Métrica": "Racha de pagos",
+        "Valor": f"{metrics.streak_years} a" if pd.notna(metrics.streak_years) else "s/d",
+        "Rango": _rng(rules.streak_min, None, "a"),
+        "Peso bloq.": f"{int(w_streak_pay*100)}%",
+        "Sub-score": f"{sc_streak_pay:.0f}"
+    })
+
+    sc_streak_g = _band_score(getattr(metrics, "streak_growth", np.nan), 5.0, None)
+    details["Solidez"].append({
+        "Métrica": "Racha de crecimiento",
+        "Valor": ("s/d" if pd.isna(getattr(metrics, "streak_growth", np.nan))
+                  else f"{metrics.streak_growth} a"),
+        "Rango": "≥ 5 a",
+        "Peso bloq.": f"{int(w_streak_grow*100)}%",
+        "Sub-score": f"{sc_streak_g:.0f}"
+    })
+
+    score_solid = 0.25 * (w_debt*sc_debt + w_roe*sc_roe + w_streak_pay*sc_streak_pay + w_streak_grow*sc_streak_g)
+
+    # ---------- VALORACIÓN (15%) ----------
     if pd.notna(metrics.per_ttm):
-        s_per = _band_score(metrics.per_ttm, rules.per_min, rules.per_max, prefer_mid=True)
-        score_val = 0.15*s_per
+        w_per = 1.0
+        sc_per = _band_score(metrics.per_ttm, rules.per_min, rules.per_max, prefer_mid=True)
+        details["Valoración"].append({
+            "Métrica": "PER (ttm)",
+            "Valor": f"{metrics.per_ttm:.2f}",
+            "Rango": _rng(rules.per_min, rules.per_max, ""),
+            "Peso bloq.": "100%",
+            "Sub-score": f"{sc_per:.0f}"
+        })
+        score_val = 0.15 * (w_per*sc_per)
     else:
-        s_ev_ebitda = _band_score(getattr(metrics, "ev_ebitda", np.nan), None, 6.0)  # telecos/utilities 5-6x razonable
-        s_fcf_yield = _band_score(getattr(metrics, "fcf_yield", np.nan), 8.0, None)   # deseable ≥8-10%
-        score_val = 0.15*(0.6*s_ev_ebitda + 0.4*s_fcf_yield)
+        w_ev, w_fcfy = 0.6, 0.4
+        ev_eb = getattr(metrics, "ev_ebitda", np.nan)
+        fcf_y = getattr(metrics, "fcf_yield", np.nan)
+        sc_ev  = _band_score(ev_eb, None, 6.0)      # razonable ≤6x (telecos/utilities)
+        sc_fcf = _band_score(fcf_y, 8.0, None)      # deseable ≥8–10%
+        details["Valoración"].append({
+            "Métrica": "EV/EBITDA",
+            "Valor": "s/d" if pd.isna(ev_eb) else f"{ev_eb:.2f} x",
+            "Rango": "≤ 6.0 x",
+            "Peso bloq.": f"{int(w_ev*100)}%",
+            "Sub-score": f"{sc_ev:.0f}"
+        })
+        details["Valoración"].append({
+            "Métrica": "FCF Yield",
+            "Valor": "s/d" if pd.isna(fcf_y) else f"{fcf_y:.2f} %",
+            "Rango": "≥ 8.0 %",
+            "Peso bloq.": f"{int(w_fcfy*100)}%",
+            "Sub-score": f"{sc_fcf:.0f}"
+        })
+        score_val = 0.15 * (w_ev*sc_ev + w_fcfy*sc_fcf)
 
-    # 4) Calidad/Historial (20%)
-    # Usa mezcla de DGR10 (ya incluido), FCF positivo años, rachas
-    s_fcf_pos = _band_score(metrics.fcf_pos_years, 3.0, None)  # al menos 3 años recientes positivos
-    score_hist = 0.20*(0.5*s_streak_growth + 0.5*s_fcf_pos)
+    # ---------- HISTORIAL (20%) ----------
+    w_hist_grow, w_hist_fcf = 0.5, 0.5
+    sc_hist_grow = _band_score(getattr(metrics, "streak_growth", np.nan), 5.0, None)
+    sc_hist_fcf  = _band_score(metrics.fcf_pos_years, 3.0, None)
+    details["Historial"].append({
+        "Métrica": "Racha de crecimiento",
+        "Valor": "s/d" if pd.isna(getattr(metrics, "streak_growth", np.nan)) else f"{metrics.streak_growth} a",
+        "Rango": "≥ 5 a",
+        "Peso bloq.": f"{int(w_hist_grow*100)}%",
+        "Sub-score": f"{sc_hist_grow:.0f}"
+    })
+    details["Historial"].append({
+        "Métrica": "Años con FCF positivo",
+        "Valor": "s/d" if pd.isna(metrics.fcf_pos_years) else f"{metrics.fcf_pos_years}",
+        "Rango": "≥ 3",
+        "Peso bloq.": f"{int(w_hist_fcf*100)}%",
+        "Sub-score": f"{sc_hist_fcf:.0f}"
+    })
+    score_hist = 0.20 * (w_hist_grow*sc_hist_grow + w_hist_fcf*sc_hist_fcf)
 
     total = score_div + score_solid + score_val + score_hist
-    breakdown = {
-        "Dividendo": score_div, "Solidez": score_solid, "Valoración": score_val, "Historial": score_hist
-    }
-    return max(0.0, min(100.0, total)), breakdown
+    total = max(0.0, min(100.0, total))
+    breakdown = {"Dividendo": score_div, "Solidez": score_solid, "Valoración": score_val, "Historial": score_hist}
+    return total, breakdown, details
+
 
 def recommendation(total_score, flags):
     if flags:
@@ -523,6 +672,104 @@ def render_anexo():
     )
 
 
+def render_anexo_scoring():
+    st.title("Anexo: Metodología de Scoring")
+    st.write("""
+El objetivo del *score* es reflejar el enfoque de Gregorio: **rentas crecientes y sostenibles**,
+con **negocios estables** y **precio razonable**. No exige perfección; pondera el **conjunto**.
+    """)
+
+    # Ponderaciones
+    weights = pd.DataFrame([
+        {"Bloque": "Dividendo", "Peso": "40%"},
+        {"Bloque": "Solidez", "Peso": "25%"},
+        {"Bloque": "Valoración", "Peso": "15%"},
+        {"Bloque": "Historial", "Peso": "20%"},
+    ])
+    st.subheader("Ponderaciones del score")
+    st.table(weights)
+
+    st.subheader("Componentes y reglas")
+    st.markdown("""
+**Dividendo (40%)**
+- RPD (usa *forward* si existe, si no TTM). Premia estar en el **rango del sector** y cerca del centro.
+- DGR 5 años: cuanto más alto, mejor; si es **negativo** puntúa 0.
+- DGR 10 años: solo pedimos **≥ 0%**.
+- Payout: usamos **Payout FCF** si hay datos (preferible), si no payout contable. Rango objetivo baseline 40–70%.
+
+**Solidez (25%)**
+- Deuda/Patrimonio (o ND/EBITDA si lo sustituyes): menos es mejor.
+- ROE: deseable ≥ 8–10%.
+- Racha de pagos: años consecutivos pagando.
+- Racha de crecimiento: años consecutivos **aumentando** el dividendo.
+
+**Valoración (15%)**
+- Si hay PER: se pondera dentro del rango del sector (preferencia por el punto medio).
+- Si **no hay PER**: usamos **EV/EBITDA** (≈ 5–6x razonable en telecos/utilities) y **FCF Yield** (deseable ≥ 8–10%).
+
+**Historial (20%)**
+- FCF positivo: al menos 3 años recientes con FCF > 0.
+- Racha de crecimiento también pondera aquí (media con FCF positivo).
+    """)
+
+    st.subheader("Banderas rojas (pausa automática)")
+    st.markdown("""
+- **Payout FCF > 100%** o **FCF negativo 2 de 3 años**.
+- **DGR 5a < 0%** *y* payout alto.
+- **Recorte reciente** del dividendo (racha de crecimiento 0 y DGR 5a negativa).
+Si hay banderas, la recomendación sugiere **pausar** o revisar con detalle.
+    """)
+
+    st.subheader("Cómo puntúa cada métrica (0–100)")
+    st.markdown("""
+- **Dos cotas (mín–máx)**: 100 si está dentro del rango; si se activa *prefer_mid*, máximo en el centro del rango.
+- **Solo mínima**: 100 si `valor ≥ min`, 0 si `valor < min`.
+- **Solo máxima**: 100 si `valor ≤ max`, 0 si `valor > max`.
+- **NaN**: 0.
+    """)
+
+    # Descarga
+    md = """
+# Anexo: Metodología de Scoring
+
+## Ponderaciones
+- Dividendo: 40%
+- Solidez: 25%
+- Valoración: 15%
+- Historial: 20%
+
+## Dividendo
+- RPD (forward preferible), DGR 5a/10a, Payout (FCF > contable)
+- DGR5 < 0% → puntuación 0
+- DGR10: solo se exige ≥ 0%
+
+## Solidez
+- Deuda/Patrimonio (o ND/EBITDA), ROE, racha de pagos, racha de crecimiento
+
+## Valoración
+- Con PER: rango sectorial
+- Sin PER: EV/EBITDA (~5–6x) y FCF Yield (≥ 8–10%)
+
+## Historial
+- Años con FCF positivo (≥3), racha de crecimiento
+
+## Banderas rojas
+- Payout FCF > 100% o FCF negativo 2/3
+- DGR5 < 0% + payout alto
+- Recorte reciente del dividendo
+
+## Reglas de puntuación (0–100)
+- Dos cotas: 100 en el rango (pico en el centro si corresponde)
+- Solo mínima: 100 si valor ≥ min; 0 si < min
+- Solo máxima: 100 si valor ≤ max; 0 si > max
+- NaN: 0
+"""
+    st.download_button(
+        "Descargar anexo (Markdown)",
+        data=md.encode("utf-8"),
+        file_name="anexo_scoring_gregorio.md",
+        mime="text/markdown"
+    )
 
 
 
@@ -538,10 +785,12 @@ def render_anexo():
 st.set_page_config(page_title="Chequeo Gregorio por Ticker", layout="centered")
 
 st.sidebar.title("Menú")
-vista = st.sidebar.radio("Vista", ["Evaluación", "Anexo de ratios"])
-
+vista = st.sidebar.radio("Vista", ["Evaluación", "Anexo de ratios", "Anexo: Scoring"])
 if vista == "Anexo de ratios":
     render_anexo()
+    st.stop()
+if vista == "Anexo: Scoring":
+    render_anexo_scoring()
     st.stop()
 
 # === Vista Evaluación ===
@@ -586,6 +835,16 @@ if run_btn and default_ticker:
         col7, col8 = st.columns(2)
         col7.metric("ROE", f"{metrics.roe:,.2f} %" if not pd.isna(metrics.roe) else "s/d")
         col8.metric("Racha dividendos", f"{metrics.streak_years} años")
+        
+        col_ev, col_fcf = st.columns(2)
+        ev_eb = getattr(metrics, "ev_ebitda", np.nan)
+        fcf_y = getattr(metrics, "fcf_yield", np.nan)
+        col_ev.metric("EV/EBITDA", f"{ev_eb:,.2f} x" if pd.notna(ev_eb) else "s/d")
+        col_fcf.metric("FCF Yield", f"{fcf_y:,.2f} %" if pd.notna(fcf_y) else "s/d")
+        
+        # También RPD forward si existe:
+        if pd.notna(getattr(metrics, "rpd_forward", np.nan)):
+            st.metric("RPD Forward", f"{metrics.rpd_forward:,.2f} %")
 
         st.markdown("---")
         st.subheader("Veredicto por criterios (según sector)")
@@ -642,7 +901,7 @@ if run_btn and default_ticker:
         
         flags = red_flags(metrics)
         
-        total_score, breakdown = score_company(metrics, rules)
+        total_score, breakdown, details = score_company(metrics, rules)
         rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
         
         st.markdown("---")
@@ -654,7 +913,20 @@ if run_btn and default_ticker:
         c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
         c5.metric("Historial", f"{breakdown['Historial']:.0f}")
         
-        st.success(f"{rec_icon} {rec_text}") if rec_icon=="✅" else st.warning(f"{rec_icon} {rec_text}") if rec_icon=="⚠️" else st.error(f"{rec_icon} {rec_text}")
+        with st.expander("Ver detalle del cálculo (componentes y pesos)"):
+            for bloque in ["Dividendo", "Solidez", "Valoración", "Historial"]:
+                st.markdown(f"**{bloque}**")
+                st.table(pd.DataFrame(details[bloque])[["Métrica","Valor","Rango","Peso bloq.","Sub-score"]])
+
+
+        if rec_icon == "✅":
+            st.success(f"{rec_icon} {rec_text}")
+        elif rec_icon == "⚠️":
+            st.warning(f"{rec_icon} {rec_text}")
+        else:
+            st.error(f"{rec_icon} {rec_text}")
+        
+        
         if flags:
             st.write("**Banderas rojas detectadas:**")
             for f in flags:
