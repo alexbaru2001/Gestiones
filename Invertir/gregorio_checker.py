@@ -74,6 +74,96 @@ def dividend_streak_years(series_by_year: pd.Series) -> int:
             break
     return cnt
 
+# --- Scoring helpers ---
+
+def _band_score(val, min_v=None, max_v=None, prefer_mid=False):
+    """Normaliza 0-100. Si prefer_mid=True, premia estar en el rango medio."""
+    if pd.isna(val): 
+        return 0.0
+    if min_v is None and max_v is None:
+        return 50.0
+    if min_v is not None and max_v is not None:
+        if val < min_v:  # por debajo del rango
+            return max(0.0, 100.0*(val/min_v))  # cae lineal
+        if val > max_v:  # por encima del rango
+            return max(0.0, 100.0*(max_v/val))
+        # dentro del rango
+        if prefer_mid:
+            mid = (min_v + max_v)/2
+            # campana simple: pico en el centro
+            return 100.0 - 100.0*abs(val-mid)/((max_v-min_v)/2)
+        return 100.0
+    if min_v is not None:  # solo cota mínima
+        return max(0.0, min(100.0, 100.0*(val/min_v)))
+    if max_v is not None:  # solo cota máxima
+        return max(0.0, min(100.0, 100.0*(max_v/val)))
+    return 50.0
+
+def red_flags(metrics) -> list:
+    flags = []
+    # DGR negativo + payout alto
+    if pd.notna(metrics.dgr5) and metrics.dgr5 < 0 and pd.notna(metrics.payout) and metrics.payout > 80:
+        flags.append("DGR 5a negativo con payout alto")
+    # Payout sobre FCF
+    if hasattr(metrics, "payout_fcf") and pd.notna(metrics.payout_fcf) and metrics.payout_fcf > 100:
+        flags.append("Payout FCF > 100%")
+    # FCF negativo 2/3 últimos años (si lo calculas más adelante)
+    # Puedes almacenar metrics.fcf_last3 y contar <0
+    # Dividendo recortado: si racha de crecimiento = 0 y DGR 5a < 0:
+    if hasattr(metrics, "streak_growth") and metrics.streak_growth == 0 and pd.notna(metrics.dgr5) and metrics.dgr5 < 0:
+        flags.append("Recortes/ausencia de crecimiento del dividendo")
+    return flags
+
+def score_company(metrics, rules):
+    """Devuelve (score_total, breakdown_dict) en escala 0-100."""
+    # 1) Dividendo (40%)
+    s_rpd   = _band_score(metrics.rpd_forward if pd.notna(getattr(metrics, "rpd_forward", np.nan)) else metrics.rpd_ttm,
+                          rules.rpd_min, rules.rpd_max, prefer_mid=True)
+    s_dgr5  = _band_score(metrics.dgr5, rules.dgr5_min, None)
+    s_dgr10 = _band_score(metrics.dgr10, 0.0, None)  # que no sea negativo
+    # payout: queremos dentro de banda
+    s_payout = _band_score(metrics.payout, rules.payout_min, rules.payout_max, prefer_mid=True)
+    # payout FCF pesa más si existe
+    s_payout_fcf = _band_score(getattr(metrics, "payout_fcf", np.nan), 40.0, 70.0, prefer_mid=True) if pd.notna(getattr(metrics, "payout_fcf", np.nan)) else s_payout
+    score_div = 0.4*(0.35*s_rpd + 0.30*s_dgr5 + 0.15*s_dgr10 + 0.20*s_payout_fcf)
+
+    # 2) Solidez (25%)
+    s_debt  = _band_score(metrics.de_ratio, None, rules.de_max)
+    s_roe   = _band_score(metrics.roe, rules.roe_min, None)
+    s_streak_pay = _band_score(metrics.streak_years, rules.streak_min, None)
+    s_streak_growth = _band_score(getattr(metrics, "streak_growth", np.nan), 5.0, None)  # p.ej. al menos 5 años creciendo
+    score_solid = 0.25*(0.35*s_debt + 0.30*s_roe + 0.20*s_streak_pay + 0.15*s_streak_growth)
+
+    # 3) Valoración (15%) -> usa PER o EV/EBITDA + FCF yield
+    if pd.notna(metrics.per_ttm):
+        s_per = _band_score(metrics.per_ttm, rules.per_min, rules.per_max, prefer_mid=True)
+        score_val = 0.15*s_per
+    else:
+        s_ev_ebitda = _band_score(getattr(metrics, "ev_ebitda", np.nan), None, 6.0)  # telecos/utilities 5-6x razonable
+        s_fcf_yield = _band_score(getattr(metrics, "fcf_yield", np.nan), 8.0, None)   # deseable ≥8-10%
+        score_val = 0.15*(0.6*s_ev_ebitda + 0.4*s_fcf_yield)
+
+    # 4) Calidad/Historial (20%)
+    # Usa mezcla de DGR10 (ya incluido), FCF positivo años, rachas
+    s_fcf_pos = _band_score(metrics.fcf_pos_years, 3.0, None)  # al menos 3 años recientes positivos
+    score_hist = 0.20*(0.5*s_streak_growth + 0.5*s_fcf_pos)
+
+    total = score_div + score_solid + score_val + score_hist
+    breakdown = {
+        "Dividendo": score_div, "Solidez": score_solid, "Valoración": score_val, "Historial": score_hist
+    }
+    return max(0.0, min(100.0, total)), breakdown
+
+def recommendation(total_score, flags):
+    if flags:
+        return "Pausa / Revisar banderas rojas", "❌", flags
+    if total_score >= 75:
+        return "Comprar / Añadir (DCA normal)", "✅", []
+    if total_score >= 60:
+        return "Vigilar o DCA prudente", "⚠️", []
+    return "Mantenerse al margen", "❌", []
+
+
 # =============== Reglas por sector (umbrales de Gregorio) ===============
 
 @dataclass
@@ -176,8 +266,9 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
     if isinstance(roe, (int, float)) and pd.notna(roe) and roe <= 1:
         roe *= 100.0  # yfinance a menudo da ROE en fracción
 
-    # FCF y racha
+    # FCF y rachas
     cf = pd.DataFrame()
+    payout_fcf = np.nan
     try:
         cf = t.cashflow  # anual
     except Exception:
@@ -186,13 +277,30 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
     fcf_pos_years = 0
     if cf is not None and not cf.empty:
         cf = cf.copy()
-        cf.index = [str(x) for x in cf.index]
-        # 'Free Cash Flow' puede estar como fila
         if "Free Cash Flow" in cf.index:
             fcf_series = cf.loc["Free Cash Flow"].dropna()
             fcf_pos_years = int((fcf_series > 0).sum())
+            if not fcf_series.empty and len(fcf_series) > 0 and "Dividends Paid" in cf.index:
+                div_paid = abs(cf.loc["Dividends Paid"].dropna().iloc[0])
+                fcf_last = abs(fcf_series.iloc[0])
+                if fcf_last > 0:
+                    payout_fcf = (div_paid / fcf_last) * 100
 
-    streak = dividend_streak_years(by_year)
+    streak_pay = dividend_streak_years(by_year)
+    streak_growth = dividend_growth_streak(by_year)
+
+    # RPD forward
+    forward_div = info.get("forwardAnnualDividendRate") or info.get("dividendRate")
+    rpd_forward = np.nan
+    if forward_div and price:
+        rpd_forward = (forward_div / price) * 100
+
+    # EV/EBITDA y FCF yield
+    ev = info.get("enterpriseValue", np.nan)
+    ebitda = info.get("ebitda", np.nan)
+    ev_ebitda = ev / ebitda if ev and ebitda and ebitda > 0 else np.nan
+    marketcap = info.get("marketCap", np.nan)
+    fcf_yield = (fcf_series.iloc[0] / marketcap * 100) if marketcap and not cf.empty else np.nan
 
     metrics = TickerMetrics(
         ticker=ticker.upper(),
@@ -206,10 +314,47 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
         per_ttm=float(per_ttm) if pd.notna(per_ttm) else np.nan,
         de_ratio=float(de_ratio) if pd.notna(de_ratio) else np.nan,
         roe=float(roe) if pd.notna(roe) else np.nan,
-        streak_years=streak,
+        streak_years=streak_pay,
         fcf_pos_years=fcf_pos_years
     )
+    metrics.rpd_forward = rpd_forward
+    metrics.payout_fcf = payout_fcf
+    metrics.ev_ebitda = ev_ebitda
+    metrics.fcf_yield = fcf_yield
+    metrics.streak_growth = streak_growth
     return metrics, by_year, hist["Close"] if "Close" in hist else pd.Series(dtype="float64")
+
+
+def dividend_growth_streak(series_by_year: pd.Series) -> int:
+    """Años consecutivos con crecimiento del dividendo."""
+    if series_by_year is None or series_by_year.empty:
+        return 0
+    s = series_by_year.dropna().sort_index()
+    streak = 0
+    prev = None
+    for _, val in s.items():
+        if prev is not None:
+            if val > prev:
+                streak += 1
+            else:
+                streak = 0
+        prev = val
+    return streak
+
+
+def near_limit(value, min_v, max_v, tol=0.1) -> bool:
+    """Devuelve True si el valor está dentro del ±10% del límite permitido."""
+    if pd.isna(value):
+        return False
+    if min_v is not None and value < min_v and value >= min_v * (1 - tol):
+        return True
+    if max_v is not None and value > max_v and value <= max_v * (1 + tol):
+        return True
+    return False
+
+
+
+
 
 # =============== Evaluación vs reglas ===============
 
@@ -228,17 +373,39 @@ def check_range(value: float, min_v: Optional[float], max_v: Optional[float], un
         return CheckResult(False, True, f"> {max_v}{units}")
     return CheckResult(True, False, f"OK")
 
-def evaluate(metrics: TickerMetrics, rules: SectorRules) -> Dict[str, CheckResult]:
-    results = {
-        "RPD TTM (%)": check_range(metrics.rpd_ttm, rules.rpd_min, rules.rpd_max, "%"),
-        "DGR 5a (%)": check_range(metrics.dgr5, rules.dgr5_min, None, "%"),
-        "Payout (%)": check_range(metrics.payout, rules.payout_min, rules.payout_max, "%"),
-        "PER (ttm)": check_range(metrics.per_ttm, rules.per_min, rules.per_max, ""),
-        "Deuda/Patrimonio": check_range(metrics.de_ratio, None, rules.de_max, "x"),
-        "ROE (%)": check_range(metrics.roe, rules.roe_min, None, "%"),
-        "Racha dividendos (años)": check_range(metrics.streak_years, rules.streak_min, None, "a"),
+def evaluate(metrics: TickerMetrics, rules: SectorRules) -> Dict[str, Dict]:
+    results = {}
+    ranges = {
+        "RPD TTM (%)": f"{rules.rpd_min}–{rules.rpd_max} %",
+        "DGR 5a (%)": f"≥ {rules.dgr5_min} %",
+        "Payout (%)": f"{rules.payout_min}–{rules.payout_max} %",
+        "PER (ttm)": f"{rules.per_min}–{rules.per_max}",
+        "Deuda/Patrimonio": f"≤ {rules.de_max} x",
+        "ROE (%)": f"≥ {rules.roe_min} %",
+        "Racha dividendos (años)": f"≥ {rules.streak_min} a"
     }
+
+    for k, (val, min_v, max_v, units) in {
+        "RPD TTM (%)": (metrics.rpd_ttm, rules.rpd_min, rules.rpd_max, "%"),
+        "DGR 5a (%)": (metrics.dgr5, rules.dgr5_min, None, "%"),
+        "Payout (%)": (metrics.payout, rules.payout_min, rules.payout_max, "%"),
+        "PER (ttm)": (metrics.per_ttm, rules.per_min, rules.per_max, ""),
+        "Deuda/Patrimonio": (metrics.de_ratio, None, rules.de_max, "x"),
+        "ROE (%)": (metrics.roe, rules.roe_min, None, "%"),
+        "Racha dividendos (años)": (metrics.streak_years, rules.streak_min, None, "a"),
+    }.items():
+        if pd.isna(val):
+            results[k] = {"icon": "❌", "msg": "Sin datos", "range": ranges[k]}
+        elif k.startswith("DGR") and val < 0:
+            results[k] = {"icon": "❌", "msg": "Negativo", "range": ranges[k]}
+        elif (min_v is not None and val < min_v) or (max_v is not None and val > max_v):
+            icon = "⚠️" if near_limit(val, min_v, max_v) else "❌"
+            results[k] = {"icon": icon, "msg": f"{val:.2f}{units}", "range": ranges[k]}
+        else:
+            results[k] = {"icon": "✅", "msg": f"{val:.2f}{units}", "range": ranges[k]}
+
     return results
+
 
 
 
@@ -430,7 +597,12 @@ if run_btn and default_ticker:
 
         table = []
         for k, v in checks.items():
-            table.append({"Criterio": k, "Resultado": verdict_icon(v), "Detalle": v.msg})
+            table.append({
+                "Criterio": k,
+                "Resultado": v["icon"],
+                "Valor": v["msg"],
+                "Intervalo recomendado": v["range"]
+            })
         st.table(pd.DataFrame(table))
 
         # Gráfico: dividendos anuales y precio (escala simple)
@@ -467,6 +639,28 @@ if run_btn and default_ticker:
             "Racha dividendos min (años)": [rules.streak_min],
         })
         st.table(rules_df)
+        
+        flags = red_flags(metrics)
+        
+        total_score, breakdown = score_company(metrics, rules)
+        rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
+        
+        st.markdown("---")
+        st.subheader("Puntuación compuesta (estilo Gregorio)")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Score total", f"{total_score:.0f}/100")
+        c2.metric("Dividendo", f"{breakdown['Dividendo']:.0f}")
+        c3.metric("Solidez", f"{breakdown['Solidez']:.0f}")
+        c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
+        c5.metric("Historial", f"{breakdown['Historial']:.0f}")
+        
+        st.success(f"{rec_icon} {rec_text}") if rec_icon=="✅" else st.warning(f"{rec_icon} {rec_text}") if rec_icon=="⚠️" else st.error(f"{rec_icon} {rec_text}")
+        if flags:
+            st.write("**Banderas rojas detectadas:**")
+            for f in flags:
+                st.write(f"- {f}")
+
+
 
         st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
 
