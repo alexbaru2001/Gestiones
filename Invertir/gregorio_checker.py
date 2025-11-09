@@ -240,17 +240,150 @@ def evaluate(metrics: TickerMetrics, rules: SectorRules) -> Dict[str, CheckResul
     }
     return results
 
+
+
+# =============== ANEXO: explicación de ratios y rangos ===============
+
+def rules_to_range_str(r: SectorRules) -> Dict[str, str]:
+    return {
+        "RPD TTM (%)": f"{r.rpd_min}–{r.rpd_max} %",
+        "DGR 5a (%)": f"≥ {r.dgr5_min} %",
+        "Payout (%)": f"{r.payout_min}–{r.payout_max} %",
+        "PER (ttm)": f"{r.per_min}–{r.per_max}",
+        "Deuda/Patrimonio (x)": f"≤ {r.de_max} x",
+        "ROE (%)": f"≥ {r.roe_min} %",
+        "Racha dividendos (años)": f"≥ {r.streak_min} a",
+    }
+
+def render_anexo():
+    st.title("Anexo de ratios y rangos recomendados")
+    st.write(
+        "Aquí tienes una explicación breve de cada ratio **estilo Gregorio**: "
+        "qué mide, por qué importa, cómo se calcula y en qué **rangos** es razonable moverse. "
+        "Los rangos pueden variar por **sector**."
+    )
+
+    # Definiciones y por qué importan
+    definiciones = [
+        {
+            "Ratio": "RPD TTM (%)",
+            "Qué mide": "Rentabilidad por dividendo actual con base en TTM (últimos 12 meses).",
+            "Fórmula": "RPD = (Dividendo anual TTM / Precio) × 100",
+            "Por qué importa": "Te dice cuánta renta anual genera hoy cada euro invertido."
+        },
+        {
+            "Ratio": "DGR 5a (%)",
+            "Qué mide": "Crecimiento anual compuesto del dividendo a 5 años.",
+            "Fórmula": "CAGR = (Div5 / Div0)^(1/5) − 1",
+            "Por qué importa": "Indica si la empresa aumenta el dividendo de forma sostenida."
+        },
+        {
+            "Ratio": "Payout (%)",
+            "Qué mide": "% del beneficio destinado a dividendos.",
+            "Fórmula": "Payout = (Dividendo / BPA) × 100",
+            "Por qué importa": "Un payout moderado sugiere dividendo sostenible y margen para crecer."
+        },
+        {
+            "Ratio": "PER (ttm)",
+            "Qué mide": "Años de beneficios que pagas al precio actual.",
+            "Fórmula": "PER = Precio / BPA (ttm)",
+            "Por qué importa": "Da una idea de si pagas un precio razonable por la calidad."
+        },
+        {
+            "Ratio": "Deuda/Patrimonio (x)",
+            "Qué mide": "Nivel de apalancamiento financiero.",
+            "Fórmula": "D/E = Deuda total / Patrimonio neto",
+            "Por qué importa": "Menos deuda = más margen en crisis y dividendo más defendible."
+        },
+        {
+            "Ratio": "ROE (%)",
+            "Qué mide": "Rentabilidad del patrimonio de los accionistas.",
+            "Fórmula": "ROE = (Beneficio neto / Patrimonio) × 100",
+            "Por qué importa": "Empresas con ROE alto suelen tener ventajas competitivas."
+        },
+        {
+            "Ratio": "Racha dividendos (años)",
+            "Qué mide": "Años consecutivos pagando dividendo (> 0).",
+            "Fórmula": "Conteo de años con pago positivo",
+            "Por qué importa": "Historial de pagos consistente = mayor fiabilidad."
+        },
+    ]
+    st.subheader("Definiciones rápidas")
+    st.table(pd.DataFrame(definiciones))
+
+    # Rangos baseline
+    st.subheader("Rangos recomendados (baseline)")
+    base_ranges = rules_to_range_str(BASELINE)
+    st.table(pd.DataFrame([base_ranges]))
+
+    # Rangos por sector
+    st.subheader("Rangos por sector (overrides)")
+    if SECTOR_TWEAKS:
+        rows = []
+        for sec, r in SECTOR_TWEAKS.items():
+            d = rules_to_range_str(r)
+            d["Sector"] = sec
+            rows.append(d)
+        df = pd.DataFrame(rows).set_index("Sector")
+        st.table(df)
+    else:
+        st.info("No hay ajustes sectoriales definidos; se usa solo el baseline.")
+    
+    
+    # Descarga como Markdown
+    md = ["# Anexo de ratios (estilo Gregorio)\n"]
+    for d in definiciones:
+        md.append(f"## {d['Ratio']}\n")
+        md.append(f"- **Qué mide:** {d['Qué mide']}\n")
+        md.append(f"- **Fórmula:** {d['Fórmula']}\n")
+        md.append(f"- **Por qué importa:** {d['Por qué importa']}\n")
+    md.append("\n## Rangos baseline\n")
+    for k, v in base_ranges.items():
+        md.append(f"- **{k}:** {v}")
+    md.append("\n## Rangos por sector\n")
+    for sec, r in SECTOR_TWEAKS.items():
+        rr = rules_to_range_str(r)
+        md.append(f"### {sec}")
+        for k, v in rr.items():
+            md.append(f"- **{k}:** {v}")
+    md_text = "\n".join(md)
+    
+    st.download_button(
+        label="Descargar anexo (Markdown)",
+        data=md_text.encode("utf-8"),
+        file_name="anexo_ratios_gregorio.md",
+        mime="text/markdown"
+    )
+
+
+
+
+
+
+
+
+
+
+
+
 # =============== UI Streamlit ===============
 
 st.set_page_config(page_title="Chequeo Gregorio por Ticker", layout="centered")
 
+st.sidebar.title("Menú")
+vista = st.sidebar.radio("Vista", ["Evaluación", "Anexo de ratios"])
+
+if vista == "Anexo de ratios":
+    render_anexo()
+    st.stop()
+
+# === Vista Evaluación ===
 st.title("Chequeo estilo Gregorio 🧱📈")
 st.write("Introduce un *ticker* y comprueba si cumple los criterios de **dividendos crecientes** ajustados por sector.")
 
 with st.sidebar:
-    st.header("Parámetros")
+    st.header("Parámetros de evaluación")
     default_ticker = st.text_input("Ticker", value="JNJ").strip()
-    # Permite forzar sector si el de yfinance no convence
     sector_override = st.selectbox(
         "Forzar sector (opcional)",
         options=["(auto)", "Consumer Defensive", "Healthcare", "Utilities", "Communication Services",
@@ -258,6 +391,7 @@ with st.sidebar:
         index=0
     )
     run_btn = st.button("Evaluar")
+
 
 if run_btn and default_ticker:
     try:
