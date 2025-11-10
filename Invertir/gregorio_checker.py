@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 import streamlit as st
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -21,6 +22,22 @@ import matplotlib.pyplot as plt
 
 import plotly.graph_objects as go
 import plotly.express as px
+
+
+
+# --- Estado de sesión para no re-ejecutar fetch al cambiar controles de gráfico ---
+if "metrics" not in st.session_state:
+    st.session_state.metrics = None
+if "divs_year" not in st.session_state:
+    st.session_state.divs_year = None
+if "price_series" not in st.session_state:
+    st.session_state.price_series = None
+if "ccy_symbol" not in st.session_state:
+    st.session_state.ccy_symbol = "$"
+
+@st.cache_data(ttl=3600)
+def _cached_fetch(ticker: str):
+    return fetch_metrics(ticker)
 
 
 # ========= Estilo Plotly "finance clean" =========
@@ -44,6 +61,20 @@ _CCY_SYMBOL = {
     "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CHF": "Fr", "CAD": "$", "AUD": "$"
 }
 
+# === Bolsa / exchange human-friendly ===
+YF_EXCHANGE_MAP = {
+    "NYQ": "NYSE", "NMS": "NASDAQ", "NGM": "NASDAQ GM", "NCM": "NASDAQ CM",
+    "BATS": "Cboe BZX", "ASE": "NYSE American", "PNK": "OTC",
+    "TOR": "TSX", "TSX": "TSX", "VAN": "TSX Venture",
+    "LSE": "London Stock Exchange", "LIS": "Euronext Lisbon",
+    "EPA": "Euronext Paris", "AMS": "Euronext Amsterdam", "BRU": "Euronext Brussels",
+    "FRA": "Frankfurt", "GER": "Xetra (Deutsche Börse)", "VIE": "Vienna",
+    "SWX": "SIX Swiss", "SAO": "B3 (São Paulo)", "ASX": "ASX",
+    "HKSE": "Hong Kong", "MCE": "BME (Madrid)", "MIL": "Borsa Italiana",
+    "TSE": "Tokyo", "NSE": "NSE India", "BSE": "BSE India",
+}
+
+
 def _ccy_symbol_from_info(info: dict, fallback: str = "$") -> str:
     code = (info or {}).get("currency", None)
     return _CCY_SYMBOL.get(code, fallback)
@@ -59,6 +90,38 @@ def _fmt_hover_money(symbol: str) -> str:
 
 # =============== Utilidades de tiempo y series ===============
 
+def _slice_price_series(s: pd.Series, rango: str, agg: str) -> pd.Series:
+    if s is None or s.empty:
+        return s
+    s = s.dropna()
+    # Filtra por rango
+    end = s.index.max()
+    if rango == "YTD":
+        start = pd.Timestamp(year=end.year, month=1, day=1)
+    elif rango == "1 año":
+        start = end - pd.Timedelta(days=365)
+    elif rango == "3 años":
+        start = end - pd.DateOffset(years=3)
+    elif rango == "5 años":
+        start = end - pd.DateOffset(years=5)
+    elif rango == "10 años":
+        start = end - pd.DateOffset(years=10)
+    elif rango == "20 años":
+        start = end - pd.DateOffset(years=20)
+    else:  # "Todo"
+        start = s.index.min()
+    s = s[(s.index >= start) & (s.index <= end)]
+    # Agregación para que el gráfico vaya fluido
+    if agg == "Semanal":
+        s = s.resample("W-FRI").last()
+    elif agg == "Mensual":
+        s = s.resample("M").last()
+    return s
+
+
+
+
+
 def to_naive_utc_index(idx) -> pd.DatetimeIndex:
     idx = pd.to_datetime(idx, utc=True, errors="coerce")
     return idx.tz_localize(None)
@@ -73,29 +136,90 @@ def dividends_ttm(divs: pd.Series, ref_date: Optional[pd.Timestamp]=None) -> flo
     return float(divs[divs.index > cutoff].sum())
 
 def dividends_by_year(divs: pd.Series) -> pd.Series:
+    """
+    Suma anual de dividendos TOTALES (crudo). Conservamos esta versión para diagnóstico.
+    """
     if divs is None or divs.empty:
         return pd.Series(dtype="float64")
     s = divs.copy()
     s.index = to_naive_utc_index(s.index)
     return s.groupby(s.index.year).sum()
 
+def dividends_by_year_clean(divs: pd.Series, expected_payments: int = None) -> pd.Series:
+    """
+    Suma anual 'limpia':
+      - Trabaja por año natural.
+      - Descarta 'dividendos especiales' (pagos individuales > 1.5x de la mediana del año).
+      - Mantiene solo AÑOS COMPLETOS: años con el número esperado de pagos 'regulares'.
+    expected_payments:
+      - Si None, lo infiere como la moda del conteo anual de pagos (≈4 en USA trimestrales).
+    """
+    if divs is None or divs.empty:
+        return pd.Series(dtype="float64")
+
+    s = divs.copy()
+    s.index = to_naive_utc_index(s.index)
+    by_year = s.groupby(s.index.year)
+
+    # Conteos por año para inferir periodicidad
+    counts = by_year.size()
+    if expected_payments is None:
+        if len(counts) == 0:
+            expected_payments = 4
+        else:
+            expected_payments = int(counts.mode().iloc[0])
+
+    cleaned = {}
+    for y, grp in by_year:
+        vals = grp.sort_index().values.astype(float)
+        if len(vals) == 0:
+            continue
+        # Detecta 'especiales': > 1.5 * mediana
+        med = float(np.median(vals))
+        regulars = [v for v in vals if v <= 1.5 * med + 1e-12]
+
+        # Si todavía hay más de expected_payments, coge los expected_payments más cercanos a la mediana
+        if len(regulars) > expected_payments:
+            # ordena por |v - mediana| y toma los expected_payments
+            regulars = sorted(regulars, key=lambda v: abs(v - med))[:expected_payments]
+
+        # Consideramos 'año completo' si alcanzamos exactamente expected_payments regulares
+        if len(regulars) == expected_payments:
+            cleaned[y] = float(np.sum(regulars))
+        # si no, lo descartamos como año incompleto
+
+    if not cleaned:
+        return pd.Series(dtype="float64")
+
+    ser = pd.Series(cleaned).sort_index()
+    return ser
+
+
 def cagr_from_annual(series_by_year: pd.Series, years: int) -> float:
-    s = series_by_year.dropna()
+    """
+    CAGR sobre años COMPLETOS y ventana EXACTA:
+      - Usa el último AÑO COMPLETO disponible como 'end' (Y-1 si estás a mitad de año).
+      - start_year = end_year - years
+      - n = years
+    Requiere que existan ambos años en la serie; si falta, devuelve NaN.
+    """
+    s = series_by_year.dropna().sort_index()
     if len(s) < 2:
         return np.nan
-    last_year = int(s.index.max())
-    first_target = last_year - (years - 1)
-    if first_target in s.index:
-        start_val = s.loc[first_target]
-    else:
-        # toma el valor más antiguo disponible dentro de la ventana; si no hay, el primero
-        window = s[s.index <= first_target]
-        start_val = window.iloc[-1] if not window.empty else s.iloc[0]
-    end_val = s.iloc[-1]
+
+    end_year = int(s.index.max())  # último año disponible en la serie
+    start_year = end_year - years
+    if start_year not in s.index or end_year not in s.index:
+        return np.nan
+
+    start_val = float(s.loc[start_year])
+    end_val   = float(s.loc[end_year])
     if start_val <= 0 or end_val <= 0:
         return np.nan
-    n = max(1, years - 1)
+
+    n = years  # exponente correcto
     return (end_val / start_val) ** (1.0 / n) - 1.0
+
 
 def dividend_streak_years(series_by_year: pd.Series) -> int:
     """Años consecutivos (hasta el último) pagando > 0 (no exige crecimiento, solo pago)."""
@@ -358,18 +482,23 @@ def chart_price_line(price_series: pd.Series, title: str, symbol: str):
         x=s.index, y=s.values, mode="lines", name="Precio",
         hovertemplate=_fmt_hover_money(symbol) + "<extra></extra>"
     ))
-    # Medias móviles
-    for win, name in [(20, "MM20"), (50, "MM50")]:
+    # MM adaptativas
+    win_short, win_long = (20, 50)
+    if s.index.freqstr in ("M", "MS") or (len(s) > 0 and s.index.inferred_freq == "M"):
+        win_short, win_long = (3, 6)      # ~3 y 6 meses
+    elif s.index.freqstr and s.index.freqstr.startswith("W"):
+        win_short, win_long = (10, 30)    # ~10 y 30 semanas
+
+    for win, name in [(win_short, f"MM{win_short}"), (win_long, f"MM{win_long}")]:
         if len(s) >= win:
             ma = s.rolling(win).mean()
             fig.add_trace(go.Scatter(
                 x=ma.index, y=ma.values, mode="lines", name=name, opacity=0.65,
                 hovertemplate=_fmt_hover_money(symbol) + "<extra></extra>"
             ))
-
-    # APLICA layout una sola vez, sin duplicar xaxis/yaxis
     apply_finance_layout(fig, title=title, rangeslider=True)
     return fig
+
 
 
 def chart_dividends_bar(divs_year: pd.Series, title: str, symbol: str):
@@ -457,6 +586,11 @@ class TickerMetrics:
     roe: float           # %
     streak_years: int
     fcf_pos_years: int   # cuenta de años con FCF positivo (hasta 4-5 máx según datos)
+    # --- NUEVOS ---
+    exchange_code: str = ""
+    exchange_name: str = ""
+    country: str = ""
+    currency: str = ""
 
 def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
     t = yf.Ticker(ticker)
@@ -469,70 +603,95 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
     name = info.get("shortName", ticker)
     sector = info.get("sector", "Unknown")
 
-    # Precio
-    hist = t.history(period="1y")
-    price = float(hist["Close"].dropna().iloc[-1]) if not hist.empty else float(info.get("currentPrice", np.nan))
+    # --- NUEVO: datos de cotización ---
+    ex_code  = (info.get("exchange") or "").strip()          # p.ej. 'NYQ'
+    ex_name  = YF_EXCHANGE_MAP.get(ex_code, ex_code or "Unknown")
+    country  = (info.get("country") or "").strip()            # país de la compañía (no siempre = plaza)
+    currency = (info.get("currency") or "").strip()           # divisa de cotización
 
-    # Dividendos
+
+    # Todo el histórico (daily). Si está vacío, intenta 20y; si falla, usa currentPrice
+    hist = t.history(period="max", interval="1d")
+    if hist is None or hist.empty:
+        hist = t.history(period="20y", interval="1d")
+    price = float(hist["Close"].dropna().iloc[-1]) if (hist is not None and not hist.empty) else float(info.get("currentPrice", np.nan))
+
+    # Dividendos crudos y limpios (años completos)
     divs = t.dividends
     if divs is None or divs.empty:
         divs = pd.Series(dtype="float64")
-    by_year = dividends_by_year(divs)
+
+    by_year_raw = dividends_by_year(divs)              # para diagnóstico
+    by_year_clean = dividends_by_year_clean(divs)      # para DGR 'bueno'
+
+    # TTM real
     ttm = dividends_ttm(divs)
-
     rpd = (ttm / price * 100.0) if price and price > 0 else np.nan
-    dgr5 = cagr_from_annual(by_year, years=5)
-    dgr10 = cagr_from_annual(by_year, years=10)
 
-    # Ratios contables (pueden faltar en info)
+    # CAGR 5/10 años (ajustados y crudos)
+    dgr5_raw  = cagr_from_annual(by_year_raw, years=5)
+    dgr10_raw = cagr_from_annual(by_year_raw, years=10)
+    dgr5_adj  = cagr_from_annual(by_year_clean, years=5)
+    dgr10_adj = cagr_from_annual(by_year_clean, years=10)
+
+    # Ratios contables (pueden faltar)
     payout = info.get("payoutRatio", np.nan)
     if isinstance(payout, (int, float)) and pd.notna(payout):
         payout *= 100.0
 
     per_ttm = info.get("trailingPE", np.nan)
-    de_ratio = info.get("debtToEquity", np.nan)  # suele venir como número (p.ej. 80 => 0.8x patrimonio)
+
+    # Deuda/Patrimonio: robustez sobre % vs ratio
+    de_ratio = info.get("debtToEquity", np.nan)
     if isinstance(de_ratio, (int, float)) and pd.notna(de_ratio):
-        de_ratio = float(de_ratio) / 100.0 if de_ratio > 10 else float(de_ratio)  # heurística ligera
+        # Muchos tickers devuelven % (p.ej., 58 -> 0.58x). Si es claramente porcentaje, divide por 100.
+        if de_ratio > 10 and de_ratio < 10000:
+            de_ratio = float(de_ratio) / 100.0
+        else:
+            de_ratio = float(de_ratio)
 
     roe = info.get("returnOnEquity", np.nan)
     if isinstance(roe, (int, float)) and pd.notna(roe) and roe <= 1:
-        roe *= 100.0  # yfinance a menudo da ROE en fracción
+        roe *= 100.0  # yfinance suele darlo en fracción
 
-    # FCF y rachas
-    cf = pd.DataFrame()
+    # Cash-flow anual (orientación columnas=fecha). Aseguramos última columna (más reciente)
     payout_fcf = np.nan
+    fcf_pos_years = 0
+    fcf_series = pd.Series(dtype="float64")
     try:
-        cf = t.cashflow  # anual
+        cf = t.cashflow  # anual, index con 'Free Cash Flow', 'Dividends Paid', ...
+        if cf is not None and not cf.empty:
+            cf_t = cf.copy()
+            # Si columnas son fechas, ordenar por columna ascendente y transponer serie
+            cf_t = cf_t.loc[:, sorted(cf_t.columns)]
+            if "Free Cash Flow" in cf_t.index:
+                fcf_series = cf_t.loc["Free Cash Flow"].dropna()
+                # contar años con FCF positivo
+                fcf_pos_years = int((fcf_series > 0).sum())
+            if "Dividends Paid" in cf_t.index and not fcf_series.empty:
+                div_paid_last = abs(float(cf_t.loc["Dividends Paid"].dropna().iloc[-1]))
+                fcf_last = abs(float(fcf_series.iloc[-1]))
+                if fcf_last > 0:
+                    payout_fcf = (div_paid_last / fcf_last) * 100.0
     except Exception:
         pass
 
-    fcf_pos_years = 0
-    if cf is not None and not cf.empty:
-        cf = cf.copy()
-        if "Free Cash Flow" in cf.index:
-            fcf_series = cf.loc["Free Cash Flow"].dropna()
-            fcf_pos_years = int((fcf_series > 0).sum())
-            if not fcf_series.empty and len(fcf_series) > 0 and "Dividends Paid" in cf.index:
-                div_paid = abs(cf.loc["Dividends Paid"].dropna().iloc[0])
-                fcf_last = abs(fcf_series.iloc[0])
-                if fcf_last > 0:
-                    payout_fcf = (div_paid / fcf_last) * 100
-
-    streak_pay = dividend_streak_years(by_year)
-    streak_growth = dividend_growth_streak(by_year)
+    # Rachas (pagos y aumentos)
+    streak_pay = dividend_streak_years(by_year_raw)
+    streak_growth = dividend_growth_streak(by_year_clean)
 
     # RPD forward
     forward_div = info.get("forwardAnnualDividendRate") or info.get("dividendRate")
     rpd_forward = np.nan
     if forward_div and price:
-        rpd_forward = (forward_div / price) * 100
+        rpd_forward = (forward_div / price) * 100.0
 
     # EV/EBITDA y FCF yield
     ev = info.get("enterpriseValue", np.nan)
     ebitda = info.get("ebitda", np.nan)
     ev_ebitda = ev / ebitda if ev and ebitda and ebitda > 0 else np.nan
     marketcap = info.get("marketCap", np.nan)
-    fcf_yield = (fcf_series.iloc[0] / marketcap * 100) if marketcap and not cf.empty else np.nan
+    fcf_yield = (fcf_series.iloc[-1] / marketcap * 100.0) if (marketcap and not fcf_series.empty) else np.nan
 
     metrics = TickerMetrics(
         ticker=ticker.upper(),
@@ -540,37 +699,52 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
         sector=sector,
         price=price,
         rpd_ttm=float(rpd) if pd.notna(rpd) else np.nan,
-        dgr5=float(dgr5 * 100.0) if pd.notna(dgr5) else np.nan,
-        dgr10=float(dgr10 * 100.0) if pd.notna(dgr10) else np.nan,
+        dgr5=float(dgr5_adj * 100.0) if pd.notna(dgr5_adj) else np.nan,
+        dgr10=float(dgr10_adj * 100.0) if pd.notna(dgr10_adj) else np.nan,
         payout=float(payout) if pd.notna(payout) else np.nan,
         per_ttm=float(per_ttm) if pd.notna(per_ttm) else np.nan,
         de_ratio=float(de_ratio) if pd.notna(de_ratio) else np.nan,
         roe=float(roe) if pd.notna(roe) else np.nan,
         streak_years=streak_pay,
-        fcf_pos_years=fcf_pos_years
+        fcf_pos_years=fcf_pos_years,
+        # --- NUEVOS ---
+        exchange_code=ex_code,
+        exchange_name=ex_name,
+        country=country,
+        currency=currency,
     )
+    # extras para diagnóstico
     metrics.rpd_forward = rpd_forward
     metrics.payout_fcf = payout_fcf
     metrics.ev_ebitda = ev_ebitda
     metrics.fcf_yield = fcf_yield
     metrics.streak_growth = streak_growth
-    return metrics, by_year, hist["Close"] if "Close" in hist else pd.Series(dtype="float64")
+    metrics.dgr5_raw  = float(dgr5_raw * 100.0) if pd.notna(dgr5_raw) else np.nan
+    metrics.dgr10_raw = float(dgr10_raw * 100.0) if pd.notna(dgr10_raw) else np.nan
+
+    price_series = hist["Close"] if (hist is not None and "Close" in hist) else pd.Series(dtype="float64")
+    return metrics, by_year_raw, price_series
+
 
 
 def dividend_growth_streak(series_by_year: pd.Series) -> int:
-    """Años consecutivos con crecimiento del dividendo."""
+    """
+    Años consecutivos (hasta el último) con AUMENTO del DPS anual.
+    """
     if series_by_year is None or series_by_year.empty:
         return 0
     s = series_by_year.dropna().sort_index()
+    years = list(s.index)
+    if len(years) < 2:
+        return 0
+
     streak = 0
-    prev = None
-    for _, val in s.items():
-        if prev is not None:
-            if val > prev:
-                streak += 1
-            else:
-                streak = 0
-        prev = val
+    # contamos desde el final hacia atrás: cada paso exige s[y] > s[y-1]
+    for i in range(len(years)-1, 0, -1):
+        if s.iloc[i] > s.iloc[i-1]:
+            streak += 1
+        else:
+            break
     return streak
 
 
@@ -886,6 +1060,9 @@ Si hay banderas, la recomendación sugiere **pausar** o revisar con detalle.
 
 # =============== UI Streamlit ===============
 
+
+
+
 st.set_page_config(page_title="Chequeo Gregorio por Ticker", layout="centered")
 
 st.sidebar.title("Menú")
@@ -904,6 +1081,14 @@ st.write("Introduce un *ticker* y comprueba si cumple los criterios de **dividen
 with st.sidebar:
     st.header("Parámetros de evaluación")
     default_ticker = st.text_input("Ticker", value="JNJ").strip()
+    # rango = st.selectbox(
+    #     "Rango de precios a mostrar",
+    #     ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"],
+    #     index=0
+    # )
+    # agg = st.selectbox("Agrupar (para gráficos largos)", ["Diario", "Semanal", "Mensual"], index=0)
+    
+    
     sector_override = st.selectbox(
         "Forzar sector (opcional)",
         options=["(auto)", "Consumer Defensive", "Healthcare", "Utilities", "Communication Services",
@@ -912,146 +1097,205 @@ with st.sidebar:
     )
     run_btn = st.button("Evaluar")
 
-
+# === Carga de datos SOLO cuando pulsas Evaluar (se guarda en session_state) ===
 if run_btn and default_ticker:
     try:
+        # Si usas cache (opcional), define antes _cached_fetch; si no, usa fetch_metrics directamente
+        # metrics, divs_year, price_series = _cached_fetch(default_ticker)
         metrics, divs_year, price_series = fetch_metrics(default_ticker)
+
         if sector_override != "(auto)":
             metrics.sector = sector_override
 
-        rules = rules_for_sector(metrics.sector)
-        checks = evaluate(metrics, rules)
+        # Guarda todo lo necesario en session_state
+        st.session_state.metrics = metrics
+        st.session_state.divs_year = divs_year
+        st.session_state.price_series = price_series
 
-        st.subheader(f"{metrics.ticker} — {metrics.name}")
-        st.caption(f"Sector: **{metrics.sector}** | Precio: **{metrics.price:.2f}**")
+        # Precalcula reglas y checks y guárdalos (para no recalcular al mover los selectores)
+        st.session_state.rules = rules_for_sector(metrics.sector)
+        st.session_state.checks = evaluate(metrics, st.session_state.rules)
 
-        # Tarjetas de métricas
-        col1, col2, col3 = st.columns(3)
-        col1.metric("RPD TTM", f"{metrics.rpd_ttm:,.2f} %")
-        col2.metric("DGR 5 años", f"{metrics.dgr5:,.2f} %")
-        col3.metric("DGR 10 años", f"{metrics.dgr10:,.2f} %")
-
-        col4, col5, col6 = st.columns(3)
-        col4.metric("Payout", f"{metrics.payout:,.2f} %" if not pd.isna(metrics.payout) else "s/d")
-        col5.metric("PER (ttm)", f"{metrics.per_ttm:,.2f}" if not pd.isna(metrics.per_ttm) else "s/d")
-        col6.metric("Deuda/Patrimonio", f"{metrics.de_ratio:,.2f} x" if not pd.isna(metrics.de_ratio) else "s/d")
-
-        col7, col8 = st.columns(2)
-        col7.metric("ROE", f"{metrics.roe:,.2f} %" if not pd.isna(metrics.roe) else "s/d")
-        col8.metric("Racha dividendos", f"{metrics.streak_years} años")
-        
-        col_ev, col_fcf = st.columns(2)
-        ev_eb = getattr(metrics, "ev_ebitda", np.nan)
-        fcf_y = getattr(metrics, "fcf_yield", np.nan)
-        col_ev.metric("EV/EBITDA", f"{ev_eb:,.2f} x" if pd.notna(ev_eb) else "s/d")
-        col_fcf.metric("FCF Yield", f"{fcf_y:,.2f} %" if pd.notna(fcf_y) else "s/d")
-        
-        # También RPD forward si existe:
-        if pd.notna(getattr(metrics, "rpd_forward", np.nan)):
-            st.metric("RPD Forward", f"{metrics.rpd_forward:,.2f} %")
-
-        st.markdown("---")
-        st.subheader("Veredicto por criterios (según sector)")
-
-        def verdict_icon(cr: CheckResult) -> str:
-            if not cr.ok and cr.borderline:
-                return "⚠️"
-            return "✅" if cr.ok else "❌"
-
-        table = []
-        for k, v in checks.items():
-            table.append({
-                "Criterio": k,
-                "Resultado": v["icon"],
-                "Valor": v["msg"],
-                "Intervalo recomendado": v["range"]
-            })
-        st.table(pd.DataFrame(table))
-
-        # === Datos de contexto para formato ===
-        # 'info' lo obtienes en fetch_metrics con yf.Ticker(...).info — si no lo devuelves, vuelve a pedirlo aquí
+        # Moneda para hovers/formatos
         t = yf.Ticker(metrics.ticker)
         info_local = {}
         try:
             info_local = t.info or {}
         except Exception:
             pass
-        ccy_symbol = _ccy_symbol_from_info(info_local, "$")
-        
-        # === Gráfico dividendos anuales (bar) ===
-        st.subheader("Histórico de dividendos anuales")
-        if not divs_year.empty:
-            fig_divs = chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol)
-            st.plotly_chart(fig_divs, use_container_width=True, config={"displaylogo": False})
-        else:
-            st.info("Sin histórico de dividendos para mostrar.")
-        
-        # === Gráfico precio (últimos 12 meses o el rango que tengas) ===
-        st.subheader("Precio")
-        if price_series is not None and not price_series.empty:
-            fig_price = chart_price_line(price_series, "Precio (con MM20 / MM50)", ccy_symbol)
-            st.plotly_chart(fig_price, use_container_width=True, config={"displaylogo": False})
-        else:
-            st.info("Sin serie de precios para mostrar.")
-
-
-        # Ayuda: mostrar reglas actuales
-        st.markdown("---")
-        st.subheader("Umbrales usados (según sector)")
-        rules_df = pd.DataFrame({
-            "RPD min %": [rules.rpd_min],
-            "RPD max %": [rules.rpd_max],
-            "DGR 5a min %": [rules.dgr5_min],
-            "Payout % (min-máx)": [f"{rules.payout_min} - {rules.payout_max}"],
-            "PER (mín-máx)": [f"{rules.per_min} - {rules.per_max}"],
-            "Deuda/Patrimonio máx (x)": [rules.de_max],
-            "ROE min %": [rules.roe_min],
-            "Racha dividendos min (años)": [rules.streak_min],
-        })
-        st.table(rules_df)
-        
-        flags = red_flags(metrics)
-        
-        total_score, breakdown, details = score_company(metrics, rules)
-        
-        st.plotly_chart(chart_score_breakdown(breakdown), use_container_width=True, config={"displaylogo": False})
-        
-        rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
-        
-        st.markdown("---")
-        st.subheader("Puntuación compuesta (estilo Gregorio)")
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Score total", f"{total_score:.0f}/100")
-        c2.metric("Dividendo", f"{breakdown['Dividendo']:.0f}")
-        c3.metric("Solidez", f"{breakdown['Solidez']:.0f}")
-        c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
-        c5.metric("Historial", f"{breakdown['Historial']:.0f}")
-        
-        with st.expander("Ver detalle del cálculo (componentes y pesos)"):
-            for bloque in ["Dividendo", "Solidez", "Valoración", "Historial"]:
-                st.markdown(f"**{bloque}**")
-                st.table(pd.DataFrame(details[bloque])[["Métrica","Valor","Rango","Peso bloq.","Sub-score"]])
-
-
-        if rec_icon == "✅":
-            st.success(f"{rec_icon} {rec_text}")
-        elif rec_icon == "⚠️":
-            st.warning(f"{rec_icon} {rec_text}")
-        else:
-            st.error(f"{rec_icon} {rec_text}")
-        
-        
-        if flags:
-            st.write("**Banderas rojas detectadas:**")
-            for f in flags:
-                st.write(f"- {f}")
-
-
-
-        st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
+        st.session_state.ccy_symbol = _ccy_symbol_from_info(info_local, "$")
 
     except Exception as e:
         st.error(f"Error al evaluar {default_ticker}: {e}")
         st.exception(e)
-else:
+
+# ===== RENDER persistente sin necesidad de volver a pulsar "Evaluar" =====
+if "metrics" not in st.session_state or st.session_state.metrics is None:
     st.write("Introduce un ticker y pulsa **Evaluar**.")
+    st.stop()
+
+metrics     = st.session_state.metrics
+divs_year   = st.session_state.divs_year
+price_series= st.session_state.price_series
+ccy_symbol  = st.session_state.ccy_symbol
+rules       = st.session_state.get("rules", rules_for_sector(metrics.sector))
+checks      = st.session_state.get("checks", evaluate(metrics, rules))
+
+# Cabecera
+st.subheader(f"{metrics.ticker} — {metrics.name}")
+cotiza_txt = f"Cotiza en: **{metrics.exchange_name or '—'}**"
+if metrics.country:
+    cotiza_txt += f" ({metrics.country})"
+if metrics.currency:
+    cotiza_txt += f" · {metrics.currency}"
+st.caption(f"Sector: **{metrics.sector}** | {cotiza_txt} | Precio: **{metrics.price:.2f}**")
+st.caption(f"Plaza: {metrics.exchange_code or '--'} · Divisa: {metrics.currency or '--'}")
+
+# Tarjetas de métricas
+col1, col2, col3 = st.columns(3)
+col1.metric("RPD TTM", f"{metrics.rpd_ttm:,.2f} %")
+col2.metric("DGR 5 años", f"{metrics.dgr5:,.2f} %")
+col3.metric("DGR 10 años", f"{metrics.dgr10:,.2f} %")
+
+col4, col5, col6 = st.columns(3)
+col4.metric("Payout", f"{metrics.payout:,.2f} %" if not pd.isna(metrics.payout) else "s/d")
+col5.metric("PER (ttm)", f"{metrics.per_ttm:,.2f}" if not pd.isna(metrics.per_ttm) else "s/d")
+col6.metric("Deuda/Patrimonio", f"{metrics.de_ratio:,.2f} x" if not pd.isna(metrics.de_ratio) else "s/d")
+
+col7, col8 = st.columns(2)
+col7.metric("ROE", f"{metrics.roe:,.2f} %" if not pd.isna(metrics.roe) else "s/d")
+col8.metric("Racha dividendos", f"{metrics.streak_years} años")
+
+col_ev, col_fcf = st.columns(2)
+ev_eb = getattr(metrics, "ev_ebitda", np.nan)
+fcf_y = getattr(metrics, "fcf_yield", np.nan)
+col_ev.metric("EV/EBITDA", f"{ev_eb:,.2f} x" if pd.notna(ev_eb) else "s/d")
+col_fcf.metric("FCF Yield", f"{fcf_y:,.2f} %" if pd.notna(fcf_y) else "s/d")
+
+# RPD forward si existe
+if pd.notna(getattr(metrics, "rpd_forward", np.nan)):
+    st.metric("RPD Forward", f"{metrics.rpd_forward:,.2f} %")
+
+# Detalle DGR (crudo vs ajustado)
+with st.expander("Detalle DGR (crudo vs ajustado)"):
+    st.write(f"DGR 5a (ajustado): **{metrics.dgr5:.2f}%**  | DGR 5a (crudo): {getattr(metrics, 'dgr5_raw', float('nan')):.2f}%")
+    st.write(f"DGR 10a (ajustado): **{metrics.dgr10:.2f}%** | DGR 10a (crudo): {getattr(metrics, 'dgr10_raw', float('nan')):.2f}%")
+
+st.markdown("---")
+st.subheader("Veredicto por criterios (según sector)")
+table = []
+for k, v in checks.items():
+    table.append({
+        "Criterio": k,
+        "Resultado": v["icon"],
+        "Valor": v["msg"],
+        "Intervalo recomendado": v["range"]
+    })
+st.table(pd.DataFrame(table))
+
+# === Gráfico dividendos anuales (bar) ===
+st.subheader("Histórico de dividendos anuales")
+if divs_year is not None and not divs_year.empty:
+    fig_divs = chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol)
+    st.plotly_chart(fig_divs, use_container_width=True, config={"displaylogo": False})
+else:
+    st.info("Sin histórico de dividendos para mostrar.")
+
+# === Controles y gráfico de precio (reactivo SIN evaluar) ===
+# Helper si aún no lo tienes:
+def _slice_price_series(s: pd.Series, rango: str, agg: str) -> pd.Series:
+    if s is None or s.empty:
+        return s
+    s = s.dropna()
+    end = s.index.max()
+    # Rango
+    if rango == "YTD":
+        start = pd.Timestamp(year=end.year, month=1, day=1)
+    elif rango == "1 año":
+        start = end - pd.Timedelta(days=365)
+    elif rango == "3 años":
+        start = end - pd.DateOffset(years=3)
+    elif rango == "5 años":
+        start = end - pd.DateOffset(years=5)
+    elif rango == "10 años":
+        start = end - pd.DateOffset(years=10)
+    elif rango == "20 años":
+        start = end - pd.DateOffset(years=20)
+    else:
+        start = s.index.min()
+    s = s[(s.index >= start) & (s.index <= end)]
+    # Agregación
+    if agg == "Semanal":
+        s = s.resample("W-FRI").last()
+    elif agg == "Mensual":
+        s = s.resample("M").last()
+    return s
+
+st.subheader("Precio")
+if price_series is not None and not price_series.empty:
+    c1, c2 = st.columns(2)
+    rango = c1.selectbox(
+        "Rango",
+        ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"],
+        index=0, key="rango_price"
+    )
+    agg = c2.selectbox(
+        "Agrupar",
+        ["Diario", "Semanal", "Mensual"],
+        index=0, key="agg_price"
+    )
+
+    ps = _slice_price_series(price_series, rango, agg)
+    title = f"Precio ({rango.lower()}, {agg.lower()})"
+    fig_price = chart_price_line(ps, title, ccy_symbol)
+    st.plotly_chart(fig_price, use_container_width=True, config={"displaylogo": False})
+else:
+    st.info("Sin serie de precios para mostrar.")
+
+# Ayuda: mostrar reglas actuales
+st.markdown("---")
+st.subheader("Umbrales usados (según sector)")
+rules_df = pd.DataFrame({
+    "RPD min %": [rules.rpd_min],
+    "RPD max %": [rules.rpd_max],
+    "DGR 5a min %": [rules.dgr5_min],
+    "Payout % (min-máx)": [f"{rules.payout_min} - {rules.payout_max}"],
+    "PER (mín-máx)": [f"{rules.per_min} - {rules.per_max}"],
+    "Deuda/Patrimonio máx (x)": [rules.de_max],
+    "ROE min %": [rules.roe_min],
+    "Racha dividendos min (años)": [rules.streak_min],
+})
+st.table(rules_df)
+
+flags = red_flags(metrics)
+total_score, breakdown, details = score_company(metrics, rules)
+st.plotly_chart(chart_score_breakdown(breakdown), use_container_width=True, config={"displaylogo": False})
+
+rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
+st.markdown("---")
+st.subheader("Puntuación compuesta (estilo Gregorio)")
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Score total", f"{total_score:.0f}/100")
+c2.metric("Dividendo", f"{breakdown['Dividendo']:.0f}")
+c3.metric("Solidez", f"{breakdown['Solidez']:.0f}")
+c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
+c5.metric("Historial", f"{breakdown['Historial']:.0f}")
+
+with st.expander("Ver detalle del cálculo (componentes y pesos)"):
+    for bloque in ["Dividendo", "Solidez", "Valoración", "Historial"]:
+        st.markdown(f"**{bloque}**")
+        st.table(pd.DataFrame(details[bloque])[["Métrica","Valor","Rango","Peso bloq.","Sub-score"]])
+
+if rec_icon == "✅":
+    st.success(f"{rec_icon} {rec_text}")
+elif rec_icon == "⚠️":
+    st.warning(f"{rec_icon} {rec_text}")
+else:
+    st.error(f"{rec_icon} {rec_text}")
+
+if flags:
+    st.write("**Banderas rojas detectadas:**")
+    for f in flags:
+        st.write(f"- {f}")
+
+st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
