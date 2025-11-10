@@ -19,6 +19,44 @@ import numpy as np
 import yfinance as yf
 import matplotlib.pyplot as plt
 
+import plotly.graph_objects as go
+import plotly.express as px
+
+
+# ========= Estilo Plotly "finance clean" =========
+FINANCE_LAYOUT = dict(
+    template="plotly_white",
+    font=dict(family="Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif", size=13),
+    hovermode="x unified",
+    xaxis=dict(
+        showspikes=True, spikemode="across", spikesnap="cursor", spikedash="solid", spikethickness=1,
+        showgrid=True, gridcolor="rgba(0,0,0,0.06)", zeroline=False
+    ),
+    yaxis=dict(
+        showspikes=True, spikemode="toaxis+across", spikedash="solid", spikethickness=1,
+        showgrid=True, gridcolor="rgba(0,0,0,0.06)", zeroline=False
+    ),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(l=50, r=25, t=60, b=40),
+)
+
+_CCY_SYMBOL = {
+    "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CHF": "Fr", "CAD": "$", "AUD": "$"
+}
+
+def _ccy_symbol_from_info(info: dict, fallback: str = "$") -> str:
+    code = (info or {}).get("currency", None)
+    return _CCY_SYMBOL.get(code, fallback)
+
+def _fmt_hover_money(symbol: str) -> str:
+    # Devuelve un template para Plotly con el valor Y formateado con miles y 2 decimales.
+    # Ojo: se escapan llaves con {{ }} para que Python no intente interpolar 'y'.
+    return f"{symbol} %{{y:,.2f}}"
+
+
+
+
+
 # =============== Utilidades de tiempo y series ===============
 
 def to_naive_utc_index(idx) -> pd.DatetimeIndex:
@@ -313,6 +351,51 @@ def recommendation(total_score, flags):
     return "Mantenerse al margen", "❌", []
 
 
+def chart_price_line(price_series: pd.Series, title: str, symbol: str):
+    s = price_series.dropna()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=s.index, y=s.values, mode="lines", name="Precio",
+        hovertemplate=_fmt_hover_money(symbol) + "<extra></extra>"
+    ))
+    # Medias móviles
+    for win, name in [(20, "MM20"), (50, "MM50")]:
+        if len(s) >= win:
+            ma = s.rolling(win).mean()
+            fig.add_trace(go.Scatter(
+                x=ma.index, y=ma.values, mode="lines", name=name, opacity=0.65,
+                hovertemplate=_fmt_hover_money(symbol) + "<extra></extra>"
+            ))
+
+    # APLICA layout una sola vez, sin duplicar xaxis/yaxis
+    apply_finance_layout(fig, title=title, rangeslider=True)
+    return fig
+
+
+def chart_dividends_bar(divs_year: pd.Series, title: str, symbol: str):
+    s = divs_year.sort_index()
+    fig = go.Figure(go.Bar(
+        x=s.index.astype(str), y=s.values, name="Dividendo anual",
+        hovertemplate=_fmt_hover_money(symbol) + "<extra></extra>"
+    ))
+    apply_finance_layout(fig, title=title, rangeslider=False)
+    return fig
+
+
+
+def apply_finance_layout(fig, title=None, rangeslider=False):
+    # Copia superficial del layout base
+    layout = dict(FINANCE_LAYOUT)
+    if title:
+        layout["title"] = title
+    if rangeslider:
+        # añade rangeslider sin duplicar claves
+        xa = dict(layout.get("xaxis", {}))
+        xa["rangeslider"] = dict(visible=True)
+        layout["xaxis"] = xa
+    fig.update_layout(**layout)
+
+
 # =============== Reglas por sector (umbrales de Gregorio) ===============
 
 @dataclass
@@ -555,6 +638,27 @@ def evaluate(metrics: TickerMetrics, rules: SectorRules) -> Dict[str, Dict]:
 
     return results
 
+def chart_score_breakdown(breakdown: dict):
+    cats = list(breakdown.keys())
+    vals = [breakdown[k] for k in cats]
+
+    fig = go.Figure(go.Bar(
+        x=vals, y=cats, orientation="h",
+        hovertemplate="%{x:.0f} / 100<extra></extra>"
+    ))
+
+    # Aplica layout financiero base (una sola vez)
+    apply_finance_layout(fig, title="Desglose del score", rangeslider=False)
+
+    # Ajustes específicos de ejes SIN duplicar claves
+    fig.update_xaxes(range=[0, 100])  # rango 0–100 para el score
+    # (opcional) quitar decimales en ticks
+    fig.update_xaxes(tickmode="linear", dtick=10)
+
+    # Altura compacta
+    fig.update_layout(height=280)
+
+    return fig
 
 
 
@@ -864,25 +968,32 @@ if run_btn and default_ticker:
             })
         st.table(pd.DataFrame(table))
 
-        # Gráfico: dividendos anuales y precio (escala simple)
-        st.subheader("Histórico de dividendos anuales y precio")
-        fig1 = plt.figure()
-        ax = fig1.add_subplot(111)
+        # === Datos de contexto para formato ===
+        # 'info' lo obtienes en fetch_metrics con yf.Ticker(...).info — si no lo devuelves, vuelve a pedirlo aquí
+        t = yf.Ticker(metrics.ticker)
+        info_local = {}
+        try:
+            info_local = t.info or {}
+        except Exception:
+            pass
+        ccy_symbol = _ccy_symbol_from_info(info_local, "$")
+        
+        # === Gráfico dividendos anuales (bar) ===
+        st.subheader("Histórico de dividendos anuales")
         if not divs_year.empty:
-            divs_year.sort_index().plot(ax=ax)
-        ax.set_title("Dividendos por año")
-        ax.set_xlabel("Año")
-        ax.set_ylabel("Dividendo total por acción")
-        st.pyplot(fig1)
-
+            fig_divs = chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol)
+            st.plotly_chart(fig_divs, use_container_width=True, config={"displaylogo": False})
+        else:
+            st.info("Sin histórico de dividendos para mostrar.")
+        
+        # === Gráfico precio (últimos 12 meses o el rango que tengas) ===
+        st.subheader("Precio")
         if price_series is not None and not price_series.empty:
-            fig2 = plt.figure()
-            ax2 = fig2.add_subplot(111)
-            price_series.dropna().plot(ax=ax2)
-            ax2.set_title("Precio (últimos 12 meses)")
-            ax2.set_xlabel("Fecha")
-            ax2.set_ylabel("Precio")
-            st.pyplot(fig2)
+            fig_price = chart_price_line(price_series, "Precio (con MM20 / MM50)", ccy_symbol)
+            st.plotly_chart(fig_price, use_container_width=True, config={"displaylogo": False})
+        else:
+            st.info("Sin serie de precios para mostrar.")
+
 
         # Ayuda: mostrar reglas actuales
         st.markdown("---")
@@ -902,6 +1013,9 @@ if run_btn and default_ticker:
         flags = red_flags(metrics)
         
         total_score, breakdown, details = score_company(metrics, rules)
+        
+        st.plotly_chart(chart_score_breakdown(breakdown), use_container_width=True, config={"displaylogo": False})
+        
         rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
         
         st.markdown("---")
