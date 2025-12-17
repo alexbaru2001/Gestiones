@@ -1,0 +1,26 @@
+{
+  "objetivos": [
+    {
+      "nombre": "Ropa",
+      "etiquetas": [
+        "ropa"
+      ],
+      "porcentaje_ingreso": 0.02,
+      "saldo_inicial": 0.0,
+      "objetivo_total": 300.0,
+      "horizonte_meses": 12,
+      "mes_inicio": "2025-08"
+    },
+    {
+      "nombre": "Coche",
+      "etiquetas": [
+        "coche"
+      ],
+      "porcentaje_ingreso": 0.08,
+      "saldo_inicial": 0.0,
+      "objetivo_total": 1000.0,
+      "horizonte_meses": 12,
+      "mes_inicio": "2025-07"
+    }
+  ]
+}
