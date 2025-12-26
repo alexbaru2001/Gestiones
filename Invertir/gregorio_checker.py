@@ -28,6 +28,20 @@ import plotly.express as px
 import re, urllib.request
 
 
+def get_groq_api_key() -> str:
+    """
+    Obtiene la clave de Groq desde:
+    1) .streamlit/secrets.toml
+    2) Variable de entorno GROQ_API_KEY
+    """
+    try:
+        return st.secrets["groq_api_key"]
+        
+    except Exception:
+        return os.getenv("groq_api_key", "").strip()
+
+groq_api_key = get_groq_api_key()
+
 # --- Estado de sesión para no re-ejecutar fetch al cambiar controles de gráfico ---
 if "metrics" not in st.session_state:
     st.session_state.metrics = None
@@ -295,6 +309,22 @@ def _fmt_hover_money(symbol: str) -> str:
     return f"{symbol} %{{y:,.2f}}"
 
 
+def dgr_not_reliable(by_year_clean: pd.Series, by_year_raw: pd.Series) -> bool:
+    # Muy pocos años completos limpios
+    if by_year_clean is None or len(by_year_clean) < 5:
+        return True
+
+    # Demasiada diferencia entre crudo y limpio → dividendos irregulares / scrip
+    try:
+        dgr_clean_5 = cagr_from_annual(by_year_clean, 5)
+        dgr_raw_5   = cagr_from_annual(by_year_raw, 5)
+        if pd.notna(dgr_clean_5) and pd.notna(dgr_raw_5):
+            if abs(dgr_clean_5 - dgr_raw_5) > 0.05:  # >5 puntos porcentuales
+                return True
+    except Exception:
+        pass
+
+    return False
 
 
 
@@ -536,7 +566,11 @@ def score_company(metrics, rules):
         "Sub-score": f"{sc_rpd:.0f}"
     })
 
-    sc_dgr5 = _band_score(metrics.dgr5, rules.dgr5_min, None)
+    if not getattr(metrics, "dgr_reliable", True):
+        sc_dgr5 = 50.0   # crecimiento bajo/irregular, pero no 0
+    else:
+        sc_dgr5 = _band_score(metrics.dgr5, rules.dgr5_min, None)
+
     details["Dividendo"].append({
         "Métrica": "DGR 5 años",
         "Valor": "s/d" if pd.isna(metrics.dgr5) else f"{metrics.dgr5:.2f} %",
@@ -931,6 +965,8 @@ def fetch_metrics(ticker: str) -> Tuple[TickerMetrics, pd.Series, pd.Series]:
     metrics.streak_growth = streak_growth
     metrics.dgr5_raw  = float(dgr5_raw * 100.0) if pd.notna(dgr5_raw) else np.nan
     metrics.dgr10_raw = float(dgr10_raw * 100.0) if pd.notna(dgr10_raw) else np.nan
+    metrics.dgr_reliable = not dgr_not_reliable(by_year_clean, by_year_raw)
+
 
     price_series = hist["Close"] if (hist is not None and "Close" in hist) else pd.Series(dtype="float64")
     return metrics, by_year_raw, price_series
@@ -1010,6 +1046,13 @@ def evaluate(metrics: TickerMetrics, rules: SectorRules) -> Dict[str, Dict]:
         "ROE (%)": (metrics.roe, rules.roe_min, None, "%"),
         "Racha dividendos (años)": (metrics.streak_years, rules.streak_min, None, "a"),
     }.items():
+        if k.startswith("DGR") and not metrics.dgr_reliable:
+            results[k] = {
+                "icon": "⚠️",
+                "msg": "No fiable (estructura de dividendo)",
+                "range": ranges[k]
+            }
+            continue
         if pd.isna(val):
             results[k] = {"icon": "❌", "msg": "Sin datos", "range": ranges[k]}
         elif k.startswith("DGR") and val < 0:
@@ -1262,8 +1305,30 @@ Si hay banderas, la recomendación sugiere **pausar** o revisar con detalle.
 
 
 
-
-
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_all_metrics(tickers_tuple):
+    tickers = list(tickers_tuple)
+    results = []
+    for tk in tickers:
+        try:
+            m, divs, _ = fetch_metrics(tk)
+            rules = rules_for_sector(m.sector)
+            total_score, breakdown, details = score_company(m, rules)
+            results.append({
+                "Ticker": m.ticker,
+                "Nombre": m.name,
+                "Sector": m.sector,
+                "RPD (%)": m.rpd_ttm,
+                "DGR 5a (%)": m.dgr5,
+                "Payout (%)": m.payout,
+                "PER": m.per_ttm,
+                "Deuda/Patrimonio": m.de_ratio,
+                "ROE (%)": m.roe,
+                "Score total": total_score,
+            })
+        except Exception:
+            results.append({"Ticker": tk, "Nombre": "ERROR", "Sector": "", "Score total": np.nan})
+    return pd.DataFrame(results)
 
 
 
@@ -1272,59 +1337,47 @@ Si hay banderas, la recomendación sugiere **pausar** o revisar con detalle.
 
 st.set_page_config(page_title="Chequeo Gregorio por Ticker", layout="centered")
 
-
-<<<<<<< HEAD
-
-st.set_page_config(page_title="Chequeo Gregorio por Ticker", layout="centered")
-
-st.sidebar.title("Menú")
-vista = st.sidebar.radio("Vista", ["Evaluación", "Anexo de ratios", "Anexo: Scoring"])
-if vista == "Anexo de ratios":
-    render_anexo()
-    st.stop()
-if vista == "Anexo: Scoring":
-    render_anexo_scoring()
-    st.stop()
-
-# === Vista Evaluación ===
-st.title("Chequeo estilo Gregorio 🧱📈")
-st.write("Introduce un *ticker* y comprueba si cumple los criterios de **dividendos crecientes** ajustados por sector.")
-
-with st.sidebar:
-    st.header("Parámetros de evaluación")
-    default_ticker = st.text_input("Ticker", value="JNJ").strip()
-    # rango = st.selectbox(
-    #     "Rango de precios a mostrar",
-    #     ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"],
-    #     index=0
-    # )
-    # agg = st.selectbox("Agrupar (para gráficos largos)", ["Diario", "Semanal", "Mensual"], index=0)
-=======
-# ========= Estado global de navegación =========
+# ========= Estado global =========
 if "mode" not in st.session_state:
-    st.session_state.mode = "individual"   # "individual" o "ranking"
-
+    st.session_state.mode = "individual"
 if "active_ticker" not in st.session_state:
     st.session_state.active_ticker = "JNJ"
-    
-    
-# ========= Navegación principal =========
+if "autoload" not in st.session_state:
+    st.session_state.autoload = False
+if "last_loaded_ticker" not in st.session_state:
+    st.session_state.last_loaded_ticker = None
+
+# Datos cacheados en sesión
+if "metrics" not in st.session_state:
+    st.session_state.metrics = None
+if "divs_year" not in st.session_state:
+    st.session_state.divs_year = None
+if "price_series" not in st.session_state:
+    st.session_state.price_series = None
+if "rules" not in st.session_state:
+    st.session_state.rules = None
+if "checks" not in st.session_state:
+    st.session_state.checks = None
+if "ccy_symbol" not in st.session_state:
+    st.session_state.ccy_symbol = "$"
+
+# ========= Navegación =========
+st.title("Chequeo estilo Gregorio")
 mode_label = st.radio(
     "Modo",
     ["🔍 Análisis individual", "📊 Ranking / Screening"],
     horizontal=True,
     index=0 if st.session_state.mode == "individual" else 1,
 )
-
 st.session_state.mode = "individual" if mode_label.startswith("🔍") else "ranking"
 st.markdown("---")
+
 
 # =========================
 # 🔍 ANÁLISIS INDIVIDUAL
 # =========================
 if st.session_state.mode == "individual":
 
-    # --- Sidebar SOLO aquí ---
     st.sidebar.title("Menú")
     vista = st.sidebar.radio("Vista", ["Evaluación", "Anexo de ratios", "Anexo: Scoring"])
 
@@ -1337,209 +1390,67 @@ if st.session_state.mode == "individual":
 
     with st.sidebar:
         st.header("Parámetros de evaluación")
-        ticker_input = st.text_input("Ticker", value=st.session_state.active_ticker, key="ticker_input").strip()
-
+        ticker_input = st.text_input("Ticker", value=st.session_state.active_ticker, key="ticker_input").strip().upper()
 
         sector_override = st.selectbox(
             "Forzar sector (opcional)",
             options=["(auto)", "Consumer Defensive", "Healthcare", "Utilities", "Communication Services",
                      "Industrials", "Technology", "Energy", "Financial Services", "Consumer Cyclical"],
-            index=0
+            index=0,
+            key="sector_override"
         )
 
-        run_btn = st.button("Evaluar")
+        run_btn = st.button("Evaluar", key="btn_eval")
 
-    # Si pulsas evaluar -> cambia ticker activo
-    if run_btn and ticker_input:
-        st.session_state.active_ticker = ticker_input.upper()
-
-    default_ticker = st.session_state.active_ticker
-
-
-    # --- Autoload: si vienes del ranking, calcula sin pulsar Evaluar ---
-    if "autoload" not in st.session_state:
-        st.session_state.autoload = False
->>>>>>> 00a8480563115e48cbfd0e0fd930ace9e589abd5
-    
-    if "last_loaded_ticker" not in st.session_state:
-        st.session_state.last_loaded_ticker = None
-
-    # =========================
-    # AQUÍ VA TU BLOQUE ACTUAL
-    # de: "Carga de datos SOLO..."
-    # y todo el render persistente
-    # =========================
-
-    # (IMPORTANTE) añade esta línea antes del bloque "Carga de datos SOLO..."
-    # para que no falle si no se ha pulsado Evaluar:
-    if "metrics" not in st.session_state:
-        st.session_state.metrics = None
-
-    # ---- Tu bloque existente empieza aquí ----
-    # === Carga de datos: por botón o por autoload (vengo del ranking) ===
+    # ¿Hay que cargar datos?
     need_load = False
-    
-<<<<<<< HEAD
-    sector_override = st.selectbox(
-        "Forzar sector (opcional)",
-        options=["(auto)", "Consumer Defensive", "Healthcare", "Utilities", "Communication Services",
-                 "Industrials", "Technology", "Energy", "Financial Services", "Consumer Cyclical"],
-        index=0
-    )
-    run_btn = st.button("Evaluar")
-
-# === Carga de datos SOLO cuando pulsas Evaluar (se guarda en session_state) ===
-if run_btn and default_ticker:
-    try:
-        # Si usas cache (opcional), define antes _cached_fetch; si no, usa fetch_metrics directamente
-        # metrics, divs_year, price_series = _cached_fetch(default_ticker)
-        metrics, divs_year, price_series = fetch_metrics(default_ticker)
-
-        if sector_override != "(auto)":
-            metrics.sector = sector_override
-
-        # Guarda todo lo necesario en session_state
-        st.session_state.metrics = metrics
-        st.session_state.divs_year = divs_year
-        st.session_state.price_series = price_series
-
-        # Precalcula reglas y checks y guárdalos (para no recalcular al mover los selectores)
-        st.session_state.rules = rules_for_sector(metrics.sector)
-        st.session_state.checks = evaluate(metrics, st.session_state.rules)
-
-        # Moneda para hovers/formatos
-        t = yf.Ticker(metrics.ticker)
-        info_local = {}
-        try:
-            info_local = t.info or {}
-        except Exception:
-            pass
-        st.session_state.ccy_symbol = _ccy_symbol_from_info(info_local, "$")
-
-    except Exception as e:
-        st.error(f"Error al evaluar {default_ticker}: {e}")
-        st.exception(e)
-
-# ===== RENDER persistente sin necesidad de volver a pulsar "Evaluar" =====
-if "metrics" not in st.session_state or st.session_state.metrics is None:
-    st.write("Introduce un ticker y pulsa **Evaluar**.")
-    st.stop()
-
-metrics     = st.session_state.metrics
-divs_year   = st.session_state.divs_year
-price_series= st.session_state.price_series
-ccy_symbol  = st.session_state.ccy_symbol
-rules       = st.session_state.get("rules", rules_for_sector(metrics.sector))
-checks      = st.session_state.get("checks", evaluate(metrics, rules))
-
-# Cabecera
-st.subheader(f"{metrics.ticker} — {metrics.name}")
-cotiza_txt = f"Cotiza en: **{metrics.exchange_name or '—'}**"
-if metrics.country:
-    cotiza_txt += f" ({metrics.country})"
-if metrics.currency:
-    cotiza_txt += f" · {metrics.currency}"
-st.caption(f"Sector: **{metrics.sector}** | {cotiza_txt} | Precio: **{metrics.price:.2f}**")
-st.caption(f"Plaza: {metrics.exchange_code or '--'} · Divisa: {metrics.currency or '--'}")
-
-# Tarjetas de métricas
-col1, col2, col3 = st.columns(3)
-col1.metric("RPD TTM", f"{metrics.rpd_ttm:,.2f} %")
-col2.metric("DGR 5 años", f"{metrics.dgr5:,.2f} %")
-col3.metric("DGR 10 años", f"{metrics.dgr10:,.2f} %")
-
-col4, col5, col6 = st.columns(3)
-col4.metric("Payout", f"{metrics.payout:,.2f} %" if not pd.isna(metrics.payout) else "s/d")
-col5.metric("PER (ttm)", f"{metrics.per_ttm:,.2f}" if not pd.isna(metrics.per_ttm) else "s/d")
-col6.metric("Deuda/Patrimonio", f"{metrics.de_ratio:,.2f} x" if not pd.isna(metrics.de_ratio) else "s/d")
-
-col7, col8 = st.columns(2)
-col7.metric("ROE", f"{metrics.roe:,.2f} %" if not pd.isna(metrics.roe) else "s/d")
-col8.metric("Racha dividendos", f"{metrics.streak_years} años")
-
-col_ev, col_fcf = st.columns(2)
-ev_eb = getattr(metrics, "ev_ebitda", np.nan)
-fcf_y = getattr(metrics, "fcf_yield", np.nan)
-col_ev.metric("EV/EBITDA", f"{ev_eb:,.2f} x" if pd.notna(ev_eb) else "s/d")
-col_fcf.metric("FCF Yield", f"{fcf_y:,.2f} %" if pd.notna(fcf_y) else "s/d")
-
-# RPD forward si existe
-if pd.notna(getattr(metrics, "rpd_forward", np.nan)):
-    st.metric("RPD Forward", f"{metrics.rpd_forward:,.2f} %")
-
-# Detalle DGR (crudo vs ajustado)
-with st.expander("Detalle DGR (crudo vs ajustado)"):
-    st.write(f"DGR 5a (ajustado): **{metrics.dgr5:.2f}%**  | DGR 5a (crudo): {getattr(metrics, 'dgr5_raw', float('nan')):.2f}%")
-    st.write(f"DGR 10a (ajustado): **{metrics.dgr10:.2f}%** | DGR 10a (crudo): {getattr(metrics, 'dgr10_raw', float('nan')):.2f}%")
-
-st.markdown("---")
-st.subheader("Veredicto por criterios (según sector)")
-table = []
-for k, v in checks.items():
-    table.append({
-        "Criterio": k,
-        "Resultado": v["icon"],
-        "Valor": v["msg"],
-        "Intervalo recomendado": v["range"]
-=======
-    # Caso 1: botón Evaluar en individual
-    if run_btn and default_ticker:
+    if run_btn and ticker_input:
+        st.session_state.active_ticker = ticker_input
         need_load = True
-    
-    # Caso 2: vengo del ranking y quiero que cargue solo
-    if st.session_state.autoload and default_ticker:
-        if st.session_state.metrics is None or st.session_state.last_loaded_ticker != default_ticker:
+
+    if st.session_state.autoload and st.session_state.active_ticker:
+        if st.session_state.metrics is None or st.session_state.last_loaded_ticker != st.session_state.active_ticker:
             need_load = True
-    
+
     if need_load:
         try:
-            metrics, divs_year, price_series = fetch_metrics(default_ticker)
-    
+            metrics, divs_year, price_series = fetch_metrics(st.session_state.active_ticker)
+
             if sector_override != "(auto)":
                 metrics.sector = sector_override
-    
-            # Guarda todo lo necesario en session_state
+
             st.session_state.metrics = metrics
             st.session_state.divs_year = divs_year
             st.session_state.price_series = price_series
-    
-            # Precalcula reglas y checks
+
             st.session_state.rules = rules_for_sector(metrics.sector)
             st.session_state.checks = evaluate(metrics, st.session_state.rules)
-    
-            # Moneda para hovers/formatos
-            t = yf.Ticker(metrics.ticker)
-            info_local = {}
+
             try:
-                info_local = t.info or {}
+                info_local = yf.Ticker(metrics.ticker).info or {}
             except Exception:
-                pass
+                info_local = {}
             st.session_state.ccy_symbol = _ccy_symbol_from_info(info_local, "$")
-    
-            # Marcar como ya cargado
-            st.session_state.last_loaded_ticker = default_ticker
+
+            st.session_state.last_loaded_ticker = st.session_state.active_ticker
             st.session_state.autoload = False
-    
+
         except Exception as e:
-            st.error(f"Error al evaluar {default_ticker}: {e}")
+            st.error(f"Error al evaluar {st.session_state.active_ticker}: {e}")
             st.exception(e)
-    
-    
-    
-    
-    # ===== RENDER persistente sin necesidad de volver a pulsar "Evaluar" =====
-    if "metrics" not in st.session_state or st.session_state.metrics is None:
-        st.write("Introduce un ticker y pulsa **Evaluar**.")
+            st.stop()
+
+    if st.session_state.metrics is None:
+        st.info("Introduce un ticker y pulsa **Evaluar**.")
         st.stop()
-    
-    metrics     = st.session_state.metrics
-    divs_year   = st.session_state.divs_year
-    price_series= st.session_state.price_series
-    ccy_symbol  = st.session_state.ccy_symbol
-    rules       = st.session_state.get("rules", rules_for_sector(metrics.sector))
-    checks      = st.session_state.get("checks", evaluate(metrics, rules))
-    
-    # Cabecera
+
+    metrics      = st.session_state.metrics
+    divs_year    = st.session_state.divs_year
+    price_series = st.session_state.price_series
+    ccy_symbol   = st.session_state.ccy_symbol
+    rules        = st.session_state.rules or rules_for_sector(metrics.sector)
+    checks       = st.session_state.checks or evaluate(metrics, rules)
+
     st.subheader(f"{metrics.ticker} — {metrics.name}")
     cotiza_txt = f"Cotiza en: **{metrics.exchange_name or '—'}**"
     if metrics.country:
@@ -1547,38 +1458,39 @@ for k, v in checks.items():
     if metrics.currency:
         cotiza_txt += f" · {metrics.currency}"
     st.caption(f"Sector: **{metrics.sector}** | {cotiza_txt} | Precio: **{metrics.price:.2f}**")
-    st.caption(f"Plaza: {metrics.exchange_code or '--'} · Divisa: {metrics.currency or '--'}")
-    
-    # Tarjetas de métricas
+
     col1, col2, col3 = st.columns(3)
     col1.metric("RPD TTM", f"{metrics.rpd_ttm:,.2f} %")
-    col2.metric("DGR 5 años", f"{metrics.dgr5:,.2f} %")
-    col3.metric("DGR 10 años", f"{metrics.dgr10:,.2f} %")
-    
+    if not metrics.dgr_reliable:
+        col2.metric("DGR 5 años", "No fiable")
+    else:
+        col2.metric("DGR 5 años", "s/d" if pd.isna(metrics.dgr5) else f"{metrics.dgr5:,.2f} %")
+
+    #col2.metric("DGR 5 años", "s/d" if pd.isna(metrics.dgr5) else f"{metrics.dgr5:,.2f} %")
+    col3.metric("DGR 10 años", "s/d" if pd.isna(metrics.dgr10) else f"{metrics.dgr10:,.2f} %")
+
     col4, col5, col6 = st.columns(3)
-    col4.metric("Payout", f"{metrics.payout:,.2f} %" if not pd.isna(metrics.payout) else "s/d")
-    col5.metric("PER (ttm)", f"{metrics.per_ttm:,.2f}" if not pd.isna(metrics.per_ttm) else "s/d")
-    col6.metric("Deuda/Patrimonio", f"{metrics.de_ratio:,.2f} x" if not pd.isna(metrics.de_ratio) else "s/d")
-    
+    col4.metric("Payout", "s/d" if pd.isna(metrics.payout) else f"{metrics.payout:,.2f} %")
+    col5.metric("PER (ttm)", "s/d" if pd.isna(metrics.per_ttm) else f"{metrics.per_ttm:,.2f}")
+    col6.metric("Deuda/Patrimonio", "s/d" if pd.isna(metrics.de_ratio) else f"{metrics.de_ratio:,.2f} x")
+
     col7, col8 = st.columns(2)
-    col7.metric("ROE", f"{metrics.roe:,.2f} %" if not pd.isna(metrics.roe) else "s/d")
+    col7.metric("ROE", "s/d" if pd.isna(metrics.roe) else f"{metrics.roe:,.2f} %")
     col8.metric("Racha dividendos", f"{metrics.streak_years} años")
-    
-    col_ev, col_fcf = st.columns(2)
+
     ev_eb = getattr(metrics, "ev_ebitda", np.nan)
     fcf_y = getattr(metrics, "fcf_yield", np.nan)
-    col_ev.metric("EV/EBITDA", f"{ev_eb:,.2f} x" if pd.notna(ev_eb) else "s/d")
-    col_fcf.metric("FCF Yield", f"{fcf_y:,.2f} %" if pd.notna(fcf_y) else "s/d")
-    
-    # RPD forward si existe
+    col9, col10 = st.columns(2)
+    col9.metric("EV/EBITDA", "s/d" if pd.isna(ev_eb) else f"{ev_eb:,.2f} x")
+    col10.metric("FCF Yield", "s/d" if pd.isna(fcf_y) else f"{fcf_y:,.2f} %")
+
     if pd.notna(getattr(metrics, "rpd_forward", np.nan)):
         st.metric("RPD Forward", f"{metrics.rpd_forward:,.2f} %")
-    
-    # Detalle DGR (crudo vs ajustado)
+
     with st.expander("Detalle DGR (crudo vs ajustado)"):
-        st.write(f"DGR 5a (ajustado): **{metrics.dgr5:.2f}%**  | DGR 5a (crudo): {getattr(metrics, 'dgr5_raw', float('nan')):.2f}%")
-        st.write(f"DGR 10a (ajustado): **{metrics.dgr10:.2f}%** | DGR 10a (crudo): {getattr(metrics, 'dgr10_raw', float('nan')):.2f}%")
-    
+        st.write(f"DGR 5a (ajustado): **{metrics.dgr5:.2f}%** | DGR 5a (crudo): {getattr(metrics,'dgr5_raw', np.nan):.2f}%")
+        st.write(f"DGR 10a (ajustado): **{metrics.dgr10:.2f}%** | DGR 10a (crudo): {getattr(metrics,'dgr10_raw', np.nan):.2f}%")
+
     st.markdown("---")
     st.subheader("Veredicto por criterios (según sector)")
     table = []
@@ -1590,178 +1502,95 @@ for k, v in checks.items():
             "Intervalo recomendado": v["range"]
         })
     st.table(pd.DataFrame(table))
-    
-    # === Gráfico dividendos anuales (bar) ===
+
     st.subheader("Histórico de dividendos anuales")
     if divs_year is not None and not divs_year.empty:
-        fig_divs = chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol)
-        st.plotly_chart(fig_divs, use_container_width=True, config={"displaylogo": False})
+        st.plotly_chart(chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol),
+                        use_container_width=True, config={"displaylogo": False})
     else:
         st.info("Sin histórico de dividendos para mostrar.")
-    
-    # === Controles y gráfico de precio (reactivo SIN evaluar) ===
-    # Helper si aún no lo tienes:
-    def _slice_price_series(s: pd.Series, rango: str, agg: str) -> pd.Series:
-        if s is None or s.empty:
-            return s
-        s = s.dropna()
-        end = s.index.max()
-        # Rango
-        if rango == "YTD":
-            start = pd.Timestamp(year=end.year, month=1, day=1)
-        elif rango == "1 año":
-            start = end - pd.Timedelta(days=365)
-        elif rango == "3 años":
-            start = end - pd.DateOffset(years=3)
-        elif rango == "5 años":
-            start = end - pd.DateOffset(years=5)
-        elif rango == "10 años":
-            start = end - pd.DateOffset(years=10)
-        elif rango == "20 años":
-            start = end - pd.DateOffset(years=20)
-        else:
-            start = s.index.min()
-        s = s[(s.index >= start) & (s.index <= end)]
-        # Agregación
-        if agg == "Semanal":
-            s = s.resample("W-FRI").last()
-        elif agg == "Mensual":
-            s = s.resample("M").last()
-        return s
-    
+
     st.subheader("Precio")
     if price_series is not None and not price_series.empty:
         c1, c2 = st.columns(2)
-        rango = c1.selectbox(
-            "Rango",
-            ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"],
-            index=0, key="rango_price"
-        )
-        agg = c2.selectbox(
-            "Agrupar",
-            ["Diario", "Semanal", "Mensual"],
-            index=0, key="agg_price"
-        )
-    
+        rango = c1.selectbox("Rango", ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"], index=0, key="rango_price")
+        agg = c2.selectbox("Agrupar", ["Diario", "Semanal", "Mensual"], index=0, key="agg_price")
         ps = _slice_price_series(price_series, rango, agg)
-        title = f"Precio ({rango.lower()}, {agg.lower()})"
-        fig_price = chart_price_line(ps, title, ccy_symbol)
-        st.plotly_chart(fig_price, use_container_width=True, config={"displaylogo": False})
+        st.plotly_chart(chart_price_line(ps, f"Precio ({rango.lower()}, {agg.lower()})", ccy_symbol),
+                        use_container_width=True, config={"displaylogo": False})
     else:
         st.info("Sin serie de precios para mostrar.")
-    
-    # Ayuda: mostrar reglas actuales
+
     st.markdown("---")
     st.subheader("Umbrales usados (según sector)")
-    rules_df = pd.DataFrame({
-        "RPD min %": [rules.rpd_min],
-        "RPD max %": [rules.rpd_max],
-        "DGR 5a min %": [rules.dgr5_min],
-        "Payout % (min-máx)": [f"{rules.payout_min} - {rules.payout_max}"],
-        "PER (mín-máx)": [f"{rules.per_min} - {rules.per_max}"],
-        "Deuda/Patrimonio máx (x)": [rules.de_max],
-        "ROE min %": [rules.roe_min],
-        "Racha dividendos min (años)": [rules.streak_min],
->>>>>>> 00a8480563115e48cbfd0e0fd930ace9e589abd5
-    })
-st.table(pd.DataFrame(table))
+    rules_df = pd.DataFrame([{
+        "RPD min %": rules.rpd_min,
+        "RPD max %": rules.rpd_max,
+        "DGR 5a min %": rules.dgr5_min,
+        "Payout % (min-máx)": f"{rules.payout_min} - {rules.payout_max}",
+        "PER (mín-máx)": f"{rules.per_min} - {rules.per_max}",
+        "Deuda/Patrimonio máx (x)": rules.de_max,
+        "ROE min %": rules.roe_min,
+        "Racha dividendos min (años)": rules.streak_min,
+    }])
+    st.table(rules_df)
 
-# === Gráfico dividendos anuales (bar) ===
-st.subheader("Histórico de dividendos anuales")
-if divs_year is not None and not divs_year.empty:
-    fig_divs = chart_dividends_bar(divs_year, "Dividendos por año", ccy_symbol)
-    st.plotly_chart(fig_divs, use_container_width=True, config={"displaylogo": False})
-else:
-    st.info("Sin histórico de dividendos para mostrar.")
+    flags = red_flags(metrics)
+    total_score, breakdown, details = score_company(metrics, rules)
+    st.plotly_chart(chart_score_breakdown(breakdown), use_container_width=True, config={"displaylogo": False})
 
-# === Controles y gráfico de precio (reactivo SIN evaluar) ===
-# Helper si aún no lo tienes:
-def _slice_price_series(s: pd.Series, rango: str, agg: str) -> pd.Series:
-    if s is None or s.empty:
-        return s
-    s = s.dropna()
-    end = s.index.max()
-    # Rango
-    if rango == "YTD":
-        start = pd.Timestamp(year=end.year, month=1, day=1)
-    elif rango == "1 año":
-        start = end - pd.Timedelta(days=365)
-    elif rango == "3 años":
-        start = end - pd.DateOffset(years=3)
-    elif rango == "5 años":
-        start = end - pd.DateOffset(years=5)
-    elif rango == "10 años":
-        start = end - pd.DateOffset(years=10)
-    elif rango == "20 años":
-        start = end - pd.DateOffset(years=20)
+    rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
+    st.markdown("---")
+    st.subheader("Puntuación compuesta (estilo Gregorio)")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Score total", f"{total_score:.0f}/100")
+    c2.metric("Dividendo", f"{breakdown['Dividendo']:.0f}")
+    c3.metric("Solidez", f"{breakdown['Solidez']:.0f}")
+    c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
+    c5.metric("Historial", f"{breakdown['Historial']:.0f}")
+
+    with st.expander("Ver detalle del cálculo (componentes y pesos)"):
+        for bloque in ["Dividendo", "Solidez", "Valoración", "Historial"]:
+            st.markdown(f"**{bloque}**")
+            st.table(pd.DataFrame(details[bloque])[["Métrica","Valor","Rango","Peso bloq.","Sub-score"]])
+
+    if rec_icon == "✅":
+        st.success(f"{rec_icon} {rec_text}")
+    elif rec_icon == "⚠️":
+        st.warning(f"{rec_icon} {rec_text}")
     else:
-<<<<<<< HEAD
-        start = s.index.min()
-    s = s[(s.index >= start) & (s.index <= end)]
-    # Agregación
-    if agg == "Semanal":
-        s = s.resample("W-FRI").last()
-    elif agg == "Mensual":
-        s = s.resample("M").last()
-    return s
-
-st.subheader("Precio")
-if price_series is not None and not price_series.empty:
-    c1, c2 = st.columns(2)
-    rango = c1.selectbox(
-        "Rango",
-        ["Todo", "20 años", "10 años", "5 años", "3 años", "1 año", "YTD"],
-        index=0, key="rango_price"
-    )
-    agg = c2.selectbox(
-        "Agrupar",
-        ["Diario", "Semanal", "Mensual"],
-        index=0, key="agg_price"
-    )
-=======
         st.error(f"{rec_icon} {rec_text}")
-    
+
     if flags:
         st.write("**Banderas rojas detectadas:**")
         for f in flags:
             st.write(f"- {f}")
     
-    st.markdown("---")
-    st.subheader(" Informe IA (Groq)")
-    
-    model = st.selectbox(
-        "Modelo Groq",
-        ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
-        index=0
-    )
-    
-    if not groq_api_key:
-        st.info("Configura GROQ_API_KEY en variables de entorno o en .streamlit/secrets.toml para usar el informe IA.")
-    else:
-        if st.button("Generar informe IA (empresa)", key="btn_ai_individual"):
-            prompt = build_prompt_individual(metrics, rules, total_score, breakdown, flags)
-            messages = [
-                {"role": "system", "content": "Responde en español. Sé conciso y extremadamente fiel a los datos."},
-                {"role": "user", "content": prompt},
-            ]
-            cache_key = _hash_key("individual", model, prompt)
-    
-            with st.spinner("Generando informe con Groq..."):
-                ai_text = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
-    
-            st.session_state["ai_report_individual"] = ai_text
-    
-        st.text_area(
-            "Informe IA (solo con tus datos, sin inventar)",
-            value=st.session_state.get("ai_report_individual", ""),
-            height=320
+    if not metrics.dgr_reliable:
+        st.info(
+            "El crecimiento del dividendo no es fiable por estructura irregular "
+            "(scrip dividend, ajustes o años incompletos). "
+            "Se trata como dividendo estable, no como crecimiento negativo."
         )
-    
-    
-    
-    
-    st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
 
+    st.markdown("---")
+    st.subheader("Informe IA (Groq)")
+    model = st.selectbox("Modelo Groq", ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"], index=0, key="groq_model_ind")
+
+    if st.button("Generar informe IA (empresa)", key="btn_ai_individual"):
+        prompt = build_prompt_individual(metrics, rules, total_score, breakdown, flags)
+        messages = [
+            {"role": "system", "content": "Responde en español. Sé conciso y extremadamente fiel a los datos."},
+            {"role": "user", "content": prompt},
+        ]
+        cache_key = _hash_key("individual", model, prompt)
+        with st.spinner("Generando informe con Groq..."):
+            ai_text = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
+        st.session_state["ai_report_individual"] = ai_text
+    
+    
+    st.text_area("Informe IA", value=st.session_state.get("ai_report_individual", ""), height=320)
+    st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
 
 
 # =========================
@@ -1769,188 +1598,84 @@ if price_series is not None and not price_series.empty:
 # =========================
 else:
     st.header("📊 Ranking de empresas (por puntuación Gregorio)")
-    
-    
-    bolsa_opcion = st.selectbox("Selecciona una bolsa o conjunto",
-    [    "S&P 500 (real)",
-        "Dividend Aristocrats (real)",
-        "Personalizado",
-    ],
-    index=0
-    )   
->>>>>>> 00a8480563115e48cbfd0e0fd930ace9e589abd5
 
-    ps = _slice_price_series(price_series, rango, agg)
-    title = f"Precio ({rango.lower()}, {agg.lower()})"
-    fig_price = chart_price_line(ps, title, ccy_symbol)
-    st.plotly_chart(fig_price, use_container_width=True, config={"displaylogo": False})
-else:
-    st.info("Sin serie de precios para mostrar.")
+    bolsa_opcion = st.selectbox(
+        "Selecciona una bolsa o conjunto",
+        ["S&P 500 (real)", "Dividend Aristocrats (real)", "Personalizado"],
+        index=0,
+        key="bolsa_opcion"
+    )
 
-<<<<<<< HEAD
-# Ayuda: mostrar reglas actuales
-st.markdown("---")
-st.subheader("Umbrales usados (según sector)")
-rules_df = pd.DataFrame({
-    "RPD min %": [rules.rpd_min],
-    "RPD max %": [rules.rpd_max],
-    "DGR 5a min %": [rules.dgr5_min],
-    "Payout % (min-máx)": [f"{rules.payout_min} - {rules.payout_max}"],
-    "PER (mín-máx)": [f"{rules.per_min} - {rules.per_max}"],
-    "Deuda/Patrimonio máx (x)": [rules.de_max],
-    "ROE min %": [rules.roe_min],
-    "Racha dividendos min (años)": [rules.streak_min],
-})
-st.table(rules_df)
+    top_n = st.slider("Top N por capitalización (solo dividend payers)", 50, 300, 200, step=25, key="top_n")
 
-flags = red_flags(metrics)
-total_score, breakdown, details = score_company(metrics, rules)
-st.plotly_chart(chart_score_breakdown(breakdown), use_container_width=True, config={"displaylogo": False})
+    tickers_input = ""
+    if bolsa_opcion == "Personalizado":
+        tickers_input = st.text_area("Tickers separados por comas (ej: JNJ, PG, KO)", value="JNJ,PG,KO", key="tickers_input")
 
-rec_text, rec_icon, rec_flags = recommendation(total_score, flags)
-st.markdown("---")
-st.subheader("Puntuación compuesta (estilo Gregorio)")
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Score total", f"{total_score:.0f}/100")
-c2.metric("Dividendo", f"{breakdown['Dividendo']:.0f}")
-c3.metric("Solidez", f"{breakdown['Solidez']:.0f}")
-c4.metric("Valoración", f"{breakdown['Valoración']:.0f}")
-c5.metric("Historial", f"{breakdown['Historial']:.0f}")
-
-with st.expander("Ver detalle del cálculo (componentes y pesos)"):
-    for bloque in ["Dividendo", "Solidez", "Valoración", "Historial"]:
-        st.markdown(f"**{bloque}**")
-        st.table(pd.DataFrame(details[bloque])[["Métrica","Valor","Rango","Peso bloq.","Sub-score"]])
-
-if rec_icon == "✅":
-    st.success(f"{rec_icon} {rec_text}")
-elif rec_icon == "⚠️":
-    st.warning(f"{rec_icon} {rec_text}")
-else:
-    st.error(f"{rec_icon} {rec_text}")
-
-if flags:
-    st.write("**Banderas rojas detectadas:**")
-    for f in flags:
-        st.write(f"- {f}")
-
-st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, payout razonable y balance sano. Compra periódica (DCA) y paciencia a 10–30 años.")
-=======
-    top_n = st.slider("Top N por capitalización (solo dividend payers)", 50, 300, 200, step=25)
-    
     if bolsa_opcion == "S&P 500 (real)":
         base = load_sp500_tickers()
     elif bolsa_opcion == "Dividend Aristocrats (real)":
         base = load_dividend_aristocrats_tickers()
     else:
         base = [t.strip().upper().replace(".", "-") for t in tickers_input.split(",") if t.strip()]
-    
+
     st.caption(f"Universo base: {len(base)} tickers")
-    
+
     with st.spinner("Aplicando filtro: dividend payers + top por capitalización..."):
         tickers = filter_top_dividend_payers(base, top_n=top_n)
-    
+
     st.success(f"Universo filtrado: {len(tickers)} tickers")
-    
+
     universe_key = (bolsa_opcion, top_n, ",".join(tickers))
     if st.session_state.get("ranking_universe_key") != universe_key:
         st.session_state.ranking_df = None
         st.session_state.ranking_universe_key = universe_key
-        
-    st.info(f"Analizando {len(tickers)} tickers...")
 
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def fetch_all_metrics(tickers_tuple):
-        tickers = list(tickers_tuple)
-        results = []
-        for tk in tickers:
-            try:
-                m, divs, _ = fetch_metrics(tk)
-                rules = rules_for_sector(m.sector)
-                total_score, breakdown, details = score_company(m, rules)
-                results.append({
-                    "Ticker": m.ticker,
-                    "Nombre": m.name,
-                    "Sector": m.sector,
-                    "RPD (%)": m.rpd_ttm,
-                    "DGR 5a (%)": m.dgr5,
-                    "Payout (%)": m.payout,
-                    "PER": m.per_ttm,
-                    "Deuda/Patrimonio": m.de_ratio,
-                    "ROE (%)": m.roe,
-                    "Score total": total_score,
-                })
-            except Exception:
-                results.append({"Ticker": tk, "Nombre": "ERROR", "Sector": "", "Score total": np.nan})
-        return pd.DataFrame(results)
-
-    run_rank = st.button("Calcular ranking")
-
-    if not run_rank and "ranking_df" not in st.session_state:
-        st.info("Configura el universo y pulsa **Calcular ranking**.")
-        st.stop()
+    run_rank = st.button("Calcular ranking", key="btn_rank")
 
     if run_rank:
         with st.spinner("Calculando ranking... (la primera vez puede tardar)"):
-            df = fetch_all_metrics(tuple(tickers))  # 👈 tupla para cache estable
+            df = fetch_all_metrics(tuple(tickers))
         st.session_state.ranking_df = df
-    else:
-        df = st.session_state.ranking_df
 
+    df = st.session_state.get("ranking_df", None)
     if df is None or df.empty:
-        st.warning("No se pudo generar el ranking.")
+        st.info("Configura el universo y pulsa **Calcular ranking**.")
         st.stop()
 
     df_sorted = df.sort_values("Score total", ascending=False)
-    
+    st.subheader("🏆 Ranking general")
+    st.dataframe(df_sorted, use_container_width=True, height=520)
+
     st.markdown("---")
     st.subheader("Resúmenes IA (Groq)")
-    
-    model = st.selectbox(
-        "Modelo Groq",
-        ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
-        index=0,
-        key="groq_model_ranking"
-    )
-    
-    if not groq_api_key:
-        st.info("Configura GROQ_API_KEY en variables de entorno o en .streamlit/secrets.toml para usar resúmenes IA.")
-    else:
-        c1, c2 = st.columns(2)
-    
-        with c1:
-            if st.button("Generar resumen del ranking (Top 25)", key="btn_ai_rank"):
-                prompt = build_prompt_ranking(df_sorted)
-                messages = [
-                    {"role": "system", "content": "Responde en español. No inventes datos ni empresas."},
-                    {"role": "user", "content": prompt},
-                ]
-                cache_key = _hash_key("ranking", model, prompt)
-    
-                with st.spinner("Generando resumen del ranking..."):
-                    ai_text = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
-    
-                st.session_state["ai_rank_summary"] = ai_text
-    
-        with c2:
-            if st.button("Generar resumen por sectores (Top 3/sector)", key="btn_ai_sector"):
-                prompt = build_prompt_sector_summary(df_sorted)
-                messages = [
-                    {"role": "system", "content": "Responde en español. No inventes datos ni empresas."},
-                    {"role": "user", "content": prompt},
-                ]
-                cache_key = _hash_key("sectors", model, prompt)
-    
-                with st.spinner("Generando resumen por sectores..."):
-                    ai_text = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
-    
-                st.session_state["ai_sector_summary"] = ai_text
-    
-        st.text_area("Resumen IA del ranking", st.session_state.get("ai_rank_summary", ""), height=260)
-        st.text_area("Resumen IA por sectores", st.session_state.get("ai_sector_summary", ""), height=260)
-    
-    st.subheader("🏆 Ranking general")
-    st.dataframe(df_sorted, use_container_width=True, height=500)
+    model = st.selectbox("Modelo Groq", ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"], index=0, key="groq_model_rank")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Generar resumen del ranking (Top 25)", key="btn_ai_rank"):
+            prompt = build_prompt_ranking(df_sorted)
+            messages = [
+                {"role": "system", "content": "Responde en español. No inventes datos ni empresas."},
+                {"role": "user", "content": prompt},
+            ]
+            cache_key = _hash_key("ranking", model, prompt)
+            with st.spinner("Generando resumen del ranking..."):
+                st.session_state["ai_rank_summary"] = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
+
+    with c2:
+        if st.button("Generar resumen por sectores (Top 3/sector)", key="btn_ai_sector"):
+            prompt = build_prompt_sector_summary(df_sorted)
+            messages = [
+                {"role": "system", "content": "Responde en español. No inventes datos ni empresas."},
+                {"role": "user", "content": prompt},
+            ]
+            cache_key = _hash_key("sectors", model, prompt)
+            with st.spinner("Generando resumen por sectores..."):
+                st.session_state["ai_sector_summary"] = groq_chat_cached(cache_key, groq_api_key, model, messages, temperature=0.2, max_tokens=900)
+
+    st.text_area("Resumen IA del ranking", st.session_state.get("ai_rank_summary", ""), height=240)
+    st.text_area("Resumen IA por sectores", st.session_state.get("ai_sector_summary", ""), height=240)
 
     selected_ticker = st.selectbox(
         "Selecciona una empresa para ver su análisis detallado:",
@@ -1958,20 +1683,9 @@ st.info("Consejo Gregorio: prioriza negocios estables, con dividendo creciente, 
         key="rank_select"
     )
 
-    if st.button("🔍 Ver análisis detallado"):
+    if st.button("🔍 Ver análisis detallado", key="btn_go_detail"):
         st.session_state.active_ticker = selected_ticker
         st.session_state.mode = "individual"
         st.session_state.autoload = True
         st.session_state.metrics = None
         st.rerun()
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
