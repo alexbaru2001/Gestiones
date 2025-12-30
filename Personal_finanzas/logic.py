@@ -18,6 +18,9 @@ from dateutil.relativedelta import relativedelta
 from domain import Transaction
 from config import saldos_iniciales as saldos_iniciales_config
 from io_data import fondo_reserva_general
+
+
+
 # =====================================================
 # CLASIFICACIÓN Y PREPROCESADO
 # =====================================================
@@ -234,90 +237,151 @@ def crear_historial_cuentas_virtuales(
     porcentaje_inversion=0.1,
     porcentaje_vacaciones=0.05,
     saldos_iniciales=None,
-    output_path=None,  # se mantiene por compatibilidad, pero aquí no se usa
-    objetivos_config=None,  # debe ser lista de dicts YA NORMALIZADA o None
-    fondo_reserva_snapshot=None,  # dict/Series con claves: 'Cantidad cargada', 'Cantidad del fondo', 'Porcentaje'
+    output_path=None,  # compatibilidad, no se usa
+    objetivos_config=None,  # lista de dicts YA NORMALIZADA o None
+    fondo_reserva_snapshot=None,  # dict/Series: 'Cantidad cargada', 'Cantidad del fondo', 'Porcentaje'
 ):
     """
-    Lógica pura: calcula df_resumen y lo devuelve.
+    Lógica pura: calcula df_resumen y objetivos_df y los devuelve.
     NO guarda CSV, NO imprime, NO llama a IO.
 
-    - objetivos_config: lista de objetivos (como devuelve io_data.cargar_objetivos_vista)
-    - fondo_reserva_snapshot: última instantánea del fondo (si no se pasa, asume 0)
+    OBJETIVOS (NUEVO):
+      - Campos: nombre, etiquetas, fraccion_presupuesto, duracion_meses, mes_inicio, saldo_inicial(opc)
+      - Aporte mensual = fraccion_presupuesto * (porcentaje_gasto * ingreso_real_mes_anterior)
+      - Movimientos con etiqueta del objetivo se excluyen del gasto corriente y se imputan al objetivo.
+      - Saldo objetivo puede ser negativo durante su vida.
+      - Liquidación al final de mes_fin:
+          * saldo > 0 -> suma a ahorro
+          * saldo < 0 -> suma a deuda_acumulada y resta a ahorro
     """
 
-    # Mantener compatibilidad con tu comportamiento
+    import numpy as np
+    import pandas as pd
+    import re
+
+    # -------------------------
+    # Helpers (locales)
+    # -------------------------
+    def _mes_fin_objetivo(mes_inicio: pd.Period, duracion_meses: int) -> pd.Period:
+        return mes_inicio + (int(duracion_meses) - 1)
+
+    def _to_period_m(x):
+        """Convierte 'YYYY-MM' / Timestamp / Period a pd.Period('M')."""
+        if x is None or x == "":
+            return None
+        if isinstance(x, pd.Period):
+            return x.asfreq("M")
+        if isinstance(x, pd.Timestamp):
+            return x.to_period("M")
+        # string
+        return pd.Period(str(x)[:7], freq="M")
+    
+    
+    def _objetivo_activo(cfg, mes: pd.Period) -> bool:
+        mes_inicio = _to_period_m(cfg.get("mes_inicio"))
+        if mes_inicio is None:
+            return False  # o True si quieres que por defecto empiece "ya", pero tú estás exigiendo mes_inicio
+    
+        duracion = int(cfg.get("duracion_meses", 0))
+        if duracion <= 0:
+            return False
+    
+        mes_fin = _mes_fin_objetivo(mes_inicio, duracion)
+        return mes_inicio <= mes <= mes_fin
+
+    def _objetivo_vence(cfg, mes: pd.Period) -> bool:
+        mes_inicio = _to_period_m(cfg.get("mes_inicio"))
+        if mes_inicio is None:
+            return False
+        return mes == _mes_fin_objetivo(mes_inicio, int(cfg.get("duracion_meses", 0)))
+
+
+    def _validar_historial_10m(ingresos_reales_mensual: pd.Series, mes_inicio: pd.Period, nombre: str):
+        """
+        Exige 10 meses completos ANTERIORES a mes_inicio.
+        ingresos_reales_mensual index: 'YYYY-MM'
+        """
+        meses_previos = [(mes_inicio - i).strftime("%Y-%m") for i in range(1, 11)]
+        faltan = [m for m in meses_previos if m not in ingresos_reales_mensual.index]
+        if faltan:
+            raise ValueError(
+                f"Objetivo '{nombre}': se necesitan 10 meses de histórico de ingresos reales "
+                f"antes de {mes_inicio.strftime('%Y-%m')}. Faltan: {faltan}"
+            )
+
+    def _media_ingresos_10m(ingresos_reales_mensual, mes_inicio):
+        mes_inicio = _to_period_m(mes_inicio)  # <-- CLAVE
+        if mes_inicio is None:
+            raise ValueError("mes_inicio es obligatorio para calcular la media de 10 meses (formato 'YYYY-MM').")
+    
+        meses_previos = [(mes_inicio - i).strftime("%Y-%m") for i in range(1, 11)]
+        valores = [float(ingresos_reales_mensual.get(m, 0.0)) for m in meses_previos]
+        return float(np.mean(valores))
+
+    # -------------------------
+    # Compatibilidad saldos iniciales
+    # -------------------------
     if saldos_iniciales is None:
         saldos_iniciales = saldos_iniciales_config
-        
-        
 
-
-    # Objetivos ya vienen cargados desde IO/UI; si no, lista vacía
+    # -------------------------
+    # Objetivos: ya vienen cargados/normalizados fuera.
+    # Si no, lista vacía.
+    # -------------------------
     if objetivos_config is None:
         objetivos_config = []
-    objetivos_nombres = [cfg["nombre"] for cfg in objetivos_config]
-    porcentaje_objetivos = sum(cfg["porcentaje_ingreso"] for cfg in objetivos_config)
 
-    porcentaje_total = porcentaje_gasto + porcentaje_inversion + porcentaje_vacaciones + porcentaje_objetivos
-    if porcentaje_total > 1 + 1e-6:
-        raise ValueError(
-            "La suma de porcentajes (gasto, inversiones, vacaciones y objetivos vista) supera el 100%."
-        )
+    # --- VALIDACIÓN NUEVOS OBJETIVOS (presupuesto objetivo) ---
+    # Campos obligatorios nuevos
+    required = ("nombre", "etiquetas", "fraccion_presupuesto", "duracion_meses")
+    
+    for cfg in objetivos_config:
+        for k in required:
+            if k not in cfg:
+                raise ValueError(f"Objetivo inválido, falta '{k}': {cfg}")
+    
+        # nombre
+        if not str(cfg["nombre"]).strip():
+            raise ValueError(f"Objetivo inválido, nombre vacío: {cfg}")
+    
+        # etiquetas -> lista de strings minúsculas
+        if isinstance(cfg["etiquetas"], str):
+            etiquetas = [e.strip().lower() for e in cfg["etiquetas"].split(",") if e.strip()]
+        else:
+            etiquetas = [str(e).strip().lower() for e in cfg["etiquetas"] if str(e).strip()]
+        cfg["etiquetas"] = etiquetas
+    
+        # fraccion_presupuesto
+        fr = float(cfg["fraccion_presupuesto"])
+        if fr < 0 or fr > 1:
+            raise ValueError(f"Objetivo '{cfg['nombre']}': fraccion_presupuesto fuera de [0,1].")
+        cfg["fraccion_presupuesto"] = fr
+    
+        # duracion_meses
+        dm = int(cfg["duracion_meses"])
+        if dm <= 0:
+            raise ValueError(f"Objetivo '{cfg['nombre']}': duracion_meses debe ser > 0.")
+        cfg["duracion_meses"] = dm
+    
+    # suma fracciones <= 1
+    total_fr = sum(float(o["fraccion_presupuesto"]) for o in objetivos_config)
+    if total_fr > 1 + 1e-9:
+        raise ValueError("La suma de fraccion_presupuesto de los objetivos supera 1.")
+    # --- FIN VALIDACIÓN ---
 
-    objetivos_por_nombre = {cfg["nombre"]: cfg for cfg in objetivos_config}
-    if len(objetivos_por_nombre) != len(objetivos_config):
-        raise ValueError("Los objetivos vista deben tener nombres únicos.")
+    # nombres únicos
+    nombres = [c["nombre"] for c in objetivos_config]
+    if len(nombres) != len(set(nombres)):
+        raise ValueError("Los objetivos deben tener nombres únicos.")
 
-    objetivos_meta = {
-        nombre: {
-            "objetivo_total": cfg.get("objetivo_total"),
-            "horizonte_meses": cfg.get("horizonte_meses"),
-            "mes_inicio": cfg.get("mes_inicio"),
-        }
-        for nombre, cfg in objetivos_por_nombre.items()
-    }
-
-    objetivos_saldos = {nombre: 0.0 for nombre in objetivos_por_nombre}
-    objetivos_saldo_inicial = {nombre: cfg["saldo_inicial"] for nombre, cfg in objetivos_por_nombre.items()}
-    objetivos_mes_inicio = {nombre: cfg.get("mes_inicio") for nombre, cfg in objetivos_por_nombre.items()}
-    objetivos_inicial_aplicado = {nombre: False for nombre in objetivos_por_nombre}
-
-    def _renombrar_columnas_historial(df: pd.DataFrame) -> pd.DataFrame:
-        columnas_base = {
-            "Mes": "Mes",
-            "🎁 Regalos": "Regalos",
-            "💼 Vacaciones": "Vacaciones",
-            "📈 Inversiones": "Inversiones",
-            "Dinero Invertido": "Dinero Invertido",
-            "💰 Ahorros": "Ahorros",
-            "Fondo de reserva cargado": "Fondo de reserva cargado",
-            "total": "total",
-            "💳 Gasto del mes": "Gasto del mes",
-            "💸 Presupuesto Mes": "Presupuesto Mes",
-            "🧾 Presupuesto Disponible": "Presupuesto Disponible",
-            "📉 Deuda Presupuestaria mensual": "Deuda Presupuestaria mensual",
-            "📉 Deuda Presupuestaria acumulada": "Deuda Presupuestaria acumulada",
-        }
-
-        renombradas = {}
-        for columna in df.columns:
-            if columna in columnas_base:
-                renombradas[columna] = columnas_base[columna]
-            elif columna.startswith("🎯 "):
-                nombre_objetivo = columna.split(" ", 1)[1] if " " in columna else columna.replace("🎯", "").strip()
-                renombradas[columna] = f"Objetivo {nombre_objetivo}"
-
-        return df.rename(columns=renombradas)
-
-    # Copias defensivas
+    # -------------------------
+    # Copias defensivas y pipeline original
+    # -------------------------
     df_gastos = df_gastos.copy()
     df_ingresos = df_ingresos.copy()
 
-    # Pipeline original
     df_ingresos = procesar_ingresos(df_ingresos)
 
-    # Mes como string
     df_gastos["mes"] = df_gastos["fecha"].dt.to_period("M").astype(str)
     df_ingresos["mes"] = df_ingresos["fecha"].dt.to_period("M").astype(str)
 
@@ -335,53 +399,7 @@ def crear_historial_cuentas_virtuales(
 
     intereses_ingreso = df_ingresos[df_ingresos["tipo_logico"] == "Rendimiento Financiero"].groupby("mes")["cantidad"].sum()
 
-    objetivos_gastos_por_mes = {}
-    objetivos_ingresos_por_mes = {}
-    objetivos_ingresos_reales_por_mes = {}
-
-    if objetivos_config:
-        etiquetas_gastos = df_gastos["etiquetas"].fillna("").str.lower()
-        etiquetas_ingresos = df_ingresos["etiquetas"].fillna("").str.lower()
-
-        for cfg in objetivos_config:
-            etiquetas = cfg["etiquetas"]
-            patron = "|".join(re.escape(et) for et in etiquetas if et) if etiquetas else ""
-
-            if patron:
-                mask_gastos = etiquetas_gastos.str.contains(patron, regex=True)
-                mask_ingresos = etiquetas_ingresos.str.contains(patron, regex=True)
-            else:
-                mask_gastos = pd.Series(False, index=df_gastos.index)
-                mask_ingresos = pd.Series(False, index=df_ingresos.index)
-
-            gastos_obj = (
-                df_gastos.loc[mask_gastos].groupby("mes")["cantidad"].sum()
-                if mask_gastos.any()
-                else pd.Series(dtype=float)
-            )
-            ingresos_obj = (
-                df_ingresos.loc[mask_ingresos].groupby("mes")["cantidad"].sum()
-                if mask_ingresos.any()
-                else pd.Series(dtype=float)
-            )
-
-            if mask_ingresos.any():
-                mask_ingresos_reales = mask_ingresos & (df_ingresos["tipo_logico"] == "Ingreso Real")
-                ingresos_reales_obj = (
-                    df_ingresos.loc[mask_ingresos_reales].groupby("mes")["cantidad"].sum()
-                    if mask_ingresos_reales.any()
-                    else pd.Series(dtype=float)
-                )
-            else:
-                ingresos_reales_obj = pd.Series(dtype=float)
-
-            objetivos_gastos_por_mes[cfg["nombre"]] = gastos_obj
-            objetivos_ingresos_por_mes[cfg["nombre"]] = ingresos_obj
-            objetivos_ingresos_reales_por_mes[cfg["nombre"]] = ingresos_reales_obj
-    else:
-        etiquetas_gastos = None
-        etiquetas_ingresos = None
-
+    # Gastos netos por mes (tu lógica: gasto bruto - reembolsos)
     empty_gastos = df_gastos.head(0)
     empty_ingresos = df_ingresos.head(0)
     gastos_netos_por_mes = {}
@@ -390,11 +408,16 @@ def crear_historial_cuentas_virtuales(
         ingresos_mes = ingresos_por_mes.get(mes, empty_ingresos)
         gastos_netos_por_mes[mes] = calcular_gastos_netos(gastos_mes, ingresos_mes)
 
+    # -------------------------
     # Fechas
+    # -------------------------
     fecha_actual = max(df_ingresos["fecha"].max(), df_gastos["fecha"].max())
     fecha_inicio = pd.Timestamp(fecha_inicio)
     fecha_fin = pd.Timestamp(fecha_actual)
 
+    # -------------------------
+    # Inicializaciones (tu lógica)
+    # -------------------------
     deuda_acumulada = 0.0
     regalos = 0.0
 
@@ -405,15 +428,11 @@ def crear_historial_cuentas_virtuales(
     ahorro_inicial = sum(v for k, v in saldos_iniciales.items() if k != "Metálico")
     ahorro += ahorro_inicial
 
-    if objetivos_saldos:
-        ahorro -= sum(objetivos_saldos.values())
-
     inversiones = 0.0
     resumenes = []
     ahorro_emergencia = 0.0
 
-    # Fondo reserva: en lógica pura NO leemos CSV.
-    # Si no te pasan snapshot, asumimos 0.
+    # Fondo reserva snapshot (lógica pura)
     if fondo_reserva_snapshot is None:
         fondo_cargado_inicial = 0.0
         fondo_reserva = 0.0
@@ -431,6 +450,72 @@ def crear_historial_cuentas_virtuales(
     ingresos_reales = df_ingresos[df_ingresos["tipo_logico"] == "Ingreso Real"]
     ingresos_reales_mensual = ingresos_reales.groupby("mes")["cantidad"].sum()
 
+    # -------------------------
+    # Objetivos: preparar separación por etiquetas
+    # -------------------------
+    objetivos_saldos = {cfg["nombre"]: float(cfg.get("saldo_inicial", 0.0)) for cfg in objetivos_config}
+
+    objetivos_gastos_por_mes = {}
+    objetivos_ingresos_por_mes = {}
+
+    # --- Normalización/validación robusta de objetivos ---
+    if objetivos_config is None:
+        objetivos_config = []
+    
+    objetivos_norm = []
+    for cfg in objetivos_config:
+        # Asegura dict (por si viene como Series)
+        if not isinstance(cfg, dict):
+            cfg = dict(cfg)
+    
+        nombre = str(cfg.get("nombre", "")).strip()
+        if not nombre:
+            raise ValueError(f"Objetivo inválido: nombre vacío: {cfg}")
+    
+        etiquetas = cfg.get("etiquetas", [])
+        if isinstance(etiquetas, str):
+            etiquetas = [e.strip().lower() for e in etiquetas.split(",") if e.strip()]
+        else:
+            etiquetas = [str(e).strip().lower() for e in etiquetas if str(e).strip()]
+    
+        fraccion = float(cfg.get("fraccion_presupuesto", 0.0))
+        if fraccion < 0 or fraccion > 1:
+            raise ValueError(f"Objetivo '{nombre}': fraccion_presupuesto fuera de [0,1].")
+    
+        duracion = int(cfg.get("duracion_meses", 0))
+        if duracion <= 0:
+            raise ValueError(f"Objetivo '{nombre}': duracion_meses debe ser > 0.")
+    
+        mes_inicio = cfg.get("mes_inicio", None)
+        if mes_inicio in ("", None):
+            raise ValueError(f"Objetivo '{nombre}': mes_inicio es obligatorio (formato 'YYYY-MM').")
+    
+        # Normaliza formato a YYYY-MM
+        mes_inicio = str(mes_inicio).strip()[:7]
+    
+        objetivos_norm.append(
+            {
+                "nombre": nombre,
+                "etiquetas": etiquetas,
+                "fraccion_presupuesto": fraccion,
+                "duracion_meses": duracion,
+                "mes_inicio": mes_inicio,   # <-- SIEMPRE presente
+            }
+        )
+    
+    # Valida suma fracciones <= 1
+    total_fr = sum(o["fraccion_presupuesto"] for o in objetivos_norm)
+    if total_fr > 1 + 1e-9:
+        raise ValueError("La suma de fraccion_presupuesto de los objetivos supera 1.")
+
+    # Sustituye a partir de aquí
+    objetivos_config = objetivos_norm
+    # Tabla larga de objetivos (para UI/IO posterior)
+    objetivos_rows = []
+
+    # -------------------------
+    # Iteración mensual
+    # -------------------------
     mes_actual = fecha_inicio.to_period("M")
     while mes_actual <= fecha_fin.to_period("M"):
         mes_actual_str = mes_actual.strftime("%Y-%m")
@@ -444,7 +529,6 @@ def crear_historial_cuentas_virtuales(
 
         # VACACIONES
         gasto_vacaciones = float(vacaciones_gasto.get(mes_actual_str, 0.0))
-
         if mes_actual >= pd.Timestamp("2025-09-01").to_period("M"):
             vacaciones_mensual = float(ingresos_reales_mensual.get(mes_actual_str, 0.0)) * porcentaje_vacaciones
         else:
@@ -456,21 +540,50 @@ def crear_historial_cuentas_virtuales(
         # FONDO RESERVA GASTO
         gasto_fondo_reserva = float(fondo_reserva_gasto.get(mes_actual_str, 0.0))
 
-        # GASTOS NETOS
-        gasto_total_mes_actual_aux = float(
-            gastos_netos_por_mes.get(mes_actual_str, pd.Series(dtype=float)).sum()
-        )
+        # GASTOS NETOS (tu base)
+        gasto_total_mes_actual_aux = float(gastos_netos_por_mes.get(mes_actual_str, pd.Series(dtype=float)).sum())
         gasto_total_mes_actual = gasto_total_mes_actual_aux - gasto_vacaciones - gasto_regalos - gasto_fondo_reserva
 
-        # PRESUPUESTO
-        presupuesto_teorico = float(ingresos_reales_mensual.get(mes_anterior, 0.0)) * porcentaje_gasto
-        presupuesto_disponible = max(0.0, presupuesto_teorico - deuda_acumulada)
+        # -------------------------
+        # PRESUPUESTO BRUTO y OBJETIVOS (NUEVO)
+        # -------------------------
+        presupuesto_bruto = float(ingresos_reales_mensual.get(mes_anterior, 0.0)) * porcentaje_gasto
 
-        deuda_mensual = gasto_total_mes_actual - presupuesto_teorico
+        # objetivos activos en este mes
+        objetivos_activos = [cfg for cfg in objetivos_config if _objetivo_activo(cfg, mes_actual)]
+        suma_fracciones = float(sum(cfg["fraccion_presupuesto"] for cfg in objetivos_activos)) if objetivos_activos else 0.0
+        if suma_fracciones > 1.0 + 1e-9:
+            raise ValueError(
+                f"En {mes_actual_str} la suma de fraccion_presupuesto de objetivos activos supera 1.0: {suma_fracciones:.4f}"
+            )
+
+        # Aporte total reservado a objetivos desde presupuesto (antes de deuda)
+        aporte_obj_total = presupuesto_bruto * suma_fracciones
+
+        # Presupuesto corriente (vida normal)
+        presupuesto_teorico = presupuesto_bruto  # mantenemos el nombre para no reventar tu output
+        presupuesto_corriente = presupuesto_bruto - aporte_obj_total
+
+        # Excluir del gasto corriente todos los gastos etiquetados de objetivos
+        gastos_objetivos_mes = 0.0
+        ingresos_objetivos_mes = 0.0
+        for cfg in objetivos_activos:
+            nombre = cfg["nombre"]
+            gastos_objetivos_mes += float(objetivos_gastos_por_mes.get(nombre, pd.Series(dtype=float)).get(mes_actual_str, 0.0))
+            ingresos_objetivos_mes += float(objetivos_ingresos_por_mes.get(nombre, pd.Series(dtype=float)).get(mes_actual_str, 0.0))
+
+        gasto_total_mes_actual -= gastos_objetivos_mes  # clave: ya no cuenta como gasto corriente
+
+        # Presupuesto disponible (tu lógica con deuda, pero usando presupuesto_corriente)
+        presupuesto_disponible = max(0.0, presupuesto_corriente - deuda_acumulada)
+
+        deuda_mensual = gasto_total_mes_actual - presupuesto_corriente
         exceso_gasto = deuda_mensual + deuda_acumulada
         deuda_acumulada = max(0.0, exceso_gasto)
 
-        # INVERSIONES
+        # -------------------------
+        # INVERSIONES (igual)
+        # -------------------------
         interes = float(intereses_ingreso.get(mes_actual_str, 0.0))
         if mes_actual >= pd.Timestamp("2024-10-01").to_period("M"):
             inv_mensual = float(ingresos_reales_mensual.get(mes_actual_str, 0.0)) * porcentaje_inversion
@@ -483,7 +596,11 @@ def crear_historial_cuentas_virtuales(
         inversiones += inversion_mes - dinero_invertido_entre_mes
         dinero_invertido = invertido_en_mes(presupuesto, mes_actual)
 
-        # AHORRO
+        # -------------------------
+        # AHORRO (tu lógica existente, sin tocar)
+        # Nota: esta parte sigue igual; el objetivo nuevo NO se gestiona vía ahorro_transaccional,
+        # se gestiona por presupuesto_corriente y ledger objetivo.
+        # -------------------------
         ingreso_total = float(ingresos_reales_mensual.get(mes_actual_str, 0.0))
         gastos_netos_total = float(gastos_netos_por_mes.get(mes_actual_str, pd.Series(dtype=float)).sum())
 
@@ -502,80 +619,80 @@ def crear_historial_cuentas_virtuales(
                 + gasto_vacaciones + gasto_regalos
             )
 
-        # OBJETIVOS VISTA
-        total_aporte_salario = 0.0
-        total_aporte_ingresos_reales = 0.0
-        total_gasto_objetivos = 0.0
+        # -------------------------
+        # LEDGER OBJETIVOS (NUEVO) + LIQUIDACIÓN EN mes_fin
+        # -------------------------
         resumen_objetivos_mes = {}
 
-        for nombre in objetivos_nombres:
-            cfg = objetivos_por_nombre[nombre]
-            mes_inicio_objetivo = objetivos_mes_inicio.get(nombre)
-            objetivo_activo = mes_inicio_objetivo is None or mes_actual >= mes_inicio_objetivo
+        for cfg in objetivos_activos:
+            nombre = cfg["nombre"]
+            fraccion = float(cfg["fraccion_presupuesto"])
 
-            if not objetivo_activo:
-                resumen_objetivos_mes[nombre] = 0.0
-                continue
+            aporte_mes = presupuesto_bruto * fraccion
+            ingresos_et = float(objetivos_ingresos_por_mes.get(nombre, pd.Series(dtype=float)).get(mes_actual_str, 0.0))
+            gastos_et = float(objetivos_gastos_por_mes.get(nombre, pd.Series(dtype=float)).get(mes_actual_str, 0.0))
 
-            if not objetivos_inicial_aplicado[nombre]:
-                saldo_inicial_obj = objetivos_saldo_inicial[nombre]
-                if saldo_inicial_obj:
-                    ahorro_transaccional -= saldo_inicial_obj
-                objetivos_saldos[nombre] += saldo_inicial_obj
-                objetivos_inicial_aplicado[nombre] = True
+            saldo_ini = float(objetivos_saldos.get(nombre, 0.0))
+            saldo_fin = saldo_ini + aporte_mes + ingresos_et - gastos_et
+            objetivos_saldos[nombre] = saldo_fin
+            resumen_objetivos_mes[nombre] = round(saldo_fin, 2)
 
-            aporte_salario_teorico = ingreso_total * cfg["porcentaje_ingreso"]
+            vence = _objetivo_vence(cfg, mes_actual)
+            liquidacion = 0.0
+            
+            ahorro -= aporte_mes
+            
+            if vence:
+                
+                if saldo_fin > 0:
+                    ahorro += saldo_fin
+                    liquidacion = saldo_fin
+                elif saldo_fin < 0:
+                    deuda_acumulada += abs(saldo_fin)
+                    ahorro -= abs(saldo_fin)
+                    liquidacion = saldo_fin  # negativo
+                objetivos_saldos[nombre] = 0.0  # cerrado
+            
+                
 
-            ingresos_etiquetados = objetivos_ingresos_por_mes.get(nombre, pd.Series(dtype=float))
-            ingresos_etiquetados_mes = float(ingresos_etiquetados.get(mes_actual_str, 0.0))
+            # predicción informativa (media 10m antes del mes_inicio del objetivo)
+            media10 = _media_ingresos_10m(ingresos_reales_mensual, cfg.get("mes_inicio"))
+            pred_pres_bruto = media10 * porcentaje_gasto
+            pred_aporte_mes = pred_pres_bruto * fraccion
+            pred_total = pred_aporte_mes * int(cfg["duracion_meses"])
+            
+            mes_inicio_p = _to_period_m(cfg.get("mes_inicio"))
+            
+            mes_inicio_p = _to_period_m(cfg.get("mes_inicio"))
+            if mes_inicio_p is None:
+                raise ValueError(f"Objetivo '{cfg.get('nombre','(sin nombre)')}': mes_inicio es obligatorio (YYYY-MM).")
+            
+            mes_fin_p = _mes_fin_objetivo(mes_inicio_p, int(cfg.get("duracion_meses", 0)))
+            if mes_inicio_p is None:
+                raise ValueError(f"Objetivo '{cfg.get('nombre','(sin nombre)')}': mes_inicio es obligatorio (YYYY-MM).")
+            objetivos_rows.append(
+                {
+                    "Mes": mes_actual_str,
+                    "Objetivo": nombre,
+                    "fraccion_presupuesto": fraccion,
+                    "duracion_meses": int(cfg["duracion_meses"]),
+                    "mes_inicio": mes_inicio_p.strftime("%Y-%m"),
+                    "mes_fin": mes_fin_p.strftime("%Y-%m"),
+                    "aporte_mes": round(aporte_mes, 2),
+                    "ingresos_etiquetados_mes": round(ingresos_et, 2),
+                    "gastos_etiquetados_mes": round(gastos_et, 2),
+                    "saldo_fin_mes": round(saldo_fin, 2),
+                    "vence_en_mes": bool(vence),
+                    "liquidacion": round(liquidacion, 2),
+                    "pred_media_ingresos_10m": round(media10, 2),
+                    "pred_aporte_mes_medio": round(pred_aporte_mes, 2),
+                    "pred_total_duracion": round(pred_total, 2),
+                }
+            )
 
-            ingresos_etiquetados_reales = objetivos_ingresos_reales_por_mes.get(nombre, pd.Series(dtype=float))
-            ingresos_etiquetados_reales_mes = float(ingresos_etiquetados_reales.get(mes_actual_str, 0.0))
-
-            gastos_etiquetados = objetivos_gastos_por_mes.get(nombre, pd.Series(dtype=float))
-            gastos_etiquetados_mes = float(gastos_etiquetados.get(mes_actual_str, 0.0))
-
-            objetivo_total_meta = objetivos_meta.get(nombre, {}).get("objetivo_total")
-            saldo_actual_obj = objetivos_saldos[nombre]
-
-            capacidad_restante = None
-            if objetivo_total_meta is not None and objetivo_total_meta > 0:
-                capacidad_restante = max(0.0, float(objetivo_total_meta) - saldo_actual_obj)
-
-            if capacidad_restante is not None and capacidad_restante <= 1e-9:
-                capacidad_restante = 0.0
-                aporte_salario_real = 0.0
-                aporte_ingresos_real = 0.0
-            else:
-                aporte_salario_real = aporte_salario_teorico
-                if capacidad_restante is not None:
-                    aporte_salario_real = min(aporte_salario_real, capacidad_restante)
-                    capacidad_restante = max(0.0, capacidad_restante - aporte_salario_real)
-
-                aporte_ingresos_real = ingresos_etiquetados_mes
-                if capacidad_restante is not None:
-                    aporte_ingresos_real = min(aporte_ingresos_real, capacidad_restante)
-
-            objetivos_saldos[nombre] += aporte_salario_real + aporte_ingresos_real - gastos_etiquetados_mes
-            resumen_objetivos_mes[nombre] = round(objetivos_saldos[nombre], 2)
-
-            total_aporte_salario += aporte_salario_real
-
-            if ingresos_etiquetados_mes > 0 and aporte_ingresos_real > 0:
-                proporcion_reales = aporte_ingresos_real / ingresos_etiquetados_mes
-                proporcion_reales = min(max(proporcion_reales, 0.0), 1.0)
-                aporte_ingresos_reales_real = ingresos_etiquetados_reales_mes * proporcion_reales
-            else:
-                aporte_ingresos_reales_real = 0.0
-
-            total_aporte_ingresos_reales += aporte_ingresos_reales_real
-            total_gasto_objetivos += gastos_etiquetados_mes
-
-        if objetivos_nombres:
-            ahorro_transaccional -= total_aporte_salario + total_aporte_ingresos_reales
-            ahorro_transaccional += total_gasto_objetivos
-
-        # FONDO RESERVA (misma lógica, pero sin IO)
+        # -------------------------
+        # FONDO RESERVA (igual, sin IO)
+        # -------------------------
         if mes_actual == pd.Timestamp("2024-10-01").to_period("M"):
             porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
         else:
@@ -587,14 +704,17 @@ def crear_historial_cuentas_virtuales(
             else:
                 fondo_cargado = max(0.0, fondo_reserva - gasto_fondo_reserva)
                 ahorro_emergencia = 0.0
-
             porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
 
         ahorro += ahorro_transaccional - ahorro_emergencia
 
-        total_objetivos = sum(objetivos_saldos.values()) if objetivos_saldos else 0.0
-        total = regalos + vacaciones + inversiones + ahorro + fondo_cargado + total_objetivos
-
+        # Total: OJO -> como ya no hay columnas dinámicas, el total incluye saldo vivo de objetivos todavía abiertos.
+        total_objetivos = float(sum(objetivos_saldos.values())) if objetivos_saldos else 0.0
+        
+        total = regalos + vacaciones + inversiones + ahorro + fondo_cargado + total_objetivos + dinero_invertido
+        
+        
+        
         resumen = {
             "Mes": mes_actual_str,
             "🎁 Regalos": round(regalos, 2),
@@ -605,34 +725,35 @@ def crear_historial_cuentas_virtuales(
             "Fondo de reserva cargado": round(fondo_cargado, 4),
             "total": round(total, 2),
             "💳 Gasto del mes": round(gasto_total_mes_actual, 2),
-            "💸 Presupuesto Mes": round(presupuesto_teorico, 2),
+            # mantenemos este nombre para compatibilidad visual:
+            "💸 Presupuesto Mes": round(presupuesto_corriente, 2),
             "🧾 Presupuesto Disponible": round(presupuesto_efectivo, 2),
             "📉 Deuda Presupuestaria mensual": round(deuda_mensual, 2) if deuda_mensual > 0 else 0.0,
             "📉 Deuda Presupuestaria acumulada": round(deuda_acumulada, 2) if deuda_acumulada > 0 else 0.0,
+            # informativo (fijo)
+            "Aporte objetivos desde presupuesto": round(aporte_obj_total, 2),
+            "Presupuesto bruto": round(presupuesto_bruto, 2),
         }
-
-        for nombre in objetivos_nombres:
-            saldo_objetivo = resumen_objetivos_mes.get(nombre, round(objetivos_saldos.get(nombre, 0.0), 2))
-            resumen[f"🎯 {nombre}"] = saldo_objetivo
-
-            meta = objetivos_meta.get(nombre)
-            objetivo_total_meta = meta.get("objetivo_total") if meta else None
-            mes_inicio_objetivo = objetivos_mes_inicio.get(nombre)
-            objetivo_activo = mes_inicio_objetivo is None or mes_actual >= mes_inicio_objetivo
-
-            if objetivo_total_meta and objetivo_total_meta > 0 and objetivo_activo:
-                progreso = max(0.0, min(1.0, objetivos_saldos[nombre] / objetivo_total_meta))
-                resumen[f"% Objetivo {nombre}"] = round(progreso * 100, 2)
-            elif objetivo_total_meta and objetivo_total_meta > 0:
-                resumen[f"% Objetivo {nombre}"] = 0.0
 
         resumenes.append(resumen)
         mes_actual += 1
 
     df_resumen = pd.DataFrame(resumenes).copy(deep=True)
-    df_resumen = _renombrar_columnas_historial(df_resumen)
 
-    return df_resumen
+    # Si quieres mantener tu renombrado (aquí ya casi no afecta)
+    # df_resumen = _renombrar_columnas_historial(df_resumen)
+
+    objetivos_df = pd.DataFrame(objetivos_rows) if objetivos_rows else pd.DataFrame(
+        columns=[
+            "Mes","Objetivo","fraccion_presupuesto","duracion_meses","mes_inicio","mes_fin",
+            "aporte_mes","ingresos_etiquetados_mes","gastos_etiquetados_mes","saldo_fin_mes",
+            "vence_en_mes","liquidacion",
+            "pred_media_ingresos_10m","pred_aporte_mes_medio","pred_total_duracion"
+        ]
+    )
+
+    return df_resumen, objetivos_df
+
 
 
 # =====================================================

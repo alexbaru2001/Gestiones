@@ -9,7 +9,7 @@ Created on Sat Dec 27 16:25:25 2025
 import json
 import pandas as pd
 from pathlib import Path
-from typing import Union
+from typing import Union, Any, Dict, Optional
 from datetime import datetime, timedelta
 
 from config import (
@@ -33,8 +33,18 @@ def _normalizar_lista(valor):
 
 
 def _normalizar_objetivos(datos):
+    """
+    Normaliza objetivos con el nuevo esquema:
+      - nombre (str)
+      - etiquetas (list[str])
+      - fraccion_presupuesto (float, 0..1)
+      - duracion_meses (int >= 1)
+      - mes_inicio (pd.Period o None)
+      - saldo_inicial (float)
+    """
     if isinstance(datos, dict):
         datos = datos.get("objetivos", [])
+
     objetivos = []
     for objetivo in datos:
         nombre = str(objetivo.get("nombre", "")).strip()
@@ -42,15 +52,21 @@ def _normalizar_objetivos(datos):
             continue
 
         etiquetas = [e.lower() for e in _normalizar_lista(objetivo.get("etiquetas"))]
-        porcentaje = float(objetivo.get("porcentaje_ingreso", 0.0))
-        if porcentaje < 0 or porcentaje > 1:
+
+        fraccion = float(objetivo.get("fraccion_presupuesto", 0.0))
+        if fraccion < 0 or fraccion > 1:
             raise ValueError(
-                f"El objetivo '{nombre}' tiene un porcentaje fuera del rango [0, 1]."
+                f"El objetivo '{nombre}' tiene fraccion_presupuesto fuera de [0, 1]."
             )
 
+        duracion = objetivo.get("duracion_meses")
+        if duracion in (None, "", 0):
+            raise ValueError(f"El objetivo '{nombre}' necesita duracion_meses >= 1.")
+        duracion = int(duracion)
+        if duracion < 1:
+            raise ValueError(f"El objetivo '{nombre}' necesita duracion_meses >= 1.")
+
         saldo_inicial = float(objetivo.get("saldo_inicial", 0.0))
-        objetivo_total = objetivo.get("objetivo_total")
-        horizonte_meses = objetivo.get("horizonte_meses")
 
         mes_inicio_raw = objetivo.get("mes_inicio")
         mes_inicio = None
@@ -64,26 +80,48 @@ def _normalizar_objetivos(datos):
                     mes_inicio = pd.Period(str(mes_inicio_raw), freq="M")
             except Exception as exc:
                 raise ValueError(
-                    f"El objetivo '{nombre}' tiene un mes_inicio inválido: {mes_inicio_raw}"
+                    f"El objetivo '{nombre}' tiene mes_inicio inválido: {mes_inicio_raw}"
                 ) from exc
+        else:
+            raise ValueError(f"El objetivo '{nombre}' necesita mes_inicio (YYYY-MM).")
 
         objetivos.append(
             {
                 "nombre": nombre,
                 "etiquetas": etiquetas,
-                "porcentaje_ingreso": porcentaje,
-                "saldo_inicial": saldo_inicial,
-                "objetivo_total": float(objetivo_total) if objetivo_total is not None else None,
-                "horizonte_meses": int(horizonte_meses) if horizonte_meses else None,
+                "fraccion_presupuesto": fraccion,
+                "duracion_meses": duracion,
                 "mes_inicio": mes_inicio,
+                "saldo_inicial": saldo_inicial,
             }
         )
 
+    # nombres únicos
+    nombres = [o["nombre"] for o in objetivos]
+    if len(nombres) != len(set(nombres)):
+        raise ValueError("Los objetivos deben tener nombres únicos.")
+
     return objetivos
 
+def _objetivo_a_serializable(objetivo: dict) -> dict:
+    mes_inicio = objetivo.get("mes_inicio")
+    if isinstance(mes_inicio, pd.Period):
+        mes_inicio = mes_inicio.strftime("%Y-%m")
+    elif isinstance(mes_inicio, pd.Timestamp):
+        mes_inicio = mes_inicio.to_period("M").strftime("%Y-%m")
+    else:
+        mes_inicio = str(mes_inicio) if mes_inicio not in (None, "") else None
+
+    return {
+        "nombre": objetivo.get("nombre", ""),
+        "etiquetas": list(objetivo.get("etiquetas", [])),
+        "fraccion_presupuesto": float(objetivo.get("fraccion_presupuesto", 0.0)),
+        "duracion_meses": int(objetivo.get("duracion_meses", 0)),
+        "mes_inicio": mes_inicio,
+        "saldo_inicial": float(objetivo.get("saldo_inicial", 0.0)),
+    }
 
 def cargar_objetivos_vista(config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFIG_PATH):
-    """Lee la configuración de objetivos vista desde disco."""
     if config_path is None:
         return []
 
@@ -100,83 +138,43 @@ def cargar_objetivos_vista(config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFI
                 {
                     "nombre": "Coche",
                     "etiquetas": ["coche"],
-                    "porcentaje_ingreso": 0.0,
-                    "saldo_inicial": 0.0,
-                    "objetivo_total": 12000.0,
-                    "horizonte_meses": 24,
+                    "fraccion_presupuesto": 0.3333333333,
+                    "duracion_meses": 10,
                     "mes_inicio": str(pd.Timestamp.today().to_period("M")),
+                    "saldo_inicial": 0.0,
                 }
             ]
         }
         ruta.parent.mkdir(parents=True, exist_ok=True)
         ruta.write_text(json.dumps(plantilla, indent=2, ensure_ascii=False), encoding="utf-8")
-        datos = plantilla["objetivos"]
+        datos = plantilla
     else:
-        try:
-            contenido = ruta.read_text(encoding="utf-8")
-            datos = json.loads(contenido)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"El archivo de objetivos vista {ruta} no contiene JSON válido: {exc}"
-            ) from exc
+        contenido = ruta.read_text(encoding="utf-8")
+        datos = json.loads(contenido)
 
     return _normalizar_objetivos(datos)
-
-
-def _objetivo_a_serializable(objetivo: dict) -> dict:
-    """Convierte un objetivo normalizado en un diccionario apto para JSON."""
-    mes_inicio = objetivo.get("mes_inicio")
-    if isinstance(mes_inicio, pd.Period):
-        mes_inicio = mes_inicio.strftime("%Y-%m")
-    elif isinstance(mes_inicio, pd.Timestamp):
-        mes_inicio = mes_inicio.to_period("M").strftime("%Y-%m")
-    elif mes_inicio in ("", None):
-        mes_inicio = None
-    else:
-        mes_inicio = str(mes_inicio)
-
-    return {
-        "nombre": objetivo.get("nombre", ""),
-        "etiquetas": list(objetivo.get("etiquetas", [])),
-        "porcentaje_ingreso": float(objetivo.get("porcentaje_ingreso", 0.0)),
-        "saldo_inicial": float(objetivo.get("saldo_inicial", 0.0)),
-        "objetivo_total": (
-            float(objetivo.get("objetivo_total"))
-            if objetivo.get("objetivo_total") is not None
-            else None
-        ),
-        "horizonte_meses": (
-            int(objetivo.get("horizonte_meses"))
-            if objetivo.get("horizonte_meses") not in (None, "")
-            else None
-        ),
-        "mes_inicio": mes_inicio,
-    }
 
 
 def guardar_objetivos_vista(
     objetivos: Union[list[dict], dict],
     config_path: Union[Path, str] = OBJETIVOS_VISTA_CONFIG_PATH,
 ) -> list[dict]:
-    """Sobrescribe la configuración de objetivos vista tras validar su contenido."""
     if config_path is None:
         raise ValueError("Se requiere una ruta válida para guardar los objetivos vista.")
 
     objetivos_normalizados = _normalizar_objetivos(objetivos)
-    objetivos_serializables = [_objetivo_a_serializable(obj) for obj in objetivos_normalizados]
+    objetivos_serializables = [_objetivo_a_serializable(o) for o in objetivos_normalizados]
 
     ruta = Path(config_path)
     if not ruta.is_absolute():
         ruta = Path(__file__).resolve().parent / ruta
-
     ruta.parent.mkdir(parents=True, exist_ok=True)
+
     ruta.write_text(
         json.dumps({"objetivos": objetivos_serializables}, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-
     return objetivos_serializables
-
 
 # =====================================================
 # GUARDADOS GENÉRICOS (CSV)
@@ -261,6 +259,40 @@ def fusionar_archivos_registro_seguro(confirmar: bool = False) -> None:
     if not confirmar:
         return
     fusionar_archivos_registro()
+
+
+
+def leer_fondo_reserva_snapshot(carpeta_data: str = "Data") -> Optional[Dict[str, Any]]:
+    """
+    Devuelve un snapshot compatible con crear_historial_cuentas_virtuales:
+    {
+      "Cantidad cargada": float,
+      "Cantidad del fondo": float,
+      "Porcentaje": float
+    }
+
+    Si no hay historial todavía, devuelve None.
+    """
+    try:
+        # Importante: lectura=False para no imprimir, escribir=False para no tocar CSV
+        snap = fondo_reserva_general(
+            carpeta_data=carpeta_data,
+            lectura=False,
+            historial=None,
+            fondo_cargado_actual=None,
+            escribir=False,
+        )
+        # snap puede ser Series
+        if snap is None:
+            return None
+
+        return {
+            "Cantidad cargada": float(snap.get("Cantidad cargada", 0.0)),
+            "Cantidad del fondo": float(snap.get("Cantidad del fondo", 0.0)),
+            "Porcentaje": float(snap.get("Porcentaje", 0.0)),
+        }
+    except Exception:
+        return None
 
 
 def fondo_reserva_general(carpeta_data='Data', lectura=True, historial=None, fondo_cargado_actual=None, escribir: bool = True):
