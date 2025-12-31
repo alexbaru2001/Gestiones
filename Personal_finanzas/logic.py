@@ -71,45 +71,66 @@ def calcular_gastos_netos(df_gastos, df_ingresos):
 def resumen_ingresos(df_ingresos):
     return df_ingresos[df_ingresos["tipo_logico"] == "Ingreso Real"]["cantidad"].sum()
 
-
 def resumen_gastos(df_gastos, df_ingresos):
-    df_gastos_explicacion = df_gastos.copy()
-    df_ingresos_explicacion = df_ingresos.copy()
+    """
+    Devuelve un pivot (mes x categorias) con el gasto neto:
+      gasto_neto_categoria = gastos_categoria - reembolsos_categoria
 
-    df_gastos_explicacion["mes"] = df_gastos_explicacion["fecha"].dt.to_period("M").astype(str)
-    df_ingresos_explicacion["mes"] = df_ingresos_explicacion["fecha"].dt.to_period("M").astype(str)
+    Categorías (columnas) en minúsculas sin tildes como venías usando en plots.
+    """
+    df_g = df_gastos.copy()
+    df_i = df_ingresos.copy()
 
-    gastos_mensuales_explicacion = (
-        df_gastos_explicacion.groupby(["mes", "tipo_logico"])["cantidad"].sum().rename("gastos").reset_index()
-    )
-    ingresos_mensuales_explicacion = (
-        df_ingresos_explicacion.groupby(["mes", "tipo_logico"])["cantidad"].sum().rename("ingresos").reset_index()
-    )
+    df_g["mes"] = df_g["fecha"].dt.to_period("M").astype(str)
+    df_i["mes"] = df_i["fecha"].dt.to_period("M").astype(str)
 
-    df_explicacion = pd.merge(
-        ingresos_mensuales_explicacion,
-        gastos_mensuales_explicacion,
-        on=["mes", "tipo_logico"],
-        how="outer",
-    ).fillna(0)
-
-    df_explicacion["grupo"] = df_explicacion["tipo_logico"].apply(
-        lambda x: "Ingreso Real" if x == "Ingreso Real" else ("Reembolso" if str(x).startswith("Reembolso") else "Otro")
+    # 1) Gastos brutos por mes y categoría (usa 'categoria' del Excel)
+    g = (
+        df_g.groupby(["mes", "categoria"])["cantidad"]
+        .sum()
+        .rename("gasto")
+        .reset_index()
     )
 
-    df_explicacion = df_explicacion.loc[df_explicacion["grupo"].isin(["Reembolso"])]
+    # Normalización de nombre de categoría (como en tus plots)
+    g["categoria"] = g["categoria"].astype(str).str.lower()
 
-    df_explicacion["balance"] = df_explicacion["gastos"] - df_explicacion["ingresos"]
-    df_explicacion = df_explicacion.drop(["ingresos", "gastos", "grupo"], axis=1)
+    # 2) Reembolsos por mes y categoría (vienen desde ingresos tipo_logico="Reembolso X")
+    reemb = df_i[df_i["tipo_logico"].astype(str).str.startswith("Reembolso")].copy()
+    if not reemb.empty:
+        reemb["categoria"] = reemb["tipo_logico"].astype(str).str.replace("Reembolso ", "", regex=False).str.lower()
+        r = (
+            reemb.groupby(["mes", "categoria"])["cantidad"]
+            .sum()
+            .rename("reembolso")
+            .reset_index()
+        )
+    else:
+        r = pd.DataFrame(columns=["mes", "categoria", "reembolso"])
 
-    pivot_explicacion = df_explicacion.pivot_table(index="mes", columns="tipo_logico", values="balance")
+    # 3) Neto = gasto - reembolso (si no hay reembolso, 0)
+    merged = g.merge(r, on=["mes", "categoria"], how="left").fillna({"reembolso": 0})
+    merged["neto"] = merged["gasto"] - merged["reembolso"]
 
-    cols = ["alimentacion", "entretenimiento", "hosteleria", "otros", "transporte"]
-    pivot_explicacion = pivot_explicacion.rename(columns=str.lower)
-    pivot_explicacion = pivot_explicacion.reindex(columns=cols, fill_value=0)
-    pivot_explicacion = pivot_explicacion.fillna(0)
+    # 4) Pivot final (mes x categoria)
+    pivot = merged.pivot_table(index="mes", columns="categoria", values="neto", aggfunc="sum").fillna(0)
 
-    return pivot_explicacion
+    # Orden de columnas fijo si existe
+    cols = ["alimentacion", "transporte", "hosteleria", "entretenimiento", "otros"]
+    pivot = pivot.reindex(columns=cols, fill_value=0)
+
+    return pivot
+
+
+
+def _split_tags(s: str):
+    if s is None:
+        return []
+    s = str(s).strip().lower()
+    if not s:
+        return []
+    # etiquetas coma-separadas (como usas en Streamlit)
+    return [t.strip() for t in s.split(",") if t.strip()]
 
 
 def resumen_mensual(df_gastos, df_ingresos):
@@ -119,30 +140,73 @@ def resumen_mensual(df_gastos, df_ingresos):
     df_gastos["mes"] = df_gastos["fecha"].dt.to_period("M").astype(str)
     df_ingresos["mes"] = df_ingresos["fecha"].dt.to_period("M").astype(str)
 
-    gastos_mensuales = (
-        df_gastos.groupby(["mes", "tipo_logico"])["cantidad"].sum().rename("gastos").reset_index()
-    )
-    ingresos_mensuales = (
-        df_ingresos.groupby(["mes", "tipo_logico"])["cantidad"].sum().rename("ingresos").reset_index()
-    )
-
-    df_resumen = pd.merge(ingresos_mensuales, gastos_mensuales, on=["mes", "tipo_logico"], how="outer").fillna(0)
-
-    df_resumen["grupo"] = df_resumen["tipo_logico"].apply(
-        lambda x: "Ingreso Real" if x == "Ingreso Real" else ("Reembolso" if str(x).startswith("Reembolso") else "Otro")
+    # 1) ingresos reales
+    ingresos_real = (
+        df_ingresos.loc[df_ingresos["tipo_logico"] == "Ingreso Real"]
+        .groupby("mes")["cantidad"]
+        .sum()
+        .rename("ingresos")
     )
 
-    df_resumen = df_resumen.loc[df_resumen["grupo"].isin(["Ingreso Real", "Reembolso"])]
-    df_resumen = df_resumen.groupby(["mes", "grupo"])[["ingresos", "gastos"]].sum().reset_index()
+    # 2) gastos totales
+    gastos_totales = (
+        df_gastos.groupby("mes")["cantidad"]
+        .sum()
+        .rename("gastos_totales")
+    )
 
-    df_resumen["balance"] = abs(df_resumen["ingresos"] - df_resumen["gastos"])
-    df_resumen = df_resumen.drop(["ingresos", "gastos"], axis=1)
+    # 3) reembolsos clásicos (lo que ya tenías como "Reembolso ...")
+    reembolsos = (
+        df_ingresos.loc[df_ingresos["tipo_logico"].astype(str).str.startswith("Reembolso")]
+        .groupby("mes")["cantidad"]
+        .sum()
+        .rename("reembolsos")
+    )
 
-    pivot = df_resumen.pivot_table(index="mes", columns="grupo", values="balance", aggfunc="sum")
-    pivot = pivot.rename(columns={"Ingreso Real": "ingresos", "Reembolso": "gastos"})
-    pivot["balance"] = pivot["ingresos"] - pivot["gastos"]
+    # 4) compensaciones por etiqueta:
+    #    - un ingreso con etiqueta X compensa gastos con etiqueta X en el mismo mes
+    #    - no toca "Ingreso Real" (sueldo), para evitar que el sueldo se interprete como compensación
+    g = df_gastos[["mes", "cantidad", "etiquetas"]].copy()
+    i = df_ingresos[["mes", "cantidad", "etiquetas", "tipo_logico"]].copy()
 
-    return pivot
+    g["tags"] = g["etiquetas"].apply(_split_tags)
+    i["tags"] = i["etiquetas"].apply(_split_tags)
+
+    # quedarnos solo con ingresos NO salariales con alguna etiqueta
+    i = i[(i["tipo_logico"] != "Ingreso Real") & (i["tags"].apply(len) > 0)].copy()
+    g = g[g["tags"].apply(len) > 0].copy()
+
+    if len(g) and len(i):
+        g_exp = g.explode("tags")
+        i_exp = i.explode("tags")
+
+        # tags existentes en gastos por mes
+        tags_gastos = g_exp[["mes", "tags"]].drop_duplicates()
+
+        # ingresos cuya etiqueta existe en gastos del mismo mes
+        i_match = i_exp.merge(tags_gastos, on=["mes", "tags"], how="inner")
+
+        compensaciones_etiqueta = (
+            i_match.groupby("mes")["cantidad"]
+            .sum()
+            .rename("comp_etiqueta")
+        )
+    else:
+        compensaciones_etiqueta = pd.Series(dtype=float, name="comp_etiqueta")
+
+    # 5) unir y calcular netos
+    out = pd.concat([ingresos_real, gastos_totales, reembolsos, compensaciones_etiqueta], axis=1).fillna(0)
+
+    # OJO: compensaciones = reembolsos + ingresos con etiqueta coincidente
+    out["compensaciones"] = out["reembolsos"] + out["comp_etiqueta"]
+
+    # gasto neto (no permitir que baje de 0 por seguridad)
+    out["gastos"] = (out["gastos_totales"] - out["compensaciones"]).clip(lower=0)
+
+    out["balance"] = out["ingresos"] - out["gastos"]
+
+    return out[["ingresos", "gastos", "balance"]]
+
 
 
 # =====================================================

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-
+from plotly.subplots import make_subplots
 from logic import resumen_gastos, resumen_mensual
 
 
@@ -46,6 +46,64 @@ def plot_balance_mensual(resumen: pd.DataFrame) -> go.Figure:
         template="plotly_white",
     )
     return fig
+
+def plot_balance_mensual_con_ahorro(resumen: pd.DataFrame) -> go.Figure:
+    """
+    Espera un DataFrame con columnas: ingresos, gastos, balance
+    (índice = mes)
+    Dibuja:
+      - Eje Y izq (€): Ingresos (bar), Gastos (bar negativo), Balance (línea)
+      - Eje Y dcha (%): % ahorro (línea)
+    """
+    if resumen is None or len(resumen) == 0:
+        raise ValueError("El DataFrame 'resumen' está vacío.")
+
+    required = {"ingresos", "gastos", "balance"}
+    missing = required - set(resumen.columns)
+    if missing:
+        raise ValueError(f"Faltan columnas en 'resumen': {missing}")
+
+    df = resumen.copy()
+    df.index = df.index.astype(str)
+
+    # % ahorro: (ingresos - gastos) / ingresos * 100
+    # (equivalente a balance/ingresos*100). Evitamos división por 0.
+    denom = df["ingresos"].replace(0, pd.NA)
+    df["porcentaje_ahorro"] = (df["balance"] / denom) * 100
+    df["porcentaje_ahorro"] = df["porcentaje_ahorro"].fillna(0)
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # --- Eje izq (€)
+    fig.add_trace(go.Bar(x=df.index, y=df["ingresos"], name="Ingresos"), secondary_y=False)
+    fig.add_trace(go.Bar(x=df.index, y=-df["gastos"], name="Gastos"), secondary_y=False)
+    fig.add_trace(go.Scatter(x=df.index, y=df["balance"], name="Balance Neto", mode="lines+markers"), secondary_y=False)
+
+    # --- Eje dcha (%)
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["porcentaje_ahorro"],
+            name="% Ahorro",
+            mode="lines+markers",
+        ),
+        secondary_y=True,
+    )
+
+    fig.update_layout(
+        title="Balance mensual + % ahorro",
+        barmode="relative",
+        xaxis_title="Mes",
+        legend_title="Serie",
+        template="plotly_white",
+    )
+    fig.update_yaxes(title_text="Cantidad (€)", secondary_y=False)
+    fig.update_yaxes(title_text="% Ahorro", secondary_y=True, rangemode="tozero")
+
+    return fig
+
+
+
 
 
 # =====================================================
