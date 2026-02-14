@@ -705,12 +705,15 @@ def crear_historial_cuentas_virtuales(
             liquidacion = 0.0
             
             ahorro -= aporte_mes
-            
+            print('hola')
             if vence:
-                
+                print('lo hace')# no lo esta haciendo hay que arreglarlo
                 if saldo_fin > 0:
                     ahorro += saldo_fin
                     liquidacion = saldo_fin
+                    print(deuda_acumulada)
+                    deuda_acumulada -= saldo_fin
+                    print(deuda_acumulada)
                 elif saldo_fin < 0:
                     deuda_acumulada += abs(saldo_fin)
                     ahorro -= abs(saldo_fin)
