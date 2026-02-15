@@ -14,13 +14,44 @@ from pipeline import PipelineParams, run_pipeline
 
 # Ajusta imports a tus módulos reales
 from plots import plot_balance_mensual, plot_balance_mensual_con_ahorro, plot_explicacion_gastos, plot_porcentaje_ahorro
-from io_data import leer_fondo_reserva_snapshot
+from io_data import leer_fondo_reserva_snapshot, cargar_objetivos_vista, guardar_objetivos_vista
 from logic import resumen_global, resumen_mensual
 
 
 # =====================================================
 # Helpers UI / datos
 # =====================================================
+
+def _objetivos_a_df(objetivos: list[dict]) -> pd.DataFrame:
+    # etiquetas en tu JSON suelen ser lista; en tu UI las tratas como texto
+    rows = []
+    for o in objetivos:
+        rows.append({
+            "nombre": o.get("nombre", ""),
+            "etiquetas": ",".join(o.get("etiquetas", [])) if isinstance(o.get("etiquetas"), list) else str(o.get("etiquetas","")),
+            "fraccion_presupuesto": float(o.get("fraccion_presupuesto", 0.0)),
+            "duracion_meses": int(o.get("duracion_meses", 0)),
+            "mes_inicio": o.get("mes_inicio", ""),
+        })
+    return pd.DataFrame(rows)
+
+def _df_a_objetivos(df: pd.DataFrame) -> list[dict]:
+    objetivos = []
+    if df is None or df.empty:
+        return objetivos
+    for _, r in df.iterrows():
+        etiquetas = str(r.get("etiquetas", "")).strip()
+        et_list = [e.strip() for e in etiquetas.split(",") if e.strip()] if etiquetas else []
+        objetivos.append({
+            "nombre": str(r.get("nombre","")).strip(),
+            "etiquetas": et_list,
+            "fraccion_presupuesto": float(r.get("fraccion_presupuesto", 0.0) or 0.0),
+            "duracion_meses": int(r.get("duracion_meses", 0) or 0),
+            "mes_inicio": str(r.get("mes_inicio","")).strip(),
+            "saldo_inicial": 0.0,
+        })
+    return objetivos
+
 
 def _objetivos_default() -> pd.DataFrame:
     return pd.DataFrame(
@@ -51,6 +82,59 @@ def _df_objetivos_a_lista(df: pd.DataFrame) -> List[Dict[str, Any]]:
             }
         )
     return out
+
+def _to_period_m(x):
+    if x is None or x == "":
+        return None
+    if isinstance(x, pd.Period):
+        return x.asfreq("M")
+    if isinstance(x, pd.Timestamp):
+        return x.to_period("M")
+    return pd.Period(str(x)[:7], freq="M")
+
+def _mes_fin_objetivo(mes_inicio: pd.Period, duracion_meses: int) -> pd.Period:
+    return mes_inicio + (int(duracion_meses) - 1)
+
+def validar_fraccion_por_mes(objetivos: list[dict]) -> list[str]:
+    """
+    Devuelve lista de errores si en algún mes la suma de fracciones activas > 1.
+    """
+    errores = []
+    uso_mes = {}  # {Period('YYYY-MM'): float}
+
+    for o in objetivos:
+        nombre = o.get("nombre", "(sin nombre)")
+        fr = float(o.get("fraccion_presupuesto", 0.0) or 0.0)
+        dur = int(o.get("duracion_meses", 0) or 0)
+        mi = _to_period_m(o.get("mes_inicio"))
+
+        if mi is None or dur <= 0:
+            continue  # esto ya lo validas en otras partes
+
+        mf = _mes_fin_objetivo(mi, dur)
+
+        for m in pd.period_range(mi, mf, freq="M"):
+            uso_mes[m] = uso_mes.get(m, 0.0) + fr
+
+    # detectar meses que superan 1
+    meses_fuera = sorted([(m, v) for m, v in uso_mes.items() if v > 1.0 + 1e-9], key=lambda x: x[0])
+    for m, v in meses_fuera:
+        errores.append(f"En {m.strftime('%Y-%m')} la suma de objetivos activos es {v:.2f} (> 1.00).")
+
+    return errores
+
+def uso_fraccion_por_mes(objetivos: list[dict]) -> dict[pd.Period, float]:
+    uso_mes = {}
+    for o in objetivos:
+        fr = float(o.get("fraccion_presupuesto", 0.0) or 0.0)
+        dur = int(o.get("duracion_meses", 0) or 0)
+        mi = _to_period_m(o.get("mes_inicio"))
+        if mi is None or dur <= 0:
+            continue
+        mf = mi + (dur - 1)
+        for m in pd.period_range(mi, mf, freq="M"):
+            uso_mes[m] = uso_mes.get(m, 0.0) + fr
+    return uso_mes
 
 
 def _validar_objetivos(df: pd.DataFrame) -> Tuple[List[str], List[Dict[str, Any]]]:
@@ -109,6 +193,15 @@ def _presupuesto_balances_df(presupuesto) -> pd.DataFrame:
         return df
     return df.sort_values("Saldo", ascending=False).reset_index(drop=True)
 
+def ultimo_mes_historial(df_resumen: pd.DataFrame) -> pd.Period | None:
+    if not isinstance(df_resumen, pd.DataFrame) or df_resumen.empty:
+        return None
+    # En tu lógica, 'Mes' es un string tipo 'YYYY-MM'
+    # pero lo tratamos robusto:
+    last_val = df_resumen.iloc[-1].get("Mes", None)
+    if last_val is None:
+        return None
+    return pd.Period(str(last_val)[:7], freq="M")
 
 # =====================================================
 # Cache del pipeline
@@ -169,8 +262,11 @@ def main():
 
     if "out" not in st.session_state:
         st.session_state.out = None
+        
     if "df_objetivos" not in st.session_state:
-        st.session_state.df_objetivos = _objetivos_default()
+        objetivos = cargar_objetivos_vista()  # lee Data/objetivos_vista.json (o crea plantilla)
+        st.session_state.df_objetivos = _objetivos_a_df(objetivos)
+        st.session_state.objetivos_dirty = False
 
     # -------------------------
     # Sidebar: entradas + run
@@ -202,6 +298,10 @@ def main():
         
         st.caption("Crea objetivos con formulario. La suma de fracciones no puede superar 100%.")
         
+        errores_obj = []
+        objetivos_lista = []
+
+        
         # --- Formulario guiado ---
         with st.form("form_objetivo", clear_on_submit=True):
             nombre = st.text_input("Nombre del objetivo", placeholder="Ej: Coche")
@@ -214,32 +314,79 @@ def main():
         
             mes_inicio = st.text_input("Mes inicio (YYYY-MM)", value=pd.Timestamp.today().strftime("%Y-%m"))
         
-            # Preview: cómo quedaría el total
+            # Preview: impacto mensual (sin sumar global)
             fr = fraccion_pct / 100.0
-            total_preview = total_fr + fr
-            st.info(f"Total tras añadir: {total_preview*100:.1f}% (límite 100%)")
+        
+            # Usamos el calendario actual de fracciones por mes
+            errores_preview = []
+            total_preview_max = None
+            mes_preview_max = None
+        
+            # Solo si el mes_inicio parece válido hacemos preview “inteligente”
+            if re.fullmatch(r"\d{4}-\d{2}", str(mes_inicio).strip()):
+                objetivos_actuales = _df_objetivos_a_lista(df_obj) if "_df_objetivos_a_lista" in globals() else df_obj.to_dict("records")
+                uso_mes = uso_fraccion_por_mes(objetivos_actuales)
+        
+                mi = pd.Period(str(mes_inicio).strip(), freq="M")
+                mf = mi + (int(duracion) - 1)
+        
+                # Simular añadir el nuevo objetivo mes a mes y calcular el máximo
+                max_val = 0.0
+                max_mes = None
+                for m in pd.period_range(mi, mf, freq="M"):
+                    val = float(uso_mes.get(m, 0.0)) + fr
+                    if val > max_val:
+                        max_val = val
+                        max_mes = m
+        
+                total_preview_max = max_val
+                mes_preview_max = max_mes
+        
+                if total_preview_max > 1.0 + 1e-9:
+                    st.error(f"Con este objetivo, en {mes_preview_max} llegarías a {total_preview_max*100:.1f}% (> 100%).")
+                else:
+                    st.info(f"Con este objetivo, el máximo uso mensual en su periodo sería {total_preview_max*100:.1f}% (OK).")
+            else:
+                st.info("Introduce Mes inicio en formato YYYY-MM para ver el impacto mensual.")
         
             guardar = st.form_submit_button("Añadir objetivo", type="primary")
         
         if guardar:
-            # Validación rápida antes de tocar df
             if not nombre.strip():
                 st.error("El nombre no puede estar vacío.")
-            elif total_fr + (fraccion_pct/100.0) > 1.0 + 1e-9:
-                st.error("No se puede añadir: superarías el 100% asignado.")
             elif not re.fullmatch(r"\d{4}-\d{2}", str(mes_inicio).strip()):
                 st.error("Mes inicio debe ser 'YYYY-MM'.")
             else:
-                nueva = {
-                    "nombre": nombre.strip(),
-                    "etiquetas": etiquetas.strip(),
-                    "fraccion_presupuesto": float(fraccion_pct/100.0),
-                    "duracion_meses": int(duracion),
-                    "mes_inicio": str(mes_inicio).strip(),
-                }
-                st.session_state.df_objetivos = pd.concat([df_obj, pd.DataFrame([nueva])], ignore_index=True)
-                st.success("Objetivo añadido.")
+                # Validación REAL: no superar 1 en ningún mes del rango del nuevo objetivo
+                objetivos_actuales = _df_objetivos_a_lista(df_obj) if "_df_objetivos_a_lista" in globals() else df_obj.to_dict("records")
+                uso_mes = uso_fraccion_por_mes(objetivos_actuales)
         
+                mi = pd.Period(str(mes_inicio).strip(), freq="M")
+                mf = mi + (int(duracion) - 1)
+        
+                supera = []
+                for m in pd.period_range(mi, mf, freq="M"):
+                    if float(uso_mes.get(m, 0.0)) + float(fraccion_pct/100.0) > 1.0 + 1e-9:
+                        supera.append(m)
+        
+                if supera:
+                    # mostramos el primer mes conflictivo (más claro)
+                    m0 = sorted(supera)[0]
+                    v0 = float(uso_mes.get(m0, 0.0)) + float(fraccion_pct/100.0)
+                    st.error(f"No se puede añadir: en {m0} la suma sería {v0*100:.1f}% (> 100%).")
+                else:
+                    nueva = {
+                        "nombre": nombre.strip(),
+                        "etiquetas": etiquetas.strip(),
+                        "fraccion_presupuesto": float(fraccion_pct/100.0),
+                        "duracion_meses": int(duracion),
+                        "mes_inicio": str(mes_inicio).strip(),
+                    }
+                    st.session_state.df_objetivos = pd.concat([df_obj, pd.DataFrame([nueva])], ignore_index=True)
+                    st.session_state.objetivos_dirty = True
+                    st.success("Objetivo añadido.")
+        
+                
         # --- modo avanzado: tabla ---
         with st.expander("Modo avanzado: editar tabla", expanded=False):
             st.caption("Campos: nombre, etiquetas, fraccion_presupuesto, duracion_meses, mes_inicio (YYYY-MM)")
@@ -250,14 +397,57 @@ def main():
                 key="editor_objetivos",
             )
             st.session_state.df_objetivos = df_edit
+            st.session_state.objetivos_dirty = True
         
         # Validación final (tu función actual)
         errores_obj, objetivos_lista = _validar_objetivos(st.session_state.df_objetivos)
+        
+        #Validacion mensual
+        if not errores_obj:  # opcional: solo si lo demás está bien
+            errores_mes = validar_fraccion_por_mes(objetivos_lista)
+            errores_obj = errores_obj + errores_mes
+            
         if errores_obj:
             st.error("\n".join(errores_obj))
             
-            
-            
+        uso_mes = uso_fraccion_por_mes(objetivos_lista)
+
+        if uso_mes:
+            ultimo_mes = max(uso_mes.keys())
+            asignado_ultimo = uso_mes[ultimo_mes]
+            disp_ultimo = max(0.0, 1.0 - asignado_ultimo)
+        
+            c1, c2, c3 = st.columns([1,1,2])
+            c1.metric(f"Asignado en {ultimo_mes}", f"{asignado_ultimo*100:.1f}%")
+            c2.metric("Disponible", f"{disp_ultimo*100:.1f}%")
+            c3.progress(min(max(asignado_ultimo, 0.0), 1.0))
+        else:
+            st.info("No hay objetivos activos todavía.")
+
+        meses_fuera = [(m,v) for m,v in uso_mes.items() if v > 1.0 + 1e-9]
+        if meses_fuera:
+            meses_fuera = sorted(meses_fuera, key=lambda x: x[0])
+            st.error("Hay meses donde la suma de objetivos activos supera el 100%.")
+            with st.expander("Ver meses en conflicto"):
+                for m, v in meses_fuera:
+                    st.write(f"- {m}: {v*100:.1f}%")
+                    
+        
+        # Marcar cambios como "pendientes de guardar"
+        # (pon esto cada vez que modifiques df_objetivos: al añadir, editar, borrar)
+        # st.session_state.objetivos_dirty = True
+        
+        colg1, colg2 = st.columns([1,1])
+        with colg1:
+            if st.button("Guardar objetivos", disabled=bool(errores_obj)):
+                objetivos_guardar = _df_a_objetivos(st.session_state.df_objetivos)
+                guardar_objetivos_vista(objetivos_guardar)
+                st.session_state.objetivos_dirty = False
+                st.success("Objetivos guardados.")
+        with colg2:
+            if st.session_state.get("objetivos_dirty", False):
+                st.warning("Cambios sin guardar.")
+
             
             
 
@@ -621,7 +811,17 @@ def main():
         
                     if nombre in saldo_actual:
                         st.metric("Saldo acumulado (según movimientos)", f"{float(saldo_actual[nombre]):,.2f} €")
-                        
+        
+        st.subheader("Eliminar objetivo")
+        nombres = st.session_state.df_objetivos["nombre"].astype(str).tolist() if not st.session_state.df_objetivos.empty else []
+        sel = st.selectbox("Selecciona objetivo", ["(ninguno)"] + nombres)
+        
+        if sel != "(ninguno)":
+            if st.button("🗑️ Eliminar seleccionado"):
+                st.session_state.df_objetivos = st.session_state.df_objetivos[st.session_state.df_objetivos["nombre"].astype(str) != sel].reset_index(drop=True)
+                st.session_state.objetivos_dirty = True
+                st.success(f"Eliminado: {sel}")
+               
                         
         st.subheader("Objetivos configurados")
         st.dataframe(pd.DataFrame(out.get("objetivos", [])), use_container_width=True)
