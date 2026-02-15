@@ -186,18 +186,80 @@ def main():
         porcentaje_vacaciones = st.number_input("porcentaje_vacaciones", min_value=0.0, max_value=1.0, value=0.05, step=0.01)
 
         st.header("3) Objetivos (presupuesto)")
-        st.caption("Campos: nombre, etiquetas (coma-separadas), fraccion_presupuesto, duracion_meses, mes_inicio (YYYY-MM)")
-        df_edit = st.data_editor(
-            st.session_state.df_objetivos,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_objetivos",
-        )
-        st.session_state.df_objetivos = df_edit
+        df_obj = st.session_state.df_objetivos.copy()
 
-        errores_obj, objetivos_lista = _validar_objetivos(df_edit)
+        # --- métricas asignado/disponible ---
+        total_fr = 0.0
+        if df_obj is not None and not df_obj.empty and "fraccion_presupuesto" in df_obj.columns:
+            total_fr = float(pd.to_numeric(df_obj["fraccion_presupuesto"], errors="coerce").fillna(0).sum())
+        
+        disp_fr = max(0.0, 1.0 - total_fr)
+        
+        c1, c2, c3 = st.columns([1,1,2])
+        c1.metric("Asignado", f"{total_fr*100:.1f}%")
+        c2.metric("Disponible", f"{disp_fr*100:.1f}%")
+        c3.progress(min(max(total_fr, 0.0), 1.0))
+        
+        st.caption("Crea objetivos con formulario. La suma de fracciones no puede superar 100%.")
+        
+        # --- Formulario guiado ---
+        with st.form("form_objetivo", clear_on_submit=True):
+            nombre = st.text_input("Nombre del objetivo", placeholder="Ej: Coche")
+            etiquetas = st.text_input("Etiquetas (coma-separadas)", placeholder="ej: coche,capricho")
+            colA, colB = st.columns(2)
+            with colA:
+                fraccion_pct = st.number_input("Asignación (% del presupuesto mensual)", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
+            with colB:
+                duracion = st.number_input("Duración (meses)", min_value=1, max_value=600, value=12, step=1)
+        
+            mes_inicio = st.text_input("Mes inicio (YYYY-MM)", value=pd.Timestamp.today().strftime("%Y-%m"))
+        
+            # Preview: cómo quedaría el total
+            fr = fraccion_pct / 100.0
+            total_preview = total_fr + fr
+            st.info(f"Total tras añadir: {total_preview*100:.1f}% (límite 100%)")
+        
+            guardar = st.form_submit_button("Añadir objetivo", type="primary")
+        
+        if guardar:
+            # Validación rápida antes de tocar df
+            if not nombre.strip():
+                st.error("El nombre no puede estar vacío.")
+            elif total_fr + (fraccion_pct/100.0) > 1.0 + 1e-9:
+                st.error("No se puede añadir: superarías el 100% asignado.")
+            elif not re.fullmatch(r"\d{4}-\d{2}", str(mes_inicio).strip()):
+                st.error("Mes inicio debe ser 'YYYY-MM'.")
+            else:
+                nueva = {
+                    "nombre": nombre.strip(),
+                    "etiquetas": etiquetas.strip(),
+                    "fraccion_presupuesto": float(fraccion_pct/100.0),
+                    "duracion_meses": int(duracion),
+                    "mes_inicio": str(mes_inicio).strip(),
+                }
+                st.session_state.df_objetivos = pd.concat([df_obj, pd.DataFrame([nueva])], ignore_index=True)
+                st.success("Objetivo añadido.")
+        
+        # --- modo avanzado: tabla ---
+        with st.expander("Modo avanzado: editar tabla", expanded=False):
+            st.caption("Campos: nombre, etiquetas, fraccion_presupuesto, duracion_meses, mes_inicio (YYYY-MM)")
+            df_edit = st.data_editor(
+                st.session_state.df_objetivos,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_objetivos",
+            )
+            st.session_state.df_objetivos = df_edit
+        
+        # Validación final (tu función actual)
+        errores_obj, objetivos_lista = _validar_objetivos(st.session_state.df_objetivos)
         if errores_obj:
             st.error("\n".join(errores_obj))
+            
+            
+            
+            
+            
 
         st.divider()
 
@@ -518,6 +580,49 @@ def main():
                 st.warning(f"No se pudo generar 'Explicación de gastos': {e}")
 
     with tab_objetivos:
+        st.subheader("Objetivos: panel visual")
+
+        cfg = pd.DataFrame(out.get("objetivos", [])) if out else pd.DataFrame()
+        if cfg.empty:
+            st.info("No hay objetivos configurados.")
+        else:
+            # total asignado / disponible (también aquí, por claridad)
+            total_fr = float(pd.to_numeric(cfg["fraccion_presupuesto"], errors="coerce").fillna(0).sum())
+            st.write(f"Asignado: **{total_fr*100:.1f}%** | Disponible: **{max(0,1-total_fr)*100:.1f}%**")
+            st.progress(min(max(total_fr,0.0),1.0))
+        
+            # Si hay objetivos_df, calcular "saldo actual" por objetivo
+            saldo_actual = {}
+            if isinstance(objetivos_df, pd.DataFrame) and not objetivos_df.empty:
+                tmp = objetivos_df.copy()
+                tmp["Mes"] = tmp["Mes"].astype(str)
+                # última fila por objetivo (ordenando por Mes)
+                tmp = tmp.sort_values(["Objetivo","Mes"])
+                last_rows = tmp.groupby("Objetivo", as_index=False).tail(1)
+                saldo_actual = dict(zip(last_rows["Objetivo"], last_rows["saldo_fin_mes"]))
+        
+            # Render de tarjetas
+            for _, row in cfg.iterrows():
+                nombre = str(row.get("nombre",""))
+                et = str(row.get("etiquetas",""))
+                fr = float(row.get("fraccion_presupuesto",0) or 0)
+                dur = int(row.get("duracion_meses",0) or 0)
+                mi = row.get("mes_inicio")
+        
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([2,1,1])
+                    c1.markdown(f"**{nombre}**")
+                    c1.caption(et if et else "Sin etiquetas")
+                    c2.metric("Asignación", f"{fr*100:.1f}%")
+                    c3.metric("Duración", f"{dur} meses")
+        
+                    if mi:
+                        st.caption(f"Inicio: {mi}")
+        
+                    if nombre in saldo_actual:
+                        st.metric("Saldo acumulado (según movimientos)", f"{float(saldo_actual[nombre]):,.2f} €")
+                        
+                        
         st.subheader("Objetivos configurados")
         st.dataframe(pd.DataFrame(out.get("objetivos", [])), use_container_width=True)
 
