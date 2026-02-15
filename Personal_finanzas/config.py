@@ -7,6 +7,8 @@ REGISTROS_DIR = Path(__file__).resolve().parent / "Data" / "Registros"
 ARCHIVO_BASE_REGISTROS = REGISTROS_DIR / "Inicio.xlsx"
 HOJAS_REGISTRO = ["Gastos", "Ingresos", "Transferencias"]
 OBJETIVOS_VISTA_CONFIG_PATH = Path(__file__).resolve().parent / "Data" / "objetivos_vista.json"
+CUENTAS_INVERSION = ["Invertido", "Degiro", "Trade Republic - Inversion"]
+
 
 saldos_iniciales = {
     'Principal': 482.99000000000007,

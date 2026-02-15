@@ -16,6 +16,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 
 from domain import Transaction
+from config import CUENTAS_INVERSION
 from config import saldos_iniciales as saldos_iniciales_config
 from io_data import fondo_reserva_general
 
@@ -288,7 +289,10 @@ def invertido_en_mes(presupuesto, mes_periodo: pd.Period):
     else:
         raise ValueError("El mes indicado es en el futuro y no puede calcularse.")
 
-    invertido = presupuesto.balances_a_fecha(fecha_objetivo)["Invertido"]
+    balances = presupuesto.balances_a_fecha(fecha_objetivo)
+
+    invertido = sum(float(balances.get(cuenta, 0.0)) for cuenta in CUENTAS_INVERSION)
+    # invertido = presupuesto.balances_a_fecha(fecha_objetivo)["Invertido"]
     return invertido
 
 
