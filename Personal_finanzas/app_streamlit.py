@@ -719,8 +719,25 @@ def main():
                         )
         
                         import plotly.express as px
-                        fig_int = px.bar(por_anio, x="anio", y="cantidad", title="Intereses por año")
-                        fig_int.update_layout(yaxis_title="€", xaxis_title="Año", margin=dict(l=10, r=10, t=50, b=10))
+                        # 1) Año como categoría (clave para que no se “estire”)
+                        por_anio["anio"] = por_anio["anio"].astype(int).astype(str)
+                        
+                        # 2) Gráfico vertical garantizado
+                        fig_int = px.bar(
+                            por_anio,
+                            x="anio",
+                            y="cantidad",
+                            title="Intereses por año",
+                        )
+                        
+                        # 3) Forzar eje X categórico (doble seguridad)
+                        fig_int.update_xaxes(type="category")
+                        
+                        fig_int.update_layout(
+                            xaxis_title="Año",
+                            yaxis_title="€",
+                            margin=dict(l=10, r=10, t=50, b=10),
+                        )
                         st.plotly_chart(fig_int, use_container_width=True)
         
                         with st.expander("Ver tabla", expanded=False):
