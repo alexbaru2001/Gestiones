@@ -14,6 +14,7 @@ from pipeline import PipelineParams, run_pipeline
 
 # Ajusta imports a tus módulos reales
 from plots import plot_balance_mensual, plot_balance_mensual_con_ahorro, plot_explicacion_gastos, plot_porcentaje_ahorro
+from plots import grafico_evolucion_tipologias, grafico_prediccion_tipologias
 from io_data import leer_fondo_reserva_snapshot, cargar_objetivos_vista, guardar_objetivos_vista
 from logic import resumen_global, resumen_mensual
 
@@ -748,6 +749,67 @@ def main():
         if df_resumen is not None and isinstance(df_resumen, pd.DataFrame) and not df_resumen.empty:
             st.subheader("Resumen mensual (df_resumen)")
             st.dataframe(df_resumen, use_container_width=True)
+            st.subheader("Evolución por tipología")
+
+            columnas_excluir = {"Mes"}
+            columnas_numericas = [
+                c for c in df_resumen.columns
+                if c not in columnas_excluir and pd.api.types.is_numeric_dtype(df_resumen[c])
+            ]
+            
+            columnas_sel = st.multiselect(
+                "Selecciona tipologías para analizar",
+                options=columnas_numericas,
+                default=columnas_numericas[:3] if len(columnas_numericas) >= 3 else columnas_numericas,
+                key="tipologias_linea"
+            )
+            
+            col_cfg1, col_cfg2 = st.columns(2)
+            with col_cfg1:
+                ventana_mm = st.slider(
+                    "Ventana media móvil",
+                    min_value=2,
+                    max_value=12,
+                    value=3,
+                    step=1,
+                    key="ventana_media_movil"
+                )
+            with col_cfg2:
+                meses_pred = st.slider(
+                    "Meses a predecir",
+                    min_value=1,
+                    max_value=24,
+                    value=6,
+                    step=1,
+                    key="meses_pred_tipologias"
+                )
+            
+            if columnas_sel:
+                fig_lineas = grafico_evolucion_tipologias(
+                    df_resumen,
+                    columnas_sel,
+                    ventana_mm=ventana_mm
+                )
+                st.plotly_chart(fig_lineas, use_container_width=True)
+            
+                st.subheader("Predicción según histórico")
+            
+                fig_pred = grafico_prediccion_tipologias(
+                    df_resumen,
+                    columnas_sel,
+                    meses_pred=meses_pred,
+                    ventana_mm=ventana_mm,
+                    factor_conservador=0.75,
+                    factor_optimista=1.25,
+                )
+                st.plotly_chart(fig_pred, use_container_width=True)
+            
+                st.caption(
+                    "La predicción se basa en la tendencia histórica suavizada con media móvil. "
+                    "La línea conservadora asume menor crecimiento y la optimista mayor crecimiento."
+                )
+            else:
+                st.info("Selecciona al menos una tipología para ver la evolución.")
         else:
             st.info("No hay df_resumen disponible en 'historial'.")
 

@@ -459,3 +459,178 @@ def graficar_gasto_vs_media_1(df_gastos: pd.DataFrame, df_ingresos: pd.DataFrame
         title=f"Gastos de {mes_actual.strftime('%Y-%m')} (datos hasta {mes_para_grafico}) vs Media histórica",
     )
     return df_plot, fig
+
+
+def grafico_evolucion_tipologias(df_resumen: pd.DataFrame, columnas: list[str], ventana_mm: int = 3) -> go.Figure:
+    """
+    Gráfico de evolución mensual por tipología, incluyendo media móvil.
+    """
+    df = df_resumen.copy()
+
+    if "Mes" not in df.columns:
+        raise ValueError("df_resumen debe contener la columna 'Mes'.")
+
+    df["Mes"] = pd.to_datetime(df["Mes"].astype(str), format="%Y-%m", errors="coerce")
+    df = df.sort_values("Mes").reset_index(drop=True)
+
+    fig = go.Figure()
+
+    for col in columnas:
+        if col not in df.columns:
+            continue
+
+        y = pd.to_numeric(df[col], errors="coerce")
+
+        # Serie histórica
+        fig.add_trace(
+            go.Scatter(
+                x=df["Mes"],
+                y=y,
+                mode="lines+markers",
+                name=f"{col} (real)"
+            )
+        )
+
+        # Media móvil
+        y_mm = y.rolling(window=ventana_mm, min_periods=1).mean()
+        fig.add_trace(
+            go.Scatter(
+                x=df["Mes"],
+                y=y_mm,
+                mode="lines",
+                name=f"{col} (media móvil {ventana_mm})",
+                line=dict(dash="dot")
+            )
+        )
+
+    fig.update_layout(
+        title="Evolución del dinero por tipología",
+        xaxis_title="Mes",
+        yaxis_title="€",
+        hovermode="x unified",
+        margin=dict(l=10, r=10, t=50, b=10),
+    )
+    return fig
+
+
+def grafico_prediccion_tipologias(
+    df_resumen: pd.DataFrame,
+    columnas: list[str],
+    meses_pred: int = 6,
+    ventana_mm: int = 3,
+    factor_conservador: float = 0.75,
+    factor_optimista: float = 1.25,
+) -> go.Figure:
+    """
+    Gráfico histórico + media móvil + predicción base/conservadora/optimista.
+    La predicción se basa en una tendencia lineal simple sobre la media móvil.
+    """
+    df = df_resumen.copy()
+
+    if "Mes" not in df.columns:
+        raise ValueError("df_resumen debe contener la columna 'Mes'.")
+
+    df["Mes"] = pd.to_datetime(df["Mes"].astype(str), format="%Y-%m", errors="coerce")
+    df = df.sort_values("Mes").reset_index(drop=True)
+
+    fig = go.Figure()
+
+    if df.empty:
+        return fig
+
+    ultima_fecha = df["Mes"].iloc[-1]
+    fechas_futuras = pd.date_range(
+        start=ultima_fecha + pd.offsets.MonthBegin(1),
+        periods=meses_pred,
+        freq="MS"
+    )
+
+    x_hist = np.arange(len(df))
+
+    for col in columnas:
+        if col not in df.columns:
+            continue
+
+        y = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+        # Histórico real
+        fig.add_trace(
+            go.Scatter(
+                x=df["Mes"],
+                y=y,
+                mode="lines+markers",
+                name=f"{col} (real)"
+            )
+        )
+
+        # Media móvil como base más estable de tendencia
+        y_mm = y.rolling(window=ventana_mm, min_periods=1).mean()
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["Mes"],
+                y=y_mm,
+                mode="lines",
+                name=f"{col} (media móvil {ventana_mm})",
+                line=dict(dash="dot")
+            )
+        )
+
+        # Si no hay suficientes puntos, no predecimos
+        if len(y_mm) < 2:
+            continue
+
+        # Tendencia lineal sobre la media móvil
+        coef = np.polyfit(x_hist, y_mm.values, 1)
+        pendiente = coef[0]
+        intercepto = coef[1]
+
+        x_fut = np.arange(len(df), len(df) + meses_pred)
+
+        y_base = pendiente * x_fut + intercepto
+        y_cons = (pendiente * factor_conservador) * x_fut + intercepto
+        y_opt = (pendiente * factor_optimista) * x_fut + intercepto
+
+        # Evitar valores absurdamente negativos si aplica
+        y_base = np.maximum(y_base, 0)
+        y_cons = np.maximum(y_cons, 0)
+        y_opt = np.maximum(y_opt, 0)
+
+        fig.add_trace(
+            go.Scatter(
+                x=fechas_futuras,
+                y=y_base,
+                mode="lines",
+                name=f"{col} (pred. base)",
+                line=dict(dash="dash")
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=fechas_futuras,
+                y=y_cons,
+                mode="lines",
+                name=f"{col} (pred. conservadora)",
+                line=dict(dash="dashdot")
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=fechas_futuras,
+                y=y_opt,
+                mode="lines",
+                name=f"{col} (pred. optimista)",
+                line=dict(dash="longdash")
+            )
+        )
+
+    fig.update_layout(
+        title="Evolución y predicción por tipología",
+        xaxis_title="Mes",
+        yaxis_title="€",
+        hovermode="x unified",
+        margin=dict(l=10, r=10, t=50, b=10),
+    )
+    return fig

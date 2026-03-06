@@ -585,6 +585,9 @@ def crear_historial_cuentas_virtuales(
     # Iteración mensual
     # -------------------------
     mes_actual = fecha_inicio.to_period("M")
+    primer_mes_historial = fecha_inicio.to_period("M")
+    presupuesto_inicial_mes_1 = 400.0
+    
     while mes_actual <= fecha_fin.to_period("M"):
         mes_actual_str = mes_actual.strftime("%Y-%m")
         mes_anterior = (mes_actual - 1).strftime("%Y-%m")
@@ -615,7 +618,11 @@ def crear_historial_cuentas_virtuales(
         # -------------------------
         # PRESUPUESTO BRUTO y OBJETIVOS (NUEVO)
         # -------------------------
-        presupuesto_bruto = float(ingresos_reales_mensual.get(mes_anterior, 0.0)) * porcentaje_gasto
+        
+        if mes_actual == primer_mes_historial:
+            presupuesto_bruto = presupuesto_inicial_mes_1
+        else:
+            presupuesto_bruto = float(ingresos_reales_mensual.get(mes_anterior, 0.0)) * porcentaje_gasto
 
         # objetivos activos en este mes
         objetivos_activos = [cfg for cfg in objetivos_config if _objetivo_activo(cfg, mes_actual)]
