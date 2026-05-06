@@ -5,6 +5,13 @@ services:
       dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
+  backend-test:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: pytest -q
+    profiles:
+      - test
   frontend:
     build:
       context: .

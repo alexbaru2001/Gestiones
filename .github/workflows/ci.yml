@@ -8,5 +8,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install ./backend[dev]
-      - run: pytest
+      - run: pip install -e "backend[dev]"
+      - run: pytest -q
+      - run: docker compose --profile test run --rm backend-test

@@ -13,7 +13,9 @@ Aplicación de finanzas personales en proceso de refactorización incremental a 
 
 ### Backend
 ```bash
-pip install ./backend[dev]
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e "backend[dev]"
 uvicorn backend.main:app --reload
 ```
 
@@ -31,9 +33,10 @@ docker compose up --build
 
 ## Tests
 ```bash
-pytest
+pytest -q
+docker compose --profile test run --rm backend-test
 ```
 
 ## Estado de migración
 
-Fase 1 completada parcialmente: se creó esqueleto hexagonal y API base reutilizando pipeline legado para conservar comportamiento.
+Fase 0 completada: se creó esqueleto hexagonal y API base reutilizando pipeline legado para conservar comportamiento.
