@@ -5,7 +5,7 @@
       "etiquetas": [
         "coche"
       ],
-      "fraccion_presupuesto": 0.1,
+      "fraccion_presupuesto": 0.0,
       "duracion_meses": 12,
       "mes_inicio": "2025-02",
       "saldo_inicial": 0.0
@@ -15,7 +15,7 @@
       "etiquetas": [
         "tele"
       ],
-      "fraccion_presupuesto": 0.23,
+      "fraccion_presupuesto": 0.0,
       "duracion_meses": 20,
       "mes_inicio": "2024-12",
       "saldo_inicial": 0.0
