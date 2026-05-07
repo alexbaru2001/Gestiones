@@ -47,6 +47,7 @@ Los objetivos se persisten en `Personal_finanzas/Data/objetivos_vista.json` medi
 ## Tests
 ```bash
 pytest -q
+cd frontend && npm test
 docker compose --profile test run --rm backend-test
 ```
 
@@ -58,8 +59,4 @@ docker compose --profile test run --rm backend-test
 - Fase 3 completada: extracción de repositorios de infraestructura y contratos de dominio (`PipelineConfig`, `ObjectiveConfig`, `PipelineResult`) para reducir dicts sueltos alrededor del pipeline legado.
 - Fase 4 completada: mejora de la experiencia de resultados en frontend, con selector de mes, comparación mensual, tendencia, filtro, resumen de objetivos calculados y exportación JSON/CSV.
 - Fase 5 completada: endurecimiento operativo con variables de entorno, healthcheck, persistencia local de objetivos, `.dockerignore` y targets Docker separados para runtime/tests.
-- Fase 6 en curso: endurecimiento de experiencia de uso, cliente API frontend y mensajes de error más consistentes.
-
-### Pendiente Fase 6
-
-- Añadir pruebas unitarias ligeras para utilidades frontend (`api`, `exporters`, validación).
+- Fase 6 completada: endurecimiento de experiencia de uso con cliente API frontend, validación local, estados accesibles de carga/error y tests unitarios ligeros para `api`, `exporters` y validación.
