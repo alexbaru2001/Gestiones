@@ -40,6 +40,12 @@ function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`
 }
 
+function formatDelta(value) {
+  if (typeof value !== 'number') return '-'
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${formatMoney(value)}`
+}
+
 function objectiveToPayload({ id, etiquetas, ...objective }) {
   return {
     ...objective,
@@ -84,9 +90,28 @@ export function App() {
   const [error, setError] = useState('')
   const [objectivesStatus, setObjectivesStatus] = useState('')
   const [selectedObjective, setSelectedObjective] = useState('all')
+  const [selectedMonth, setSelectedMonth] = useState('')
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => result?.historial?.resumen ?? [], [result])
+  const selectedRow = useMemo(
+    () => rows.find((row) => row.Mes === selectedMonth) ?? latest,
+    [latest, rows, selectedMonth],
+  )
+  const previousRow = useMemo(() => {
+    if (!selectedRow) return null
+    const index = rows.findIndex((row) => row.Mes === selectedRow.Mes)
+    return index > 0 ? rows[index - 1] : null
+  }, [rows, selectedRow])
+  const comparisonRows = useMemo(
+    () => [
+      { label: 'Total', field: 'total' },
+      { label: 'Ahorros', field: '💰 Ahorros' },
+      { label: 'Gasto', field: '💳 Gasto del mes' },
+      { label: 'Presupuesto', field: '💸 Presupuesto Mes' },
+    ],
+    [],
+  )
   const recentRows = useMemo(() => rows.slice(-8), [rows])
   const trendMax = useMemo(
     () =>
@@ -182,6 +207,7 @@ export function App() {
       if (!response.ok) throw new Error(data.detail || 'No se pudo procesar el Excel')
       setResult(data.result)
       setSelectedObjective('all')
+      setSelectedMonth(data.result?.historial?.ultimo_mes?.Mes ?? '')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -258,7 +284,7 @@ export function App() {
 
   const exportResult = () => {
     if (!result) return
-    const month = latest?.Mes ?? 'resultado'
+    const month = selectedRow?.Mes ?? latest?.Mes ?? 'resultado'
     downloadJson(`gestiones-${month}.json`, {
       exported_at: new Date().toISOString(),
       source_file: file?.name ?? null,
@@ -442,7 +468,20 @@ export function App() {
           <div className="panel-header">
             <h2>Resumen</h2>
             <div className="panel-actions">
-              <span>{latest?.Mes ?? 'Pendiente'}</span>
+              {rows.length > 0 ? (
+                <label className="month-selector">
+                  <span>Mes</span>
+                  <select value={selectedRow?.Mes ?? ''} onChange={(event) => setSelectedMonth(event.target.value)}>
+                    {rows.map((row) => (
+                      <option key={row.Mes} value={row.Mes}>
+                        {row.Mes}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span>Pendiente</span>
+              )}
               {result && (
                 <button className="text-button" type="button" onClick={exportResult}>
                   Exportar JSON
@@ -451,16 +490,30 @@ export function App() {
             </div>
           </div>
 
-          {latest ? (
+          {selectedRow ? (
             <>
               <div className="metrics-grid">
                 {moneyFields.slice(0, 6).map((field) => (
                   <article className="metric" key={field}>
                     <span>{field}</span>
-                    <strong>{formatMoney(latest[field])}</strong>
+                    <strong>{formatMoney(selectedRow[field])}</strong>
                   </article>
                 ))}
               </div>
+
+              {previousRow && (
+                <div className="comparison-grid">
+                  {comparisonRows.map(({ label, field }) => {
+                    const delta = (Number(selectedRow[field]) || 0) - (Number(previousRow[field]) || 0)
+                    return (
+                      <article className={delta >= 0 ? 'comparison-item positive' : 'comparison-item negative'} key={field}>
+                        <span>{label} vs {previousRow.Mes}</span>
+                        <strong>{formatDelta(delta)}</strong>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
 
               <div className="movement-strip">
                 <span>{result.movimientos.gastos} gastos</span>

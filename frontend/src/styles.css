@@ -105,6 +105,24 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.month-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #667067;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.month-selector select {
+  min-height: 34px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17201a;
+  padding: 0 9px;
+}
+
 .ghost-button,
 .primary-button,
 .file-input span {
@@ -315,6 +333,37 @@ button:disabled {
   font-size: 21px;
   line-height: 1.15;
   overflow-wrap: anywhere;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.comparison-item {
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.comparison-item span {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+}
+
+.comparison-item strong {
+  display: block;
+  margin-top: 5px;
+  color: #286b57;
+  font-size: 16px;
+}
+
+.comparison-item.negative strong {
+  color: #b85a4b;
 }
 
 .movement-strip {
@@ -531,7 +580,8 @@ th {
 
 @media (max-width: 860px) {
   .workspace,
-  .metrics-grid {
+  .metrics-grid,
+  .comparison-grid {
     grid-template-columns: 1fr;
   }
 
@@ -546,6 +596,11 @@ th {
 
   .panel-header,
   .panel-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .month-selector {
     align-items: stretch;
     flex-direction: column;
   }
