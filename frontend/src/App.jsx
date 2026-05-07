@@ -73,10 +73,34 @@ export function App() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [objectivesStatus, setObjectivesStatus] = useState('')
+  const [selectedObjective, setSelectedObjective] = useState('all')
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => result?.historial?.resumen ?? [], [result])
   const objectiveRows = useMemo(() => result?.historial?.objetivos ?? [], [result])
+  const objectiveNames = useMemo(
+    () => Array.from(new Set(objectiveRows.map((row) => row.Objetivo))).sort(),
+    [objectiveRows],
+  )
+  const filteredObjectiveRows = useMemo(
+    () =>
+      selectedObjective === 'all'
+        ? objectiveRows
+        : objectiveRows.filter((row) => row.Objetivo === selectedObjective),
+    [objectiveRows, selectedObjective],
+  )
+  const objectiveTotals = useMemo(
+    () =>
+      filteredObjectiveRows.reduce(
+        (totals, row) => ({
+          aporte: totals.aporte + (Number(row.aporte_mes) || 0),
+          gasto: totals.gasto + (Number(row.gastos_etiquetados_mes) || 0),
+          liquidacion: totals.liquidacion + (Number(row.liquidacion) || 0),
+        }),
+        { aporte: 0, gasto: 0, liquidacion: 0 },
+      ),
+    [filteredObjectiveRows],
+  )
 
   useEffect(() => {
     loadObjectives({ silent: true })
@@ -134,6 +158,7 @@ export function App() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail || 'No se pudo procesar el Excel')
       setResult(data.result)
+      setSelectedObjective('all')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -431,7 +456,34 @@ export function App() {
 
               {objectiveRows.length > 0 && (
                 <div className="table-wrap">
-                  <h3 className="table-title">Objetivos</h3>
+                  <div className="table-toolbar">
+                    <h3 className="table-title">Objetivos</h3>
+                    <label>
+                      <span>Filtro</span>
+                      <select value={selectedObjective} onChange={(event) => setSelectedObjective(event.target.value)}>
+                        <option value="all">Todos</option>
+                        {objectiveNames.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="objective-summary">
+                    <article>
+                      <span>Aporte</span>
+                      <strong>{formatMoney(objectiveTotals.aporte)}</strong>
+                    </article>
+                    <article>
+                      <span>Gasto etiquetado</span>
+                      <strong>{formatMoney(objectiveTotals.gasto)}</strong>
+                    </article>
+                    <article>
+                      <span>Liquidación</span>
+                      <strong>{formatMoney(objectiveTotals.liquidacion)}</strong>
+                    </article>
+                  </div>
                   <table>
                     <thead>
                       <tr>
@@ -443,7 +495,7 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {objectiveRows.slice(-8).map((row, index) => (
+                      {filteredObjectiveRows.slice(-12).map((row, index) => (
                         <tr key={`${row.Mes}-${row.Objetivo}-${index}`}>
                           <td>{row.Mes}</td>
                           <td>{row.Objetivo}</td>

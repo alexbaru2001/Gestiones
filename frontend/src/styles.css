@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -334,6 +335,63 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.table-toolbar .table-title {
+  margin-bottom: 0;
+}
+
+.table-toolbar label {
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  color: #5b665d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.table-toolbar select {
+  min-height: 36px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17201a;
+  padding: 0 9px;
+}
+
+.objective-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.objective-summary article {
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.objective-summary span {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+}
+
+.objective-summary strong {
+  display: block;
+  margin-top: 5px;
+  color: #17201a;
+  font-size: 16px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -384,6 +442,16 @@ th {
   }
 
   .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .table-toolbar,
+  .objective-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .table-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
