@@ -60,6 +60,7 @@ class LegacyPipelineAdapter:
                 resumen=self._dataframe_to_records(resumen_df),
                 objetivos=self._dataframe_to_records(objetivos_df),
             ),
+            analisis=self._build_analysis(result),
         )
 
     def _split_historial(self, historial: Any) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
@@ -86,6 +87,73 @@ class LegacyPipelineAdapter:
         if hasattr(value, "__dataclass_fields__"):
             return self._clean_record({field: getattr(value, field) for field in value.__dataclass_fields__})
         return self._clean_record(value if isinstance(value, dict) else {})
+
+    def _build_analysis(self, result: dict[str, Any]) -> dict[str, Any]:
+        gastos = result.get("gastos")
+        ingresos = result.get("ingresos")
+        analysis: dict[str, Any] = {}
+        if isinstance(gastos, pd.DataFrame) and isinstance(ingresos, pd.DataFrame):
+            analysis["gastos"] = self._build_expense_analysis(gastos, ingresos)
+            analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos)
+        return analysis
+
+    def _build_expense_analysis(self, gastos: pd.DataFrame, ingresos: pd.DataFrame) -> dict[str, Any]:
+        from logic import resumen_gastos, resumen_mensual  # type: ignore
+
+        categorias = resumen_gastos(gastos, ingresos)
+        mensual = resumen_mensual(gastos, ingresos)
+        if categorias.empty:
+            return {
+                "categorias": [],
+                "mensual": [],
+                "totales_categoria": [],
+                "ultimo_mes": None,
+            }
+
+        categorias_records = self._dataframe_to_records(categorias.reset_index().rename(columns={"mes": "Mes"}))
+        monthly_records = self._dataframe_to_records(mensual.reset_index().rename(columns={"mes": "Mes"}))
+
+        totals = categorias.sum().sort_values(ascending=False)
+        totals_records = [
+            self._clean_record({"categoria": category, "total": amount})
+            for category, amount in totals.items()
+            if float(amount) != 0
+        ]
+
+        latest_month = str(categorias.index.max())
+        latest_values = categorias.loc[latest_month].sort_values(ascending=False)
+        latest_records = [
+            self._clean_record({"categoria": category, "total": amount})
+            for category, amount in latest_values.items()
+            if float(amount) != 0
+        ]
+
+        return {
+            "categorias": categorias_records,
+            "mensual": monthly_records,
+            "totales_categoria": totals_records,
+            "ultimo_mes": {
+                "Mes": latest_month,
+                "categorias": latest_records,
+            },
+        }
+
+    def _build_savings_analysis(self, gastos: pd.DataFrame, ingresos: pd.DataFrame) -> dict[str, Any]:
+        from logic import resumen_mensual  # type: ignore
+
+        mensual = resumen_mensual(gastos, ingresos).reset_index().rename(columns={"mes": "Mes"})
+        if mensual.empty:
+            return {"mensual": [], "ultimo_mes": None}
+
+        mensual["porcentaje_ahorro"] = mensual.apply(
+            lambda row: ((row["ingresos"] - row["gastos"]) / row["ingresos"] * 100) if row["ingresos"] else 0,
+            axis=1,
+        )
+        records = self._dataframe_to_records(mensual)
+        return {
+            "mensual": records,
+            "ultimo_mes": records[-1] if records else None,
+        }
 
     def _clean_record(self, record: dict[str, Any]) -> dict[str, Any]:
         return {str(key): self._clean_value(value) for key, value in record.items()}

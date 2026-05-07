@@ -109,6 +109,12 @@ def test_process_workbook_returns_serializable_summary():
     assert data["result"]["params"]["fecha_inicio"] == "2024-10-01"
     assert data["result"]["historial"]["meses"] == 1
     assert data["result"]["historial"]["ultimo_mes"]["Mes"] == "2024-10"
+    assert data["result"]["analisis"]["gastos"]["totales_categoria"][0] == {
+        "categoria": "alimentacion",
+        "total": 100.0,
+    }
+    assert data["result"]["analisis"]["gastos"]["mensual"][0]["balance"] == 1900.0
+    assert data["result"]["analisis"]["ahorro"]["ultimo_mes"]["porcentaje_ahorro"] == 95.0
 
 
 def test_process_workbook_rejects_invalid_objectives_json():

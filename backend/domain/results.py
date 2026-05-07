@@ -39,10 +39,14 @@ class PipelineResult:
     params: dict[str, Any]
     movimientos: MovementSummary
     historial: HistoryResult
+    analisis: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "params": self.params,
             "movimientos": self.movimientos.to_dict(),
             "historial": self.historial.to_dict(),
         }
+        if self.analisis is not None:
+            data["analisis"] = self.analisis
+        return data

@@ -14,6 +14,8 @@ const moneyFields = [
 const tabs = [
   { id: 'resumen', label: 'Resumen' },
   { id: 'presupuesto', label: 'Presupuesto' },
+  { id: 'gastos', label: 'Gastos' },
+  { id: 'ahorro', label: 'Ahorro' },
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'datos', label: 'Datos' },
 ]
@@ -61,6 +63,22 @@ function getSegmentWidth(value, total) {
   return `${Math.max(6, (value / total) * 100)}%`
 }
 
+function getExpenseAnalysis(result) {
+  return result?.analisis?.gastos ?? {
+    categorias: [],
+    mensual: [],
+    totales_categoria: [],
+    ultimo_mes: null,
+  }
+}
+
+function getSavingsAnalysis(result) {
+  return result?.analisis?.ahorro ?? {
+    mensual: [],
+    ultimo_mes: null,
+  }
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -82,6 +100,10 @@ export function ResultsPanel({
 }) {
   const [activeTab, setActiveTab] = useState('resumen')
   const budget = selectedRow ? getBudget(selectedRow) : null
+  const expenseAnalysis = getExpenseAnalysis(result)
+  const expenseMax = Math.max(...expenseAnalysis.totales_categoria.map((row) => asNumber(row.total)), 1)
+  const savingsAnalysis = getSavingsAnalysis(result)
+  const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
@@ -269,6 +291,106 @@ export function ResultsPanel({
                   </article>
                 </div>
               </section>
+            )}
+
+            {activeTab === 'gastos' && (
+              expenseAnalysis.totales_categoria.length > 0 ? (
+                <section className="expenses-layout">
+                  <div className="expenses-panel">
+                    <div className="table-toolbar compact-toolbar">
+                      <h3 className="table-title">Gastos por categoría</h3>
+                      <span>{expenseAnalysis.ultimo_mes?.Mes ?? selectedRow.Mes}</span>
+                    </div>
+                    <div className="category-list">
+                      {expenseAnalysis.totales_categoria.map((row) => (
+                        <article className="category-row" key={row.categoria}>
+                          <div>
+                            <strong>{row.categoria}</strong>
+                            <span>{formatMoney(row.total)}</span>
+                          </div>
+                          <div className="category-bar">
+                            <span style={{ width: `${Math.max(4, (asNumber(row.total) / expenseMax) * 100)}%` }} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="table-wrap compact-table-wrap">
+                    <h3 className="table-title">Evolución mensual</h3>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Mes</th>
+                          <th>Ingresos</th>
+                          <th>Gastos</th>
+                          <th>Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expenseAnalysis.mensual.slice(-12).map((row) => (
+                          <tr key={row.Mes}>
+                            <td>{row.Mes}</td>
+                            <td>{formatMoney(row.ingresos)}</td>
+                            <td>{formatMoney(row.gastos)}</td>
+                            <td>{formatMoney(row.balance)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ) : (
+                <div className="empty-state compact-empty">
+                  <strong>Sin análisis de gastos</strong>
+                  <span>El Excel procesado no contiene datos suficientes para agrupar gastos por categoría.</span>
+                </div>
+              )
+            )}
+
+            {activeTab === 'ahorro' && (
+              savingsAnalysis.mensual.length > 0 ? (
+                <section className="savings-layout">
+                  <div className="savings-summary">
+                    <article>
+                      <span>Ingresos</span>
+                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.ingresos)}</strong>
+                    </article>
+                    <article>
+                      <span>Gastos</span>
+                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.gastos)}</strong>
+                    </article>
+                    <article>
+                      <span>Balance</span>
+                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.balance)}</strong>
+                    </article>
+                    <article>
+                      <span>Ahorro</span>
+                      <strong>{asNumber(savingsAnalysis.ultimo_mes?.porcentaje_ahorro).toFixed(1)}%</strong>
+                    </article>
+                  </div>
+
+                  <section className="trend-panel compact-trend">
+                    <h3 className="table-title">Balance mensual</h3>
+                    <div className="trend-list">
+                      {savingsAnalysis.mensual.slice(-12).map((row) => (
+                        <article className="savings-row" key={row.Mes}>
+                          <span className="trend-month">{row.Mes}</span>
+                          <div className={asNumber(row.balance) >= 0 ? 'savings-bar positive' : 'savings-bar negative'}>
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row.balance)) / savingsMax) * 100)}%` }} />
+                          </div>
+                          <strong>{asNumber(row.porcentaje_ahorro).toFixed(1)}%</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </section>
+              ) : (
+                <div className="empty-state compact-empty">
+                  <strong>Sin análisis de ahorro</strong>
+                  <span>El Excel procesado no contiene ingresos suficientes para calcular ahorro mensual.</span>
+                </div>
+              )
             )}
 
             {activeTab === 'objetivos' && (
