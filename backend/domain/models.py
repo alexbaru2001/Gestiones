@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -7,6 +8,27 @@ class PipelineConfig:
     porcentaje_gasto: float = 0.3
     porcentaje_inversion: float = 0.1
     porcentaje_vacaciones: float = 0.05
+
+    def __post_init__(self) -> None:
+        try:
+            date.fromisoformat(self.fecha_inicio)
+        except ValueError as exc:
+            raise ValueError("fecha_inicio debe tener formato YYYY-MM-DD") from exc
+        self._validate_percentage("porcentaje_gasto", self.porcentaje_gasto)
+        self._validate_percentage("porcentaje_inversion", self.porcentaje_inversion)
+        self._validate_percentage("porcentaje_vacaciones", self.porcentaje_vacaciones)
+
+    def to_dict(self) -> dict:
+        return {
+            "fecha_inicio": self.fecha_inicio,
+            "porcentaje_gasto": self.porcentaje_gasto,
+            "porcentaje_inversion": self.porcentaje_inversion,
+            "porcentaje_vacaciones": self.porcentaje_vacaciones,
+        }
+
+    def _validate_percentage(self, field: str, value: float) -> None:
+        if value < 0 or value > 1:
+            raise ValueError(f"{field} debe estar entre 0 y 1")
 
 
 @dataclass(frozen=True)

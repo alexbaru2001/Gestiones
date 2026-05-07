@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from backend.domain.models import PipelineConfig
 
 
 class LegacyPipelineAdapter:
@@ -14,14 +15,19 @@ class LegacyPipelineAdapter:
     def __init__(self) -> None:
         self._legacy_path = Path(__file__).resolve().parents[2] / "Personal_finanzas"
 
-    def run_pipeline_from_bytes(self, excel_bytes: bytes, params: dict, objetivos: list[dict] | None = None) -> dict[str, Any]:
+    def run_pipeline_from_bytes(
+        self,
+        excel_bytes: bytes,
+        params: PipelineConfig,
+        objetivos: list[dict] | None = None,
+    ) -> dict[str, Any]:
         legacy_path_str = str(self._legacy_path)
         if legacy_path_str not in sys.path:
             sys.path.append(legacy_path_str)
 
         from pipeline import run_pipeline, PipelineParams  # type: ignore
 
-        parsed = PipelineParams(**params)
+        parsed = PipelineParams(**params.to_dict())
         result = run_pipeline(
             excel=io.BytesIO(excel_bytes),
             params=parsed,

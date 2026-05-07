@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from backend.domain.models import PipelineConfig
 from backend.infrastructure.container import build_process_finance_workbook_use_case
 from backend.infrastructure.objectives_repository import (
     JsonObjectivesRepository,
@@ -58,19 +59,22 @@ async def process_workbook(
     content = await file.read()
     try:
         objetivos = parse_objectives_json(objetivos_json)
+        config = PipelineConfig(
+            fecha_inicio=fecha_inicio,
+            porcentaje_gasto=porcentaje_gasto,
+            porcentaje_inversion=porcentaje_inversion,
+            porcentaje_vacaciones=porcentaje_vacaciones,
+        )
     except ObjectivesValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     use_case = build_process_finance_workbook_use_case()
     try:
         result = use_case.execute(
             excel_bytes=content,
-            params={
-                "fecha_inicio": fecha_inicio,
-                "porcentaje_gasto": porcentaje_gasto,
-                "porcentaje_inversion": porcentaje_inversion,
-                "porcentaje_vacaciones": porcentaje_vacaciones,
-            },
+            params=config,
             objetivos=objetivos,
         )
     except ValueError as exc:

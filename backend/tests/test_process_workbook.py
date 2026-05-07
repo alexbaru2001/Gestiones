@@ -130,6 +130,25 @@ def test_process_workbook_rejects_invalid_objectives_json():
     assert response.json()["detail"] == "objetivos_json debe ser JSON válido"
 
 
+def test_process_workbook_rejects_invalid_pipeline_config():
+    client = TestClient(app)
+    workbook = _sample_workbook()
+
+    response = client.post(
+        "/api/v1/process?porcentaje_gasto=1.4",
+        files={
+            "file": (
+                "Inicio.xlsx",
+                workbook.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "porcentaje_gasto debe estar entre 0 y 1"
+
+
 def test_process_workbook_accepts_objectives_payload():
     client = TestClient(app)
     workbook = _sample_workbook_with_income_history()
