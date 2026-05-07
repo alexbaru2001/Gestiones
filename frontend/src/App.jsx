@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { downloadJson, downloadText, toCsv } from './exporters'
 
-const API_URL = 'http://localhost:8000'
+const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
 const initialParams = {
   fecha_inicio: '2024-10-01',
@@ -66,37 +67,6 @@ function objectiveFromApi(objective) {
     mes_inicio: String(objective.mes_inicio ?? '2024-10').slice(0, 7),
     saldo_inicial: Number(objective.saldo_inicial ?? 0),
   }
-}
-
-function downloadJson(filename, data) {
-  downloadText(filename, JSON.stringify(data, null, 2), 'application/json')
-}
-
-function csvEscape(value) {
-  if (value === null || value === undefined) return ''
-  const text = String(value)
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
-}
-
-function toCsv(records) {
-  if (!records.length) return ''
-  const columns = Array.from(
-    records.reduce((keys, row) => {
-      Object.keys(row).forEach((key) => keys.add(key))
-      return keys
-    }, new Set()),
-  )
-  return [columns.map(csvEscape).join(','), ...records.map((row) => columns.map((column) => csvEscape(row[column])).join(','))].join('\n')
-}
-
-function downloadText(filename, text, type = 'text/plain;charset=utf-8') {
-  const blob = new Blob([text], { type })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }
 
 export function App() {

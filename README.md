@@ -26,6 +26,8 @@ npm install
 npm run dev
 ```
 
+El frontend usa `VITE_API_URL` para localizar el backend. Si no se define, apunta a `http://localhost:8000`.
+
 ## Docker
 ```bash
 docker compose up --build
@@ -43,4 +45,5 @@ docker compose --profile test run --rm backend-test
 - Fase 1 completada: endpoint de procesado con respuesta JSON serializable y frontend para subir Excel, ajustar parámetros y consultar el resumen.
 - Fase 2 completada: objetivos presupuestarios enviados desde frontend/backend, persistencia en JSON y limpieza de la liquidación de objetivos en el pipeline legado.
 - Fase 3 completada: extracción de repositorios de infraestructura y contratos de dominio (`PipelineConfig`, `ObjectiveConfig`, `PipelineResult`) para reducir dicts sueltos alrededor del pipeline legado.
-- Fase 4 en curso: mejora de la experiencia de resultados en frontend, con selector de mes, comparación mensual, tendencia, filtro, resumen de objetivos calculados y exportación JSON/CSV.
+- Fase 4 completada: mejora de la experiencia de resultados en frontend, con selector de mes, comparación mensual, tendencia, filtro, resumen de objetivos calculados y exportación JSON/CSV.
+- Fase 5 en curso: endurecimiento operativo y configuración para uso local/despliegue sin valores fijos.
