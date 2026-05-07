@@ -323,6 +323,96 @@ button:disabled {
   background: #f8faf6;
 }
 
+.trend-panel {
+  margin-top: 18px;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 14px;
+}
+
+.trend-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trend-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) minmax(92px, auto);
+  gap: 10px;
+  align-items: center;
+}
+
+.trend-month {
+  color: #4f5a52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trend-row strong {
+  color: #17201a;
+  font-size: 13px;
+  text-align: right;
+}
+
+.trend-bars {
+  display: grid;
+  gap: 4px;
+}
+
+.trend-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.trend-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.trend-bar.total span {
+  background: #286b57;
+}
+
+.trend-bar.gasto span {
+  background: #b85a4b;
+}
+
+.trend-bar.presupuesto span {
+  background: #d2a53f;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.trend-legend span::before {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #286b57;
+  content: "";
+}
+
+.trend-legend span:nth-child(2)::before {
+  background: #b85a4b;
+}
+
+.trend-legend span:nth-child(3)::before {
+  background: #d2a53f;
+}
+
 .table-wrap {
   margin-top: 18px;
   overflow-x: auto;
@@ -454,6 +544,14 @@ th {
   .table-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .trend-row {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-row strong {
+    text-align: left;
   }
 }
 

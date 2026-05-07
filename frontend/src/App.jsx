@@ -77,6 +77,19 @@ export function App() {
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => result?.historial?.resumen ?? [], [result])
+  const recentRows = useMemo(() => rows.slice(-8), [rows])
+  const trendMax = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...recentRows.flatMap((row) => [
+          Math.abs(Number(row.total) || 0),
+          Math.abs(Number(row['💳 Gasto del mes']) || 0),
+          Math.abs(Number(row['💸 Presupuesto Mes']) || 0),
+        ]),
+      ),
+    [recentRows],
+  )
   const objectiveRows = useMemo(() => result?.historial?.objetivos ?? [], [result])
   const objectiveNames = useMemo(
     () => Array.from(new Set(objectiveRows.map((row) => row.Objetivo))).sort(),
@@ -428,6 +441,42 @@ export function App() {
                 <span>{result.historial.objetivos.length} objetivos</span>
               </div>
 
+              <section className="trend-panel">
+                <h3 className="table-title">Tendencia</h3>
+                <div className="trend-list">
+                  {recentRows.map((row) => (
+                    <article className="trend-row" key={row.Mes}>
+                      <span className="trend-month">{row.Mes}</span>
+                      <div className="trend-bars">
+                        <div className="trend-bar total">
+                          <span style={{ width: `${Math.max(3, (Math.abs(Number(row.total) || 0) / trendMax) * 100)}%` }} />
+                        </div>
+                        <div className="trend-bar gasto">
+                          <span
+                            style={{
+                              width: `${Math.max(3, (Math.abs(Number(row['💳 Gasto del mes']) || 0) / trendMax) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="trend-bar presupuesto">
+                          <span
+                            style={{
+                              width: `${Math.max(3, (Math.abs(Number(row['💸 Presupuesto Mes']) || 0) / trendMax) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <strong>{formatMoney(row.total)}</strong>
+                    </article>
+                  ))}
+                </div>
+                <div className="trend-legend">
+                  <span>Total</span>
+                  <span>Gasto</span>
+                  <span>Presupuesto</span>
+                </div>
+              </section>
+
               <div className="table-wrap">
                 <h3 className="table-title">Historial reciente</h3>
                 <table>
@@ -441,7 +490,7 @@ export function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(-8).map((row) => (
+                    {recentRows.map((row) => (
                       <tr key={row.Mes}>
                         <td>{row.Mes}</td>
                         <td>{formatMoney(row.total)}</td>

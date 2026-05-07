@@ -43,4 +43,4 @@ docker compose --profile test run --rm backend-test
 - Fase 1 completada: endpoint de procesado con respuesta JSON serializable y frontend para subir Excel, ajustar parámetros y consultar el resumen.
 - Fase 2 completada: objetivos presupuestarios enviados desde frontend/backend, persistencia en JSON y limpieza de la liquidación de objetivos en el pipeline legado.
 - Fase 3 completada: extracción de repositorios de infraestructura y contratos de dominio (`PipelineConfig`, `ObjectiveConfig`, `PipelineResult`) para reducir dicts sueltos alrededor del pipeline legado.
-- Fase 4 en curso: mejora de la experiencia de resultados en frontend, con visualización, filtro y resumen de objetivos calculados.
+- Fase 4 en curso: mejora de la experiencia de resultados en frontend, con tendencia mensual, visualización, filtro y resumen de objetivos calculados.
