@@ -1,0 +1,13 @@
+.git
+.github
+.ipynb_checkpoints
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.venv
+backend/**/*.egg-info
+frontend/node_modules
+frontend/dist
+Personal_finanzas/**/__pycache__
+Personal_finanzas/**/*.pyc

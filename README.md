@@ -39,6 +39,8 @@ El frontend usa `VITE_API_URL` para localizar el backend. Si no se define, apunt
 docker compose up --build
 ```
 
+El frontend espera a que `/health` del backend esté sano antes de arrancar.
+
 ## Tests
 ```bash
 pytest -q
