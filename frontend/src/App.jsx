@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const API_URL = 'http://localhost:8000'
 
@@ -16,6 +16,7 @@ const createObjective = () => ({
   fraccion_presupuesto: 0.1,
   duracion_meses: 1,
   mes_inicio: '2024-10',
+  saldo_inicial: 0,
 })
 
 const moneyFields = [
@@ -39,6 +40,28 @@ function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`
 }
 
+function objectiveToPayload({ id, etiquetas, ...objective }) {
+  return {
+    ...objective,
+    etiquetas: etiquetas
+      .split(',')
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean),
+  }
+}
+
+function objectiveFromApi(objective) {
+  return {
+    id: crypto.randomUUID(),
+    nombre: objective.nombre ?? '',
+    etiquetas: Array.isArray(objective.etiquetas) ? objective.etiquetas.join(', ') : String(objective.etiquetas ?? ''),
+    fraccion_presupuesto: Number(objective.fraccion_presupuesto ?? 0),
+    duracion_meses: Number(objective.duracion_meses ?? 1),
+    mes_inicio: String(objective.mes_inicio ?? '2024-10').slice(0, 7),
+    saldo_inicial: Number(objective.saldo_inicial ?? 0),
+  }
+}
+
 export function App() {
   const [file, setFile] = useState(null)
   const [params, setParams] = useState(initialParams)
@@ -46,11 +69,17 @@ export function App() {
   const [health, setHealth] = useState('pendiente')
   const [isChecking, setIsChecking] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isSavingObjectives, setIsSavingObjectives] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [objectivesStatus, setObjectivesStatus] = useState('')
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => result?.historial?.resumen ?? [], [result])
+
+  useEffect(() => {
+    loadObjectives({ silent: true })
+  }, [])
 
   const checkHealth = async () => {
     setIsChecking(true)
@@ -83,13 +112,7 @@ export function App() {
     formData.append('file', file)
     const objetivos = objectives
       .filter((objective) => objective.nombre.trim())
-      .map(({ id, etiquetas, ...objective }) => ({
-        ...objective,
-        etiquetas: etiquetas
-          .split(',')
-          .map((tag) => tag.trim().toLowerCase())
-          .filter(Boolean),
-      }))
+      .map(objectiveToPayload)
 
     if (objetivos.length > 0) {
       formData.append('objetivos_json', JSON.stringify(objetivos))
@@ -134,7 +157,7 @@ export function App() {
         objective.id === id
           ? {
               ...objective,
-              [key]: ['fraccion_presupuesto', 'duracion_meses'].includes(key) ? Number(value) : value,
+              [key]: ['fraccion_presupuesto', 'duracion_meses', 'saldo_inicial'].includes(key) ? Number(value) : value,
             }
           : objective,
       ),
@@ -143,6 +166,45 @@ export function App() {
 
   const removeObjective = (id) => {
     setObjectives((current) => current.filter((objective) => objective.id !== id))
+  }
+
+  const loadObjectives = async ({ silent = false } = {}) => {
+    if (!silent) setObjectivesStatus('Cargando...')
+    try {
+      const response = await fetch(`${API_URL}/api/v1/objectives`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'No se pudieron cargar los objetivos')
+      setObjectives((data.objetivos ?? []).map(objectiveFromApi))
+      setObjectivesStatus(`${data.objetivos?.length ?? 0} objetivos cargados`)
+    } catch (err) {
+      setObjectivesStatus(silent ? '' : err.message)
+    }
+  }
+
+  const saveObjectives = async () => {
+    setIsSavingObjectives(true)
+    setError('')
+    setObjectivesStatus('Guardando...')
+
+    try {
+      const payload = {
+        objetivos: objectives.filter((objective) => objective.nombre.trim()).map(objectiveToPayload),
+      }
+      const response = await fetch(`${API_URL}/api/v1/objectives`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.detail || 'No se pudieron guardar los objetivos')
+      setObjectives((data.objetivos ?? []).map(objectiveFromApi))
+      setObjectivesStatus(`${data.objetivos?.length ?? 0} objetivos guardados`)
+    } catch (err) {
+      setError(err.message)
+      setObjectivesStatus('')
+    } finally {
+      setIsSavingObjectives(false)
+    }
   }
 
   return (
@@ -223,9 +285,17 @@ export function App() {
           <div className="objectives-section">
             <div className="section-heading">
               <h3>Objetivos</h3>
-              <button className="text-button" type="button" onClick={addObjective}>
-                Añadir
-              </button>
+              <div className="button-row">
+                <button className="text-button" type="button" onClick={() => loadObjectives()}>
+                  Cargar
+                </button>
+                <button className="text-button" type="button" onClick={saveObjectives} disabled={isSavingObjectives}>
+                  {isSavingObjectives ? 'Guardando...' : 'Guardar'}
+                </button>
+                <button className="text-button" type="button" onClick={addObjective}>
+                  Añadir
+                </button>
+              </div>
             </div>
 
             {objectives.length === 0 ? (
@@ -281,6 +351,15 @@ export function App() {
                         onChange={(event) => updateObjective(objective.id, 'mes_inicio', event.target.value)}
                       />
                     </label>
+                    <label>
+                      Saldo inicial
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={objective.saldo_inicial}
+                        onChange={(event) => updateObjective(objective.id, 'saldo_inicial', event.target.value)}
+                      />
+                    </label>
                     <button className="text-button danger" type="button" onClick={() => removeObjective(objective.id)}>
                       Quitar
                     </button>
@@ -288,6 +367,7 @@ export function App() {
                 ))}
               </div>
             )}
+            {objectivesStatus && <p className="status-message">{objectivesStatus}</p>}
           </div>
 
           <button className="primary-button" type="submit" disabled={isProcessing}>

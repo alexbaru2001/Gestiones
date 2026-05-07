@@ -41,4 +41,4 @@ docker compose --profile test run --rm backend-test
 
 - Fase 0 completada: esqueleto hexagonal, API base y validación Docker.
 - Fase 1 completada: endpoint de procesado con respuesta JSON serializable y frontend para subir Excel, ajustar parámetros y consultar el resumen.
-- Fase 2 iniciada: objetivos presupuestarios enviados desde frontend/backend y limpieza de la liquidación de objetivos en el pipeline legado.
+- Fase 2 en curso: objetivos presupuestarios enviados desde frontend/backend, persistencia en JSON y limpieza de la liquidación de objetivos en el pipeline legado.

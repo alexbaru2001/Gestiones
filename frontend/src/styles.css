@@ -197,6 +197,13 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .section-heading h3 {
   margin: 0;
   font-size: 16px;
@@ -216,7 +223,7 @@ button:disabled {
 
 .objective-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 96px 82px 126px auto;
+  grid-template-columns: 1fr 1fr 96px 82px 126px 112px auto;
   gap: 10px;
   align-items: end;
   padding-bottom: 12px;
@@ -249,6 +256,13 @@ button:disabled {
 .error-message {
   margin: 14px 0 0;
   color: #a33b2f;
+  font-weight: 700;
+}
+
+.status-message {
+  margin: 12px 0 0;
+  color: #286b57;
+  font-size: 14px;
   font-weight: 700;
 }
 
