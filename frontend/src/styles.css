@@ -302,6 +302,23 @@ button:disabled {
   font-weight: 700;
 }
 
+.validation-box {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  border: 1px solid #eed4c8;
+  border-radius: 8px;
+  background: #fff7f3;
+  padding: 10px 12px;
+}
+
+.validation-box p {
+  margin: 0;
+  color: #8f4638;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .status-message {
   margin: 12px 0 0;
   color: #286b57;

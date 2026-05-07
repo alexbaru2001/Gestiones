@@ -68,6 +68,10 @@ function objectiveFromApi(objective) {
   }
 }
 
+function isValidFraction(value) {
+  return Number.isFinite(value) && value >= 0 && value <= 1
+}
+
 export function App() {
   const [file, setFile] = useState(null)
   const [params, setParams] = useState(initialParams)
@@ -139,6 +143,58 @@ export function App() {
       ),
     [filteredObjectiveRows],
   )
+  const activeObjectives = useMemo(
+    () => objectives.filter((objective) => objective.nombre.trim()),
+    [objectives],
+  )
+  const validationMessages = useMemo(() => {
+    const messages = []
+    if (!params.fecha_inicio) {
+      messages.push('La fecha de inicio es obligatoria.')
+    }
+
+    for (const [label, value] of [
+      ['Gasto', params.porcentaje_gasto],
+      ['Inversión', params.porcentaje_inversion],
+      ['Vacaciones', params.porcentaje_vacaciones],
+    ]) {
+      if (!isValidFraction(value)) {
+        messages.push(`${label} debe estar entre 0 y 1.`)
+      }
+    }
+
+    const names = new Set()
+    const repeatedNames = new Set()
+    let totalFraction = 0
+    activeObjectives.forEach((objective) => {
+      const name = objective.nombre.trim().toLowerCase()
+      if (names.has(name)) repeatedNames.add(objective.nombre.trim())
+      names.add(name)
+
+      if (!isValidFraction(objective.fraccion_presupuesto)) {
+        messages.push(`Objetivo "${objective.nombre}": la fracción debe estar entre 0 y 1.`)
+      }
+      totalFraction += Number(objective.fraccion_presupuesto) || 0
+
+      if (!Number.isInteger(objective.duracion_meses) || objective.duracion_meses <= 0) {
+        messages.push(`Objetivo "${objective.nombre}": los meses deben ser un entero mayor que 0.`)
+      }
+
+      if (!/^\d{4}-\d{2}$/.test(objective.mes_inicio)) {
+        messages.push(`Objetivo "${objective.nombre}": el inicio debe tener formato YYYY-MM.`)
+      }
+    })
+
+    if (repeatedNames.size > 0) {
+      messages.push(`Hay objetivos repetidos: ${Array.from(repeatedNames).join(', ')}.`)
+    }
+    if (totalFraction > 1 + 1e-9) {
+      messages.push('La suma de fracciones de objetivos no puede superar 1.')
+    }
+
+    return messages
+  }, [activeObjectives, params])
+  const hasValidationErrors = validationMessages.length > 0
 
   useEffect(() => {
     loadObjectives({ silent: true })
@@ -164,6 +220,10 @@ export function App() {
       setError('Selecciona un Excel antes de procesar.')
       return
     }
+    if (hasValidationErrors) {
+      setError(validationMessages[0])
+      return
+    }
 
     setIsProcessing(true)
     setError('')
@@ -171,9 +231,7 @@ export function App() {
 
     const formData = new FormData()
     formData.append('file', file)
-    const objetivos = objectives
-      .filter((objective) => objective.nombre.trim())
-      .map(objectiveToPayload)
+    const objetivos = activeObjectives.map(objectiveToPayload)
 
     if (objetivos.length > 0) {
       formData.append('objetivos_json', JSON.stringify(objetivos))
@@ -241,13 +299,19 @@ export function App() {
   }
 
   const saveObjectives = async () => {
+    if (hasValidationErrors) {
+      setError(validationMessages[0])
+      setObjectivesStatus('')
+      return
+    }
+
     setIsSavingObjectives(true)
     setError('')
     setObjectivesStatus('Guardando...')
 
     try {
       const payload = {
-        objetivos: objectives.filter((objective) => objective.nombre.trim()).map(objectiveToPayload),
+        objetivos: activeObjectives.map(objectiveToPayload),
       }
       const data = await requestJson('/api/v1/objectives', {
         method: 'PUT',
@@ -376,7 +440,7 @@ export function App() {
                 <button className="text-button" type="button" onClick={() => loadObjectives()}>
                   Cargar
                 </button>
-                <button className="text-button" type="button" onClick={saveObjectives} disabled={isSavingObjectives}>
+                <button className="text-button" type="button" onClick={saveObjectives} disabled={isSavingObjectives || hasValidationErrors}>
                   {isSavingObjectives ? 'Guardando...' : 'Guardar'}
                 </button>
                 <button className="text-button" type="button" onClick={addObjective}>
@@ -454,10 +518,17 @@ export function App() {
                 ))}
               </div>
             )}
+            {validationMessages.length > 0 && (
+              <div className="validation-box">
+                {validationMessages.slice(0, 4).map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
+              </div>
+            )}
             {objectivesStatus && <p className="status-message">{objectivesStatus}</p>}
           </div>
 
-          <button className="primary-button" type="submit" disabled={isProcessing}>
+          <button className="primary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
             {isProcessing ? 'Procesando...' : 'Procesar'}
           </button>
 
