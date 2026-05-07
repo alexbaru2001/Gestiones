@@ -1,5 +1,6 @@
 from typing import Protocol
-from backend.domain.models import PipelineConfig, PipelineResult
+from backend.domain.models import PipelineConfig
+from backend.domain.results import PipelineResult
 
 
 class FinanceProcessingPort(Protocol):

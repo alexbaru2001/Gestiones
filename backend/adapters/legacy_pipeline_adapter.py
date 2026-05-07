@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from backend.domain.models import HistoryResult, MovementSummary, PipelineConfig, PipelineResult
+from backend.domain.models import PipelineConfig
+from backend.domain.results import HistoryResult, MovementSummary, PipelineResult
 
 
 class LegacyPipelineAdapter:

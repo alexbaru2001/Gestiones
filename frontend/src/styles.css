@@ -323,7 +323,15 @@ button:disabled {
 }
 
 .table-wrap {
+  margin-top: 18px;
   overflow-x: auto;
+}
+
+.table-title {
+  margin: 0 0 10px;
+  color: #27322b;
+  font-size: 15px;
+  letter-spacing: 0;
 }
 
 table {

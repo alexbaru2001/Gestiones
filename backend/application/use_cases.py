@@ -1,4 +1,5 @@
-from backend.domain.models import PipelineConfig, PipelineResult
+from backend.domain.models import PipelineConfig
+from backend.domain.results import PipelineResult
 from backend.ports.finance_port import FinanceProcessingPort
 
 

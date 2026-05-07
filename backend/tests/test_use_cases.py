@@ -1,5 +1,6 @@
 from backend.application.use_cases import ProcessFinanceWorkbookUseCase
-from backend.domain.models import HistoryResult, MovementSummary, PipelineConfig, PipelineResult
+from backend.domain.models import PipelineConfig
+from backend.domain.results import HistoryResult, MovementSummary, PipelineResult
 
 
 class FakeFinancePort:

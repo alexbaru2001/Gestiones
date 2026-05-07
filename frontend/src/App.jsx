@@ -76,6 +76,7 @@ export function App() {
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => result?.historial?.resumen ?? [], [result])
+  const objectiveRows = useMemo(() => result?.historial?.objetivos ?? [], [result])
 
   useEffect(() => {
     loadObjectives({ silent: true })
@@ -403,6 +404,7 @@ export function App() {
               </div>
 
               <div className="table-wrap">
+                <h3 className="table-title">Historial reciente</h3>
                 <table>
                   <thead>
                     <tr>
@@ -426,6 +428,34 @@ export function App() {
                   </tbody>
                 </table>
               </div>
+
+              {objectiveRows.length > 0 && (
+                <div className="table-wrap">
+                  <h3 className="table-title">Objetivos</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Mes</th>
+                        <th>Objetivo</th>
+                        <th>Aporte</th>
+                        <th>Saldo</th>
+                        <th>Liquidación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {objectiveRows.slice(-8).map((row, index) => (
+                        <tr key={`${row.Mes}-${row.Objetivo}-${index}`}>
+                          <td>{row.Mes}</td>
+                          <td>{row.Objetivo}</td>
+                          <td>{formatMoney(row.aporte_mes)}</td>
+                          <td>{formatMoney(row.saldo_fin_mes)}</td>
+                          <td>{formatMoney(row.liquidacion)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           ) : (
             <div className="empty-state">
