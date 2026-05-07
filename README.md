@@ -39,4 +39,5 @@ docker compose --profile test run --rm backend-test
 
 ## Estado de migración
 
-Fase 0 completada: se creó esqueleto hexagonal y API base reutilizando pipeline legado para conservar comportamiento.
+- Fase 0 completada: esqueleto hexagonal, API base y validación Docker.
+- Fase 1 en curso: endpoint de procesado con respuesta JSON serializable y frontend para subir Excel, ajustar parámetros y consultar el resumen.
