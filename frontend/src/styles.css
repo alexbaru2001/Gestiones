@@ -70,6 +70,7 @@ button:disabled {
 }
 
 .panel {
+  min-width: 0;
   border: 1px solid #dce2d8;
   border-radius: 8px;
   background: #ffffff;
@@ -218,25 +219,28 @@ button:disabled {
 
 .objective-list {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .objective-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 96px 82px 126px 112px auto;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
   align-items: end;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #edf1ea;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
 }
 
 .objective-row:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+  padding-bottom: 12px;
 }
 
 .objective-row label {
   display: grid;
+  min-width: 0;
   gap: 7px;
   color: #4f5a52;
   font-size: 13px;
@@ -245,12 +249,17 @@ button:disabled {
 
 .objective-row input {
   width: 100%;
+  min-width: 0;
   min-height: 38px;
   border: 1px solid #cfd8cc;
   border-radius: 6px;
   padding: 0 9px;
   color: #17201a;
   background: #ffffff;
+}
+
+.objective-row .danger {
+  justify-self: start;
 }
 
 .error-message {
@@ -363,7 +372,7 @@ th {
   }
 
   .objective-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .topbar {
