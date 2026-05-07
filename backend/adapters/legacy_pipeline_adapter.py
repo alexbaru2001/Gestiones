@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from backend.domain.models import PipelineConfig
+from backend.domain.models import HistoryResult, MovementSummary, PipelineConfig, PipelineResult
 
 
 class LegacyPipelineAdapter:
@@ -35,9 +35,9 @@ class LegacyPipelineAdapter:
             fondo_reserva_snapshot=None,
             output_path=None,
         )
-        return self._to_response(result)
+        return self._to_response(result).to_dict()
 
-    def _to_response(self, result: dict[str, Any]) -> dict[str, Any]:
+    def _to_response(self, result: dict[str, Any]) -> PipelineResult:
         historial = result.get("historial")
         resumen_df, objetivos_df = self._split_historial(historial)
         ultimo_mes = self._last_record(resumen_df)
@@ -45,21 +45,21 @@ class LegacyPipelineAdapter:
         presupuesto = result.get("presupuesto")
         cuentas = getattr(presupuesto, "accounts", {}) or {}
 
-        return {
-            "params": self._params_to_dict(result.get("params")),
-            "movimientos": {
-                "gastos": self._dataframe_len(result.get("gastos")),
-                "ingresos": self._dataframe_len(result.get("ingresos")),
-                "transferencias": self._dataframe_len(result.get("transferencias")),
-                "cuentas": len(cuentas),
-            },
-            "historial": {
-                "meses": self._dataframe_len(resumen_df),
-                "ultimo_mes": ultimo_mes,
-                "resumen": self._dataframe_to_records(resumen_df),
-                "objetivos": self._dataframe_to_records(objetivos_df),
-            },
-        }
+        return PipelineResult(
+            params=self._params_to_dict(result.get("params")),
+            movimientos=MovementSummary(
+                gastos=self._dataframe_len(result.get("gastos")),
+                ingresos=self._dataframe_len(result.get("ingresos")),
+                transferencias=self._dataframe_len(result.get("transferencias")),
+                cuentas=len(cuentas),
+            ),
+            historial=HistoryResult(
+                meses=self._dataframe_len(resumen_df),
+                ultimo_mes=ultimo_mes,
+                resumen=self._dataframe_to_records(resumen_df),
+                objetivos=self._dataframe_to_records(objetivos_df),
+            ),
+        )
 
     def _split_historial(self, historial: Any) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         if isinstance(historial, tuple) and len(historial) == 2:

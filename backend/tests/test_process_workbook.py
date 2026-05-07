@@ -106,6 +106,7 @@ def test_process_workbook_returns_serializable_summary():
     assert data["ok"] is True
     assert data["result"]["movimientos"]["gastos"] == 1
     assert data["result"]["movimientos"]["ingresos"] == 1
+    assert data["result"]["params"]["fecha_inicio"] == "2024-10-01"
     assert data["result"]["historial"]["meses"] == 1
     assert data["result"]["historial"]["ultimo_mes"]["Mes"] == "2024-10"
 
