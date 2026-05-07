@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
+import { validateFinanceInput } from './validation'
 
 const initialParams = {
   fecha_inicio: '2024-10-01',
@@ -68,11 +69,8 @@ function objectiveFromApi(objective) {
   }
 }
 
-function isValidFraction(value) {
-  return Number.isFinite(value) && value >= 0 && value <= 1
-}
-
 export function App() {
+  const errorRef = useRef(null)
   const [file, setFile] = useState(null)
   const [params, setParams] = useState(initialParams)
   const [objectives, setObjectives] = useState([])
@@ -148,58 +146,16 @@ export function App() {
     () => objectives.filter((objective) => objective.nombre.trim()),
     [objectives],
   )
-  const validationMessages = useMemo(() => {
-    const messages = []
-    if (!params.fecha_inicio) {
-      messages.push('La fecha de inicio es obligatoria.')
-    }
-
-    for (const [label, value] of [
-      ['Gasto', params.porcentaje_gasto],
-      ['Inversión', params.porcentaje_inversion],
-      ['Vacaciones', params.porcentaje_vacaciones],
-    ]) {
-      if (!isValidFraction(value)) {
-        messages.push(`${label} debe estar entre 0 y 1.`)
-      }
-    }
-
-    const names = new Set()
-    const repeatedNames = new Set()
-    let totalFraction = 0
-    activeObjectives.forEach((objective) => {
-      const name = objective.nombre.trim().toLowerCase()
-      if (names.has(name)) repeatedNames.add(objective.nombre.trim())
-      names.add(name)
-
-      if (!isValidFraction(objective.fraccion_presupuesto)) {
-        messages.push(`Objetivo "${objective.nombre}": la fracción debe estar entre 0 y 1.`)
-      }
-      totalFraction += Number(objective.fraccion_presupuesto) || 0
-
-      if (!Number.isInteger(objective.duracion_meses) || objective.duracion_meses <= 0) {
-        messages.push(`Objetivo "${objective.nombre}": los meses deben ser un entero mayor que 0.`)
-      }
-
-      if (!/^\d{4}-\d{2}$/.test(objective.mes_inicio)) {
-        messages.push(`Objetivo "${objective.nombre}": el inicio debe tener formato YYYY-MM.`)
-      }
-    })
-
-    if (repeatedNames.size > 0) {
-      messages.push(`Hay objetivos repetidos: ${Array.from(repeatedNames).join(', ')}.`)
-    }
-    if (totalFraction > 1 + 1e-9) {
-      messages.push('La suma de fracciones de objetivos no puede superar 1.')
-    }
-
-    return messages
-  }, [activeObjectives, params])
+  const validationMessages = useMemo(() => validateFinanceInput(params, activeObjectives), [activeObjectives, params])
   const hasValidationErrors = validationMessages.length > 0
 
   useEffect(() => {
     loadObjectives({ silent: true })
   }, [])
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus()
+  }, [error])
 
   const checkHealth = async () => {
     setIsChecking(true)
@@ -528,23 +484,31 @@ export function App() {
               </div>
             )}
             {validationMessages.length > 0 && (
-              <div className="validation-box">
+              <div className="validation-box" role="alert" aria-live="polite">
                 {validationMessages.slice(0, 4).map((message) => (
                   <p key={message}>{message}</p>
                 ))}
               </div>
             )}
-            {objectivesStatus && <p className="status-message">{objectivesStatus}</p>}
+            {objectivesStatus && (
+              <p className="status-message" aria-live="polite">
+                {objectivesStatus}
+              </p>
+            )}
           </div>
 
           <button className="primary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
             {isProcessing ? 'Procesando...' : 'Procesar'}
           </button>
 
-          {error && <p className="error-message">{error}</p>}
+          {error && (
+            <p className="error-message" role="alert" tabIndex="-1" ref={errorRef}>
+              {error}
+            </p>
+          )}
         </form>
 
-        <section className="panel result-panel">
+        <section className="panel result-panel" aria-busy={isProcessing}>
           <div className="panel-header">
             <h2>Resumen</h2>
             <div className="panel-actions">
@@ -580,7 +544,13 @@ export function App() {
             </div>
           </div>
 
-          {selectedRow ? (
+          {isProcessing ? (
+            <div className="empty-state processing-state" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />
+              <strong>Procesando Excel</strong>
+              <span>El resumen se actualizará cuando termine el cálculo.</span>
+            </div>
+          ) : selectedRow ? (
             <>
               <div className="metrics-grid">
                 {moneyFields.slice(0, 6).map((field) => (

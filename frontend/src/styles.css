@@ -302,6 +302,11 @@ button:disabled {
   font-weight: 700;
 }
 
+.error-message:focus {
+  outline: 2px solid #d88978;
+  outline-offset: 3px;
+}
+
 .validation-box {
   display: grid;
   gap: 6px;
@@ -600,6 +605,25 @@ th {
 .empty-state strong {
   color: #27322b;
   font-size: 20px;
+}
+
+.processing-state {
+  gap: 10px;
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid #dbe6df;
+  border-top-color: #286b57;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 860px) {

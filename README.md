@@ -62,6 +62,4 @@ docker compose --profile test run --rm backend-test
 
 ### Pendiente Fase 6
 
-- Mejorar estados vacíos/de error durante procesado de Excel.
 - Añadir pruebas unitarias ligeras para utilidades frontend (`api`, `exporters`, validación).
-- Pulir accesibilidad básica de formularios y mensajes (`aria-live`, foco en errores).
