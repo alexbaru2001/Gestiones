@@ -60,4 +60,4 @@ docker compose --profile test run --rm backend-test
 - Fase 4 completada: mejora de la experiencia de resultados en frontend, con selector de mes, comparación mensual, tendencia, filtro, resumen de objetivos calculados y exportación JSON/CSV.
 - Fase 5 completada: endurecimiento operativo con variables de entorno, healthcheck, persistencia local de objetivos, `.dockerignore` y targets Docker separados para runtime/tests.
 - Fase 6 completada: endurecimiento de experiencia de uso con cliente API frontend, validación local, estados accesibles de carga/error y tests unitarios ligeros para `api`, `exporters` y validación.
-- Fase 7 en curso: modularización del frontend para reducir `App.jsx`, extraer lógica pura testeable y preparar componentes de entrada/resultados.
+- Fase 7 completada: modularización del frontend con `App.jsx` reducido a orquestador, componentes de entrada/resultados y lógica pura testeable para formato, objetivos y derivaciones de resultados.
