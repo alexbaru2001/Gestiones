@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
+import { formatDelta, formatMoney, formatPercent } from './formatters'
 import { validateFinanceInput } from './validation'
 
 const initialParams = {
@@ -31,21 +32,6 @@ const moneyFields = [
   '💼 Vacaciones',
   '🎁 Regalos',
 ]
-
-function formatMoney(value) {
-  if (typeof value !== 'number') return '-'
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(value)
-}
-
-function formatPercent(value) {
-  return `${Math.round(Number(value) * 100)}%`
-}
-
-function formatDelta(value) {
-  if (typeof value !== 'number') return '-'
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${formatMoney(value)}`
-}
 
 function objectiveToPayload({ id, etiquetas, ...objective }) {
   return {
