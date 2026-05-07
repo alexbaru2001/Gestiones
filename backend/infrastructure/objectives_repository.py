@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from backend.config import get_objectives_path
 from backend.domain.models import ObjectiveConfig
-
-DEFAULT_OBJECTIVES_PATH = Path(__file__).resolve().parents[2] / "Personal_finanzas" / "Data" / "objetivos_vista.json"
 
 
 class ObjectivesValidationError(ValueError):
@@ -87,8 +86,8 @@ def normalize_objectives_payload(data: Any, detail_prefix: str = "objetivos") ->
 
 
 class JsonObjectivesRepository:
-    def __init__(self, path: Path = DEFAULT_OBJECTIVES_PATH) -> None:
-        self._path = path
+    def __init__(self, path: Path | None = None) -> None:
+        self._path = path or get_objectives_path()
 
     def load(self) -> list[dict[str, Any]]:
         if not self._path.exists():
