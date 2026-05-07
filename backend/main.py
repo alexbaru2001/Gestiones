@@ -80,4 +80,4 @@ async def process_workbook(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return {"ok": True, "result": result}
+    return {"ok": True, "result": result.to_dict()}

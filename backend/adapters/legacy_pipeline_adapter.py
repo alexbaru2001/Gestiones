@@ -20,7 +20,7 @@ class LegacyPipelineAdapter:
         excel_bytes: bytes,
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
-    ) -> dict[str, Any]:
+    ) -> PipelineResult:
         legacy_path_str = str(self._legacy_path)
         if legacy_path_str not in sys.path:
             sys.path.append(legacy_path_str)
@@ -35,7 +35,7 @@ class LegacyPipelineAdapter:
             fondo_reserva_snapshot=None,
             output_path=None,
         )
-        return self._to_response(result).to_dict()
+        return self._to_response(result)
 
     def _to_response(self, result: dict[str, Any]) -> PipelineResult:
         historial = result.get("historial")

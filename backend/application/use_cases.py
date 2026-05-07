@@ -1,5 +1,4 @@
-from typing import Any
-from backend.domain.models import PipelineConfig
+from backend.domain.models import PipelineConfig, PipelineResult
 from backend.ports.finance_port import FinanceProcessingPort
 
 
@@ -12,5 +11,5 @@ class ProcessFinanceWorkbookUseCase:
         excel_bytes: bytes,
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
-    ) -> dict[str, Any]:
+    ) -> PipelineResult:
         return self._port.run_pipeline_from_bytes(excel_bytes=excel_bytes, params=params, objetivos=objetivos or [])

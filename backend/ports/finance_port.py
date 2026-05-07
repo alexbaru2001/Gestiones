@@ -1,5 +1,5 @@
-from typing import Protocol, Any
-from backend.domain.models import PipelineConfig
+from typing import Protocol
+from backend.domain.models import PipelineConfig, PipelineResult
 
 
 class FinanceProcessingPort(Protocol):
@@ -8,5 +8,5 @@ class FinanceProcessingPort(Protocol):
         excel_bytes: bytes,
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
-    ) -> dict[str, Any]:
+    ) -> PipelineResult:
         ...
