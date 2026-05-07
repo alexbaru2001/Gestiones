@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
-
-const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
 
 const initialParams = {
   fecha_inicio: '2024-10-01',
@@ -149,9 +148,7 @@ export function App() {
     setIsChecking(true)
     setError('')
     try {
-      const response = await fetch(`${API_URL}/health`)
-      if (!response.ok) throw new Error('Backend no disponible')
-      const data = await response.json()
+      const data = await requestJson('/health', {}, 'Backend no disponible')
       setHealth(data.status)
     } catch (err) {
       setHealth('error')
@@ -190,12 +187,10 @@ export function App() {
     })
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/process?${query.toString()}`, {
+      const data = await requestJson(`/api/v1/process?${query.toString()}`, {
         method: 'POST',
         body: formData,
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'No se pudo procesar el Excel')
+      }, 'No se pudo procesar el Excel')
       setResult(data.result)
       setSelectedObjective('all')
       setSelectedMonth(data.result?.historial?.ultimo_mes?.Mes ?? '')
@@ -237,9 +232,7 @@ export function App() {
   const loadObjectives = async ({ silent = false } = {}) => {
     if (!silent) setObjectivesStatus('Cargando...')
     try {
-      const response = await fetch(`${API_URL}/api/v1/objectives`)
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'No se pudieron cargar los objetivos')
+      const data = await requestJson('/api/v1/objectives', {}, 'No se pudieron cargar los objetivos')
       setObjectives((data.objetivos ?? []).map(objectiveFromApi))
       setObjectivesStatus(`${data.objetivos?.length ?? 0} objetivos cargados`)
     } catch (err) {
@@ -256,13 +249,11 @@ export function App() {
       const payload = {
         objetivos: objectives.filter((objective) => objective.nombre.trim()).map(objectiveToPayload),
       }
-      const response = await fetch(`${API_URL}/api/v1/objectives`, {
+      const data = await requestJson('/api/v1/objectives', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'No se pudieron guardar los objetivos')
+      }, 'No se pudieron guardar los objetivos')
       setObjectives((data.objetivos ?? []).map(objectiveFromApi))
       setObjectivesStatus(`${data.objetivos?.length ?? 0} objetivos guardados`)
     } catch (err) {
