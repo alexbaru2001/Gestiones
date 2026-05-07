@@ -97,6 +97,14 @@ button:disabled {
   font-size: 14px;
 }
 
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .ghost-button,
 .primary-button,
 .file-input span {
@@ -532,6 +540,12 @@ th {
   }
 
   .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .panel-header,
+  .panel-actions {
     align-items: stretch;
     flex-direction: column;
   }

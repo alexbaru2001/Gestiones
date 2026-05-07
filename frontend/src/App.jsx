@@ -62,6 +62,16 @@ function objectiveFromApi(objective) {
   }
 }
 
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export function App() {
   const [file, setFile] = useState(null)
   const [params, setParams] = useState(initialParams)
@@ -246,6 +256,18 @@ export function App() {
     }
   }
 
+  const exportResult = () => {
+    if (!result) return
+    const month = latest?.Mes ?? 'resultado'
+    downloadJson(`gestiones-${month}.json`, {
+      exported_at: new Date().toISOString(),
+      source_file: file?.name ?? null,
+      params,
+      objectives: objectives.map(objectiveToPayload),
+      result,
+    })
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -419,7 +441,14 @@ export function App() {
         <section className="panel result-panel">
           <div className="panel-header">
             <h2>Resumen</h2>
-            <span>{latest?.Mes ?? 'Pendiente'}</span>
+            <div className="panel-actions">
+              <span>{latest?.Mes ?? 'Pendiente'}</span>
+              {result && (
+                <button className="text-button" type="button" onClick={exportResult}>
+                  Exportar JSON
+                </button>
+              )}
+            </div>
           </div>
 
           {latest ? (
