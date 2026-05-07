@@ -105,6 +105,13 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .month-selector {
   display: flex;
   align-items: center;
@@ -603,6 +610,14 @@ th {
   .month-selector {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .export-actions {
+    justify-content: stretch;
+  }
+
+  .export-actions .text-button {
+    width: 100%;
   }
 
   .table-toolbar,

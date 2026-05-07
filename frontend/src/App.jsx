@@ -69,7 +69,28 @@ function objectiveFromApi(objective) {
 }
 
 function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  downloadText(filename, JSON.stringify(data, null, 2), 'application/json')
+}
+
+function csvEscape(value) {
+  if (value === null || value === undefined) return ''
+  const text = String(value)
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+function toCsv(records) {
+  if (!records.length) return ''
+  const columns = Array.from(
+    records.reduce((keys, row) => {
+      Object.keys(row).forEach((key) => keys.add(key))
+      return keys
+    }, new Set()),
+  )
+  return [columns.map(csvEscape).join(','), ...records.map((row) => columns.map((column) => csvEscape(row[column])).join(','))].join('\n')
+}
+
+function downloadText(filename, text, type = 'text/plain;charset=utf-8') {
+  const blob = new Blob([text], { type })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -294,6 +315,24 @@ export function App() {
     })
   }
 
+  const exportHistoryCsv = () => {
+    if (!rows.length) return
+    const month = selectedRow?.Mes ?? latest?.Mes ?? 'resultado'
+    downloadText(`gestiones-historial-${month}.csv`, toCsv(rows), 'text/csv;charset=utf-8')
+  }
+
+  const exportObjectivesCsv = () => {
+    if (!filteredObjectiveRows.length) return
+    const label =
+      selectedObjective === 'all'
+        ? 'objetivos'
+        : selectedObjective
+            .toLowerCase()
+            .replaceAll(' ', '-')
+            .replaceAll('/', '-')
+    downloadText(`gestiones-${label}.csv`, toCsv(filteredObjectiveRows), 'text/csv;charset=utf-8')
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -483,9 +522,19 @@ export function App() {
                 <span>Pendiente</span>
               )}
               {result && (
-                <button className="text-button" type="button" onClick={exportResult}>
-                  Exportar JSON
-                </button>
+                <div className="export-actions">
+                  <button className="text-button" type="button" onClick={exportResult}>
+                    JSON
+                  </button>
+                  <button className="text-button" type="button" onClick={exportHistoryCsv}>
+                    Historial CSV
+                  </button>
+                  {objectiveRows.length > 0 && (
+                    <button className="text-button" type="button" onClick={exportObjectivesCsv}>
+                      Objetivos CSV
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
