@@ -9,6 +9,15 @@ const initialParams = {
   porcentaje_vacaciones: 0.05,
 }
 
+const createObjective = () => ({
+  id: crypto.randomUUID(),
+  nombre: '',
+  etiquetas: '',
+  fraccion_presupuesto: 0.1,
+  duracion_meses: 1,
+  mes_inicio: '2024-10',
+})
+
 const moneyFields = [
   'total',
   '💰 Ahorros',
@@ -33,6 +42,7 @@ function formatPercent(value) {
 export function App() {
   const [file, setFile] = useState(null)
   const [params, setParams] = useState(initialParams)
+  const [objectives, setObjectives] = useState([])
   const [health, setHealth] = useState('pendiente')
   const [isChecking, setIsChecking] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -71,6 +81,19 @@ export function App() {
 
     const formData = new FormData()
     formData.append('file', file)
+    const objetivos = objectives
+      .filter((objective) => objective.nombre.trim())
+      .map(({ id, etiquetas, ...objective }) => ({
+        ...objective,
+        etiquetas: etiquetas
+          .split(',')
+          .map((tag) => tag.trim().toLowerCase())
+          .filter(Boolean),
+      }))
+
+    if (objetivos.length > 0) {
+      formData.append('objetivos_json', JSON.stringify(objetivos))
+    }
 
     const query = new URLSearchParams({
       fecha_inicio: params.fecha_inicio,
@@ -99,6 +122,27 @@ export function App() {
       ...current,
       [key]: key === 'fecha_inicio' ? value : Number(value),
     }))
+  }
+
+  const addObjective = () => {
+    setObjectives((current) => [...current, createObjective()])
+  }
+
+  const updateObjective = (id, key, value) => {
+    setObjectives((current) =>
+      current.map((objective) =>
+        objective.id === id
+          ? {
+              ...objective,
+              [key]: ['fraccion_presupuesto', 'duracion_meses'].includes(key) ? Number(value) : value,
+            }
+          : objective,
+      ),
+    )
+  }
+
+  const removeObjective = (id) => {
+    setObjectives((current) => current.filter((objective) => objective.id !== id))
   }
 
   return (
@@ -176,6 +220,76 @@ export function App() {
             </label>
           </div>
 
+          <div className="objectives-section">
+            <div className="section-heading">
+              <h3>Objetivos</h3>
+              <button className="text-button" type="button" onClick={addObjective}>
+                Añadir
+              </button>
+            </div>
+
+            {objectives.length === 0 ? (
+              <p className="muted-text">Sin objetivos configurados para este cálculo.</p>
+            ) : (
+              <div className="objective-list">
+                {objectives.map((objective) => (
+                  <div className="objective-row" key={objective.id}>
+                    <label>
+                      Nombre
+                      <input
+                        type="text"
+                        value={objective.nombre}
+                        onChange={(event) => updateObjective(objective.id, 'nombre', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Etiquetas
+                      <input
+                        type="text"
+                        value={objective.etiquetas}
+                        onChange={(event) => updateObjective(objective.id, 'etiquetas', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Fracción
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={objective.fraccion_presupuesto}
+                        onChange={(event) =>
+                          updateObjective(objective.id, 'fraccion_presupuesto', event.target.value)
+                        }
+                      />
+                    </label>
+                    <label>
+                      Meses
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={objective.duracion_meses}
+                        onChange={(event) => updateObjective(objective.id, 'duracion_meses', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Inicio
+                      <input
+                        type="month"
+                        value={objective.mes_inicio}
+                        onChange={(event) => updateObjective(objective.id, 'mes_inicio', event.target.value)}
+                      />
+                    </label>
+                    <button className="text-button danger" type="button" onClick={() => removeObjective(objective.id)}>
+                      Quitar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button className="primary-button" type="submit" disabled={isProcessing}>
             {isProcessing ? 'Procesando...' : 'Procesar'}
           </button>
@@ -205,6 +319,7 @@ export function App() {
                 <span>{result.movimientos.ingresos} ingresos</span>
                 <span>{result.movimientos.transferencias} transferencias</span>
                 <span>{result.movimientos.cuentas} cuentas</span>
+                <span>{result.historial.objetivos.length} objetivos</span>
               </div>
 
               <div className="table-wrap">

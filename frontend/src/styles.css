@@ -120,6 +120,21 @@ button:disabled {
   color: #ffffff;
 }
 
+.text-button {
+  min-height: 34px;
+  border-radius: 6px;
+  background: #e8f0eb;
+  color: #286b57;
+  padding: 0 10px;
+  font-weight: 700;
+}
+
+.text-button.danger {
+  align-self: end;
+  background: #f7e8e4;
+  color: #a33b2f;
+}
+
 .file-input {
   display: block;
   margin-bottom: 18px;
@@ -166,6 +181,69 @@ button:disabled {
 .field-grid strong {
   color: #286b57;
   font-size: 13px;
+}
+
+.objectives-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #e0e7dd;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.muted-text {
+  margin: 0;
+  color: #667067;
+  font-size: 14px;
+}
+
+.objective-list {
+  display: grid;
+  gap: 12px;
+}
+
+.objective-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 96px 82px 126px auto;
+  gap: 10px;
+  align-items: end;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf1ea;
+}
+
+.objective-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.objective-row label {
+  display: grid;
+  gap: 7px;
+  color: #4f5a52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.objective-row input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #17201a;
+  background: #ffffff;
 }
 
 .error-message {
@@ -270,6 +348,10 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .objective-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;
@@ -283,6 +365,10 @@ th {
   }
 
   .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .objective-row {
     grid-template-columns: 1fr;
   }
 }
