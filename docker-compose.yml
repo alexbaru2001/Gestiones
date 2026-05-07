@@ -5,9 +5,12 @@ services:
       dockerfile: backend/Dockerfile
       target: runtime
     environment:
-      GESTIONES_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      GESTIONES_CORS_ORIGINS: ${GESTIONES_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      GESTIONES_OBJECTIVES_PATH: ${GESTIONES_OBJECTIVES_PATH:-/app/Personal_finanzas/Data/objetivos_vista.json}
     ports:
       - "8000:8000"
+    volumes:
+      - ./Personal_finanzas/Data:/app/Personal_finanzas/Data
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)\""]
       interval: 10s
@@ -27,7 +30,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
       - "5173:5173"
     depends_on:
