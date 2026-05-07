@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
 import { formatDelta, formatMoney, formatPercent } from './formatters'
+import { createObjective, objectiveFromApi, objectiveToPayload } from './objectives'
 import { validateFinanceInput } from './validation'
 
 const initialParams = {
@@ -10,16 +11,6 @@ const initialParams = {
   porcentaje_inversion: 0.1,
   porcentaje_vacaciones: 0.05,
 }
-
-const createObjective = () => ({
-  id: crypto.randomUUID(),
-  nombre: '',
-  etiquetas: '',
-  fraccion_presupuesto: 0.1,
-  duracion_meses: 1,
-  mes_inicio: '2024-10',
-  saldo_inicial: 0,
-})
 
 const moneyFields = [
   'total',
@@ -32,28 +23,6 @@ const moneyFields = [
   '💼 Vacaciones',
   '🎁 Regalos',
 ]
-
-function objectiveToPayload({ id, etiquetas, ...objective }) {
-  return {
-    ...objective,
-    etiquetas: etiquetas
-      .split(',')
-      .map((tag) => tag.trim().toLowerCase())
-      .filter(Boolean),
-  }
-}
-
-function objectiveFromApi(objective) {
-  return {
-    id: crypto.randomUUID(),
-    nombre: objective.nombre ?? '',
-    etiquetas: Array.isArray(objective.etiquetas) ? objective.etiquetas.join(', ') : String(objective.etiquetas ?? ''),
-    fraccion_presupuesto: Number(objective.fraccion_presupuesto ?? 0),
-    duracion_meses: Number(objective.duracion_meses ?? 1),
-    mes_inicio: String(objective.mes_inicio ?? '2024-10').slice(0, 7),
-    saldo_inicial: Number(objective.saldo_inicial ?? 0),
-  }
-}
 
 export function App() {
   const errorRef = useRef(null)
