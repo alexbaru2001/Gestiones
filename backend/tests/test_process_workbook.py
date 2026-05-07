@@ -4,6 +4,7 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 import backend.main as backend_main
+from backend.infrastructure.objectives_repository import JsonObjectivesRepository
 from backend.main import app
 
 
@@ -159,7 +160,7 @@ def test_process_workbook_accepts_objectives_payload():
 
 def test_objectives_can_be_saved_and_loaded(tmp_path, monkeypatch):
     objectives_path = tmp_path / "objetivos_vista.json"
-    monkeypatch.setattr(backend_main, "OBJECTIVES_PATH", objectives_path)
+    monkeypatch.setattr(backend_main, "objectives_repository", JsonObjectivesRepository(objectives_path))
     client = TestClient(app)
 
     payload = {
@@ -184,7 +185,11 @@ def test_objectives_can_be_saved_and_loaded(tmp_path, monkeypatch):
 
 
 def test_objectives_reject_duplicate_names(tmp_path, monkeypatch):
-    monkeypatch.setattr(backend_main, "OBJECTIVES_PATH", tmp_path / "objetivos_vista.json")
+    monkeypatch.setattr(
+        backend_main,
+        "objectives_repository",
+        JsonObjectivesRepository(tmp_path / "objetivos_vista.json"),
+    )
     client = TestClient(app)
 
     response = client.put(
