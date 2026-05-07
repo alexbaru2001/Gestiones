@@ -79,6 +79,7 @@ export function App() {
   const [health, setHealth] = useState('pendiente')
   const [isChecking, setIsChecking] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isLoadingObjectives, setIsLoadingObjectives] = useState(false)
   const [isSavingObjectives, setIsSavingObjectives] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
@@ -260,6 +261,7 @@ export function App() {
   }
 
   const updateParam = (key, value) => {
+    setError('')
     setParams((current) => ({
       ...current,
       [key]: key === 'fecha_inicio' ? value : Number(value),
@@ -267,10 +269,12 @@ export function App() {
   }
 
   const addObjective = () => {
+    setError('')
     setObjectives((current) => [...current, createObjective()])
   }
 
   const updateObjective = (id, key, value) => {
+    setError('')
     setObjectives((current) =>
       current.map((objective) =>
         objective.id === id
@@ -284,10 +288,13 @@ export function App() {
   }
 
   const removeObjective = (id) => {
+    setError('')
     setObjectives((current) => current.filter((objective) => objective.id !== id))
   }
 
   const loadObjectives = async ({ silent = false } = {}) => {
+    setIsLoadingObjectives(true)
+    setError('')
     if (!silent) setObjectivesStatus('Cargando...')
     try {
       const data = await requestJson('/api/v1/objectives', {}, 'No se pudieron cargar los objetivos')
@@ -295,6 +302,8 @@ export function App() {
       setObjectivesStatus(`${data.objetivos?.length ?? 0} objetivos cargados`)
     } catch (err) {
       setObjectivesStatus(silent ? '' : err.message)
+    } finally {
+      setIsLoadingObjectives(false)
     }
   }
 
@@ -437,8 +446,8 @@ export function App() {
             <div className="section-heading">
               <h3>Objetivos</h3>
               <div className="button-row">
-                <button className="text-button" type="button" onClick={() => loadObjectives()}>
-                  Cargar
+                <button className="text-button" type="button" onClick={() => loadObjectives()} disabled={isLoadingObjectives}>
+                  {isLoadingObjectives ? 'Cargando...' : 'Cargar'}
                 </button>
                 <button className="text-button" type="button" onClick={saveObjectives} disabled={isSavingObjectives || hasValidationErrors}>
                   {isSavingObjectives ? 'Guardando...' : 'Guardar'}

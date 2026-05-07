@@ -59,3 +59,9 @@ docker compose --profile test run --rm backend-test
 - Fase 4 completada: mejora de la experiencia de resultados en frontend, con selector de mes, comparación mensual, tendencia, filtro, resumen de objetivos calculados y exportación JSON/CSV.
 - Fase 5 completada: endurecimiento operativo con variables de entorno, healthcheck, persistencia local de objetivos, `.dockerignore` y targets Docker separados para runtime/tests.
 - Fase 6 en curso: endurecimiento de experiencia de uso, cliente API frontend y mensajes de error más consistentes.
+
+### Pendiente Fase 6
+
+- Mejorar estados vacíos/de error durante procesado de Excel.
+- Añadir pruebas unitarias ligeras para utilidades frontend (`api`, `exporters`, validación).
+- Pulir accesibilidad básica de formularios y mensajes (`aria-live`, foco en errores).
