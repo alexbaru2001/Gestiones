@@ -10,6 +10,9 @@ const moneyFields = [
   '🧾 Presupuesto Disponible',
   '📉 Deuda Presupuestaria mensual',
   '📉 Deuda Presupuestaria acumulada',
+  '🎁 Regalos',
+  '💼 Vacaciones',
+  'Fondo de reserva cargado',
   '📈 Inversiones',
 ]
 
@@ -19,6 +22,7 @@ const tabs = [
   { id: 'gastos', label: 'Gastos' },
   { id: 'ahorro', label: 'Ahorro' },
   { id: 'inversiones', label: 'Inversiones' },
+  { id: 'reservas', label: 'Reservas' },
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'datos', label: 'Datos' },
 ]
@@ -27,6 +31,9 @@ const historyFields = [
   { label: 'Mes', field: 'Mes', type: 'text' },
   { label: 'Total', field: 'total', type: 'money' },
   { label: 'Ahorros', field: '💰 Ahorros', type: 'money' },
+  { label: 'Regalos', field: '🎁 Regalos', type: 'money' },
+  { label: 'Vacaciones', field: '💼 Vacaciones', type: 'money' },
+  { label: 'Fondo reserva', field: 'Fondo de reserva cargado', type: 'money' },
   { label: 'Gasto', field: '💳 Gasto del mes', type: 'money' },
   { label: 'Presupuesto', field: '💸 Presupuesto Mes', type: 'money' },
   { label: 'Disponible', field: '🧾 Presupuesto Disponible', type: 'money' },
@@ -116,6 +123,16 @@ export function ResultsPanel({
   const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
   const investmentMax = Math.max(
     ...rows.map((row) => Math.max(Math.abs(asNumber(row['📈 Inversiones'])), Math.abs(asNumber(row['Dinero Invertido'])))),
+    1,
+  )
+  const reserveMax = Math.max(
+    ...rows.map((row) =>
+      Math.max(
+        Math.abs(asNumber(row['🎁 Regalos'])),
+        Math.abs(asNumber(row['💼 Vacaciones'])),
+        Math.abs(asNumber(row['Fondo de reserva cargado'])),
+      ),
+    ),
     1,
   )
 
@@ -453,6 +470,53 @@ export function ResultsPanel({
                   <div className="investment-legend">
                     <span>Bolsa</span>
                     <span>Invertido</span>
+                  </div>
+                </section>
+              </section>
+            )}
+
+            {activeTab === 'reservas' && (
+              <section className="reserve-layout">
+                <div className="reserve-summary">
+                  <article>
+                    <span>Regalos</span>
+                    <strong>{formatMoney(selectedRow['🎁 Regalos'])}</strong>
+                  </article>
+                  <article>
+                    <span>Vacaciones</span>
+                    <strong>{formatMoney(selectedRow['💼 Vacaciones'])}</strong>
+                  </article>
+                  <article>
+                    <span>Fondo reserva</span>
+                    <strong>{formatMoney(selectedRow['Fondo de reserva cargado'])}</strong>
+                  </article>
+                </div>
+
+                <section className="trend-panel compact-trend">
+                  <h3 className="table-title">Evolución reservas</h3>
+                  <div className="trend-list">
+                    {rows.slice(-12).map((row) => (
+                      <article className="reserve-row" key={row.Mes}>
+                        <span className="trend-month">{row.Mes}</span>
+                        <div className="reserve-bars">
+                          <div className="reserve-bar gifts">
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['🎁 Regalos'])) / reserveMax) * 100)}%` }} />
+                          </div>
+                          <div className="reserve-bar holidays">
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['💼 Vacaciones'])) / reserveMax) * 100)}%` }} />
+                          </div>
+                          <div className="reserve-bar emergency">
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['Fondo de reserva cargado'])) / reserveMax) * 100)}%` }} />
+                          </div>
+                        </div>
+                        <strong>{formatMoney(asNumber(row['🎁 Regalos']) + asNumber(row['💼 Vacaciones']) + asNumber(row['Fondo de reserva cargado']))}</strong>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="reserve-legend">
+                    <span>Regalos</span>
+                    <span>Vacaciones</span>
+                    <span>Fondo reserva</span>
                   </div>
                 </section>
               </section>

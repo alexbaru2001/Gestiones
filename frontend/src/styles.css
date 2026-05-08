@@ -696,18 +696,21 @@ button:disabled {
 }
 
 .savings-summary,
-.investment-summary {
+.investment-summary,
+.reserve-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
-.investment-summary {
+.investment-summary,
+.reserve-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .savings-summary article,
-.investment-summary article {
+.investment-summary article,
+.reserve-summary article {
   border: 1px solid #e1e8dd;
   border-radius: 8px;
   background: #fbfcfa;
@@ -715,14 +718,16 @@ button:disabled {
 }
 
 .savings-summary span,
-.investment-summary span {
+.investment-summary span,
+.reserve-summary span {
   display: block;
   color: #637069;
   font-size: 12px;
 }
 
 .savings-summary strong,
-.investment-summary strong {
+.investment-summary strong,
+.reserve-summary strong {
   display: block;
   margin-top: 6px;
   color: #17201a;
@@ -731,7 +736,8 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.investment-layout {
+.investment-layout,
+.reserve-layout {
   display: grid;
   gap: 18px;
 }
@@ -748,12 +754,14 @@ button:disabled {
   align-items: center;
 }
 
-.investment-row {
+.investment-row,
+.reserve-row {
   grid-template-columns: 78px minmax(0, 1fr) minmax(92px, auto);
 }
 
 .savings-row strong,
-.investment-row strong {
+.investment-row strong,
+.reserve-row strong {
   color: #17201a;
   font-size: 13px;
   text-align: right;
@@ -828,6 +836,64 @@ button:disabled {
 
 .investment-legend span:nth-child(2)::before {
   background: #5c6f9e;
+}
+
+.reserve-bars {
+  display: grid;
+  gap: 4px;
+}
+
+.reserve-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.reserve-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.reserve-bar.gifts span {
+  background: #b85a4b;
+}
+
+.reserve-bar.holidays span {
+  background: #d2a53f;
+}
+
+.reserve-bar.emergency span {
+  background: #286b57;
+}
+
+.reserve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reserve-legend span::before {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #b85a4b;
+  content: "";
+}
+
+.reserve-legend span:nth-child(2)::before {
+  background: #d2a53f;
+}
+
+.reserve-legend span:nth-child(3)::before {
+  background: #286b57;
 }
 
 .table-wrap {
@@ -971,7 +1037,8 @@ th {
   .comparison-grid,
   .budget-layout,
   .savings-summary,
-  .investment-summary {
+  .investment-summary,
+  .reserve-summary {
     grid-template-columns: 1fr;
   }
 
@@ -1028,12 +1095,14 @@ th {
 
   .trend-row strong,
   .savings-row strong,
-  .investment-row strong {
+  .investment-row strong,
+  .reserve-row strong {
     text-align: left;
   }
 
   .savings-row,
-  .investment-row {
+  .investment-row,
+  .reserve-row {
     grid-template-columns: 1fr;
   }
 }
