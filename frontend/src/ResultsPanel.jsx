@@ -8,6 +8,8 @@ const moneyFields = [
   '💳 Gasto del mes',
   '💸 Presupuesto Mes',
   '🧾 Presupuesto Disponible',
+  '📉 Deuda Presupuestaria mensual',
+  '📉 Deuda Presupuestaria acumulada',
   '📈 Inversiones',
 ]
 
@@ -16,6 +18,7 @@ const tabs = [
   { id: 'presupuesto', label: 'Presupuesto' },
   { id: 'gastos', label: 'Gastos' },
   { id: 'ahorro', label: 'Ahorro' },
+  { id: 'inversiones', label: 'Inversiones' },
   { id: 'objetivos', label: 'Objetivos' },
   { id: 'datos', label: 'Datos' },
 ]
@@ -28,6 +31,9 @@ const historyFields = [
   { label: 'Presupuesto', field: '💸 Presupuesto Mes', type: 'money' },
   { label: 'Disponible', field: '🧾 Presupuesto Disponible', type: 'money' },
   { label: 'Inversiones', field: '📈 Inversiones', type: 'money' },
+  { label: 'Invertido', field: 'Dinero Invertido', type: 'money' },
+  { label: 'Exceso mes', field: '📉 Deuda Presupuestaria mensual', type: 'money' },
+  { label: 'Exceso acum.', field: '📉 Deuda Presupuestaria acumulada', type: 'money' },
 ]
 
 function asNumber(value) {
@@ -38,17 +44,21 @@ function getBudget(selectedRow) {
   const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
   const availableBudget = asNumber(selectedRow['🧾 Presupuesto Disponible']) || monthBudget
   const spent = asNumber(selectedRow['💳 Gasto del mes'])
+  const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
+  const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
   const committed = Math.max(0, monthBudget - availableBudget)
   const remaining = Math.max(0, availableBudget - spent)
-  const overrun = Math.max(0, spent - availableBudget)
+  const overrun = monthlyDebt || Math.max(0, spent - availableBudget)
   const totalForBar = Math.max(monthBudget, committed + spent + remaining, 1)
   const execution = availableBudget > 0 ? (spent / availableBudget) * 100 : 0
 
   return {
+    accumulatedDebt,
     availableBudget,
     committed,
     execution,
     monthBudget,
+    monthlyDebt,
     overrun,
     remaining,
     spent,
@@ -104,6 +114,10 @@ export function ResultsPanel({
   const expenseMax = Math.max(...expenseAnalysis.totales_categoria.map((row) => asNumber(row.total)), 1)
   const savingsAnalysis = getSavingsAnalysis(result)
   const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
+  const investmentMax = Math.max(
+    ...rows.map((row) => Math.max(Math.abs(asNumber(row['📈 Inversiones'])), Math.abs(asNumber(row['Dinero Invertido'])))),
+    1,
+  )
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
@@ -289,6 +303,14 @@ export function ResultsPanel({
                     <span>Ejecutado</span>
                     <strong>{budget.execution.toFixed(1)}%</strong>
                   </article>
+                  <article>
+                    <span>Exceso mes</span>
+                    <strong>{formatMoney(budget.monthlyDebt)}</strong>
+                  </article>
+                  <article>
+                    <span>Exceso acumulado</span>
+                    <strong>{formatMoney(budget.accumulatedDebt)}</strong>
+                  </article>
                 </div>
               </section>
             )}
@@ -391,6 +413,49 @@ export function ResultsPanel({
                   <span>El Excel procesado no contiene ingresos suficientes para calcular ahorro mensual.</span>
                 </div>
               )
+            )}
+
+            {activeTab === 'inversiones' && (
+              <section className="investment-layout">
+                <div className="investment-summary">
+                  <article>
+                    <span>Bolsa inversiones</span>
+                    <strong>{formatMoney(selectedRow['📈 Inversiones'])}</strong>
+                  </article>
+                  <article>
+                    <span>Dinero invertido</span>
+                    <strong>{formatMoney(selectedRow['Dinero Invertido'])}</strong>
+                  </article>
+                  <article>
+                    <span>Patrimonio inversión</span>
+                    <strong>{formatMoney(asNumber(selectedRow['📈 Inversiones']) + asNumber(selectedRow['Dinero Invertido']))}</strong>
+                  </article>
+                </div>
+
+                <section className="trend-panel compact-trend">
+                  <h3 className="table-title">Evolución inversiones</h3>
+                  <div className="trend-list">
+                    {rows.slice(-12).map((row) => (
+                      <article className="investment-row" key={row.Mes}>
+                        <span className="trend-month">{row.Mes}</span>
+                        <div className="investment-bars">
+                          <div className="investment-bar planned">
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['📈 Inversiones'])) / investmentMax) * 100)}%` }} />
+                          </div>
+                          <div className="investment-bar invested">
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['Dinero Invertido'])) / investmentMax) * 100)}%` }} />
+                          </div>
+                        </div>
+                        <strong>{formatMoney(row['Dinero Invertido'])}</strong>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="investment-legend">
+                    <span>Bolsa</span>
+                    <span>Invertido</span>
+                  </div>
+                </section>
+              </section>
             )}
 
             {activeTab === 'objetivos' && (

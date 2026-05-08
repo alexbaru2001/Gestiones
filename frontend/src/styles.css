@@ -695,26 +695,34 @@ button:disabled {
   gap: 18px;
 }
 
-.savings-summary {
+.savings-summary,
+.investment-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
 
-.savings-summary article {
+.investment-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.savings-summary article,
+.investment-summary article {
   border: 1px solid #e1e8dd;
   border-radius: 8px;
   background: #fbfcfa;
   padding: 12px;
 }
 
-.savings-summary span {
+.savings-summary span,
+.investment-summary span {
   display: block;
   color: #637069;
   font-size: 12px;
 }
 
-.savings-summary strong {
+.savings-summary strong,
+.investment-summary strong {
   display: block;
   margin-top: 6px;
   color: #17201a;
@@ -723,18 +731,29 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.investment-layout {
+  display: grid;
+  gap: 18px;
+}
+
 .compact-trend {
   margin-top: 0;
 }
 
-.savings-row {
+.savings-row,
+.investment-row {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr) minmax(60px, auto);
   gap: 10px;
   align-items: center;
 }
 
-.savings-row strong {
+.investment-row {
+  grid-template-columns: 78px minmax(0, 1fr) minmax(92px, auto);
+}
+
+.savings-row strong,
+.investment-row strong {
   color: #17201a;
   font-size: 13px;
   text-align: right;
@@ -759,6 +778,56 @@ button:disabled {
 
 .savings-bar.negative span {
   background: #b85a4b;
+}
+
+.investment-bars {
+  display: grid;
+  gap: 4px;
+}
+
+.investment-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.investment-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.investment-bar.planned span {
+  background: #286b57;
+}
+
+.investment-bar.invested span {
+  background: #5c6f9e;
+}
+
+.investment-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.investment-legend span::before {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #286b57;
+  content: "";
+}
+
+.investment-legend span:nth-child(2)::before {
+  background: #5c6f9e;
 }
 
 .table-wrap {
@@ -901,7 +970,8 @@ th {
   .metrics-grid,
   .comparison-grid,
   .budget-layout,
-  .savings-summary {
+  .savings-summary,
+  .investment-summary {
     grid-template-columns: 1fr;
   }
 
@@ -957,11 +1027,13 @@ th {
   }
 
   .trend-row strong,
-  .savings-row strong {
+  .savings-row strong,
+  .investment-row strong {
     text-align: left;
   }
 
-  .savings-row {
+  .savings-row,
+  .investment-row {
     grid-template-columns: 1fr;
   }
 }
