@@ -648,6 +648,24 @@ button:disabled {
   font-weight: 700;
 }
 
+.period-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.period-selector select {
+  min-height: 34px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17201a;
+  padding: 0 9px;
+}
+
 .category-list {
   display: grid;
   gap: 12px;
@@ -1280,6 +1298,11 @@ th {
   }
 
   .table-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .period-selector {
     align-items: stretch;
     flex-direction: column;
   }

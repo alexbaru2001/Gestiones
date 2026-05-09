@@ -47,6 +47,14 @@ const defaultTypologyFields = [
   '💳 Gasto del mes',
 ]
 
+const typologyPeriods = [
+  { value: '6', label: '6 meses' },
+  { value: '12', label: '1 año' },
+  { value: '24', label: '2 años' },
+  { value: '36', label: '3 años' },
+  { value: 'all', label: 'Todo' },
+]
+
 const historyFields = [
   { label: 'Mes', field: 'Mes', type: 'text' },
   { label: 'Total', field: 'total', type: 'money' },
@@ -163,6 +171,13 @@ function predictTypology(rows, field, months = 6) {
   }
 }
 
+function getPeriodRows(rows, period) {
+  if (period === 'all') {
+    return rows
+  }
+  return rows.slice(-Number(period))
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -184,6 +199,7 @@ export function ResultsPanel({
 }) {
   const [activeTab, setActiveTab] = useState('resumen')
   const [activeTypologyFields, setActiveTypologyFields] = useState(defaultTypologyFields)
+  const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [typologyTooltip, setTypologyTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
@@ -204,7 +220,7 @@ export function ResultsPanel({
     ),
     1,
   )
-  const typologyRows = rows.slice(-12)
+  const typologyRows = getPeriodRows(rows, typologyPeriod)
   const selectedTypologyFields = typologyFields.filter(({ field }) => activeTypologyFields.includes(field))
   const typologyBounds = getTypologyBounds(typologyRows, selectedTypologyFields)
   const toggleTypologyField = (field) => {
@@ -605,7 +621,22 @@ export function ResultsPanel({
                 <div className="typology-chart-panel">
                   <div className="table-toolbar compact-toolbar">
                     <h3 className="table-title">Evolución por tipología</h3>
-                    <span>Últimos {typologyRows.length} meses</span>
+                    <label className="period-selector">
+                      <span>Periodo</span>
+                      <select
+                        value={typologyPeriod}
+                        onChange={(event) => {
+                          setTypologyTooltip(null)
+                          setTypologyPeriod(event.target.value)
+                        }}
+                      >
+                        {typologyPeriods.map((period) => (
+                          <option key={period.value} value={period.value}>
+                            {period.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   <div className="typology-controls" aria-label="Seleccionar tipologías">
                     {typologyFields.map(({ field, label, color }) => (
@@ -729,7 +760,7 @@ export function ResultsPanel({
                   <h3 className="table-title">Predicción a 6 meses</h3>
                   <div className="prediction-grid">
                     {selectedTypologyFields.map(({ field, label, color }) => {
-                      const prediction = predictTypology(rows, field)
+                      const prediction = predictTypology(typologyRows, field)
                       return (
                         <article className="prediction-card" key={field} style={{ '--prediction-color': color }}>
                           <strong>{label}</strong>
