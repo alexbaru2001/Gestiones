@@ -896,6 +896,199 @@ button:disabled {
   background: #286b57;
 }
 
+.typology-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.typology-chart-panel,
+.typology-predictions {
+  position: relative;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 14px;
+}
+
+.typology-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.typology-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  gap: 7px;
+  border: 1px solid #d8e2d4;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #4f5a52;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.typology-toggle input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--legend-color);
+}
+
+.typology-toggle span::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--legend-color);
+  content: "";
+}
+
+.chart-scale {
+  display: flex;
+  justify-content: space-between;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.typology-chart-wrap {
+  position: relative;
+}
+
+.typology-chart {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+}
+
+.chart-axis {
+  stroke: #d8e1d5;
+  stroke-width: 1;
+}
+
+.chart-moving-line {
+  stroke-dasharray: 8 7;
+  opacity: 0.65;
+}
+
+.chart-point {
+  cursor: pointer;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.chart-point:focus {
+  outline: none;
+  stroke: #17201a;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  min-width: 128px;
+  gap: 3px;
+  border: 1px solid #d8e2d4;
+  border-top: 4px solid var(--tooltip-color);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(23, 32, 26, 0.14);
+  padding: 9px 10px;
+  pointer-events: none;
+  transform: translate(10px, -50%);
+}
+
+.chart-tooltip strong {
+  color: #27322b;
+  font-size: 13px;
+}
+
+.chart-tooltip span {
+  color: #637069;
+  font-size: 12px;
+}
+
+.typology-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.typology-legend span::before {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--legend-color);
+  content: "";
+}
+
+.typology-latest {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.typology-latest article {
+  border: 1px solid #e1e8dd;
+  border-top: 4px solid var(--legend-color);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+}
+
+.typology-latest span {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+}
+
+.typology-latest strong {
+  display: block;
+  margin-top: 5px;
+  color: #17201a;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.prediction-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.prediction-card {
+  border: 1px solid #e1e8dd;
+  border-top: 4px solid var(--prediction-color);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.prediction-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #27322b;
+  font-size: 13px;
+}
+
+.prediction-card span {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .table-wrap {
   margin-top: 18px;
   overflow-x: auto;
@@ -1038,7 +1231,9 @@ th {
   .budget-layout,
   .savings-summary,
   .investment-summary,
-  .reserve-summary {
+  .reserve-summary,
+  .prediction-grid,
+  .typology-latest {
     grid-template-columns: 1fr;
   }
 
