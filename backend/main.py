@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import get_cors_origins
+from backend.domain.investments import analyze_ticker
 from backend.domain.models import PipelineConfig
 from backend.infrastructure.container import build_process_finance_workbook_use_case
 from backend.infrastructure.objectives_repository import (
@@ -43,6 +44,16 @@ def save_objectives(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         return {"objetivos": objectives_repository.save(payload)}
     except ObjectivesValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/investments/analyze")
+def analyze_investment(ticker: str) -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": analyze_ticker(ticker)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/process")

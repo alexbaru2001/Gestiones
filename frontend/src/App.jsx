@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
 import { InputPanel } from './InputPanel'
+import { InvestmentPanel } from './InvestmentPanel'
 import { createObjective, objectiveFromApi, objectiveToPayload } from './objectives'
 import {
   filterObjectiveRows,
@@ -39,6 +40,7 @@ export function App() {
   const [objectivesStatus, setObjectivesStatus] = useState('')
   const [selectedObjective, setSelectedObjective] = useState('all')
   const [selectedMonth, setSelectedMonth] = useState('')
+  const [activeArea, setActiveArea] = useState('finanzas')
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => getHistoryRows(result), [result])
@@ -240,56 +242,78 @@ export function App() {
       <header className="topbar">
         <div>
           <h1>Gestiones</h1>
-          <p>Procesado de finanzas personales</p>
+          <p>{activeArea === 'finanzas' ? 'Procesado de finanzas personales' : 'Análisis de inversión por dividendos'}</p>
         </div>
-        <button className="ghost-button" type="button" onClick={checkHealth} disabled={isChecking}>
-          {isChecking ? 'Comprobando...' : `Backend: ${health}`}
-        </button>
+        <div className="topbar-actions">
+          <nav className="area-switch" aria-label="Área de trabajo">
+            <button
+              className={activeArea === 'finanzas' ? 'active' : ''}
+              type="button"
+              onClick={() => setActiveArea('finanzas')}
+            >
+              Finanzas
+            </button>
+            <button
+              className={activeArea === 'invertir' ? 'active' : ''}
+              type="button"
+              onClick={() => setActiveArea('invertir')}
+            >
+              Invertir
+            </button>
+          </nav>
+          <button className="ghost-button" type="button" onClick={checkHealth} disabled={isChecking}>
+            {isChecking ? 'Comprobando...' : `Backend: ${health}`}
+          </button>
+        </div>
       </header>
 
-      <section className="workspace">
-        <InputPanel
-          file={file}
-          params={params}
-          objectives={objectives}
-          isLoadingObjectives={isLoadingObjectives}
-          isSavingObjectives={isSavingObjectives}
-          isProcessing={isProcessing}
-          hasValidationErrors={hasValidationErrors}
-          validationMessages={validationMessages}
-          objectivesStatus={objectivesStatus}
-          error={error}
-          errorRef={errorRef}
-          onFileChange={setFile}
-          onParamChange={updateParam}
-          onObjectiveAdd={addObjective}
-          onObjectiveChange={updateObjective}
-          onObjectiveRemove={removeObjective}
-          onObjectivesLoad={() => loadObjectives()}
-          onObjectivesSave={saveObjectives}
-          onSubmit={processWorkbook}
-        />
+      {activeArea === 'finanzas' ? (
+        <section className="workspace">
+          <InputPanel
+            file={file}
+            params={params}
+            objectives={objectives}
+            isLoadingObjectives={isLoadingObjectives}
+            isSavingObjectives={isSavingObjectives}
+            isProcessing={isProcessing}
+            hasValidationErrors={hasValidationErrors}
+            validationMessages={validationMessages}
+            objectivesStatus={objectivesStatus}
+            error={error}
+            errorRef={errorRef}
+            onFileChange={setFile}
+            onParamChange={updateParam}
+            onObjectiveAdd={addObjective}
+            onObjectiveChange={updateObjective}
+            onObjectiveRemove={removeObjective}
+            onObjectivesLoad={() => loadObjectives()}
+            onObjectivesSave={saveObjectives}
+            onSubmit={processWorkbook}
+          />
 
-        <ResultsPanel
-          isProcessing={isProcessing}
-          rows={rows}
-          selectedRow={selectedRow}
-          selectedObjective={selectedObjective}
-          previousRow={previousRow}
-          recentRows={recentRows}
-          trendMax={trendMax}
-          result={result}
-          objectiveRows={objectiveRows}
-          objectiveNames={objectiveNames}
-          filteredObjectiveRows={filteredObjectiveRows}
-          objectiveTotals={objectiveTotals}
-          onMonthChange={setSelectedMonth}
-          onObjectiveFilterChange={setSelectedObjective}
-          onExportResult={exportResult}
-          onExportHistoryCsv={exportHistoryCsv}
-          onExportObjectivesCsv={exportObjectivesCsv}
-        />
-      </section>
+          <ResultsPanel
+            isProcessing={isProcessing}
+            rows={rows}
+            selectedRow={selectedRow}
+            selectedObjective={selectedObjective}
+            previousRow={previousRow}
+            recentRows={recentRows}
+            trendMax={trendMax}
+            result={result}
+            objectiveRows={objectiveRows}
+            objectiveNames={objectiveNames}
+            filteredObjectiveRows={filteredObjectiveRows}
+            objectiveTotals={objectiveTotals}
+            onMonthChange={setSelectedMonth}
+            onObjectiveFilterChange={setSelectedObjective}
+            onExportResult={exportResult}
+            onExportHistoryCsv={exportHistoryCsv}
+            onExportObjectivesCsv={exportObjectivesCsv}
+          />
+        </section>
+      ) : (
+        <InvestmentPanel />
+      )}
     </main>
   )
 }
