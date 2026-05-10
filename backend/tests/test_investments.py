@@ -1,6 +1,11 @@
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend.domain.investments import normalize_ticker
+
+
+def test_normalize_ticker_keeps_market_suffix_dot():
+    assert normalize_ticker(" rovi.mc ") == "ROVI.MC"
 
 
 def test_analyze_investment_returns_payload(monkeypatch):

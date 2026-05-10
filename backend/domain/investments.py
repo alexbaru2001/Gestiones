@@ -85,10 +85,10 @@ def analyze_ticker(ticker: str) -> dict[str, Any]:
 
 
 def normalize_ticker(ticker: str) -> str:
-    normalized = ticker.strip().upper().replace(".", "-")
+    normalized = ticker.strip().upper()
     if not normalized:
         raise ValueError("Indica un ticker para analizar.")
-    if len(normalized) > 16 or not all(char.isalnum() or char in "-=^" for char in normalized):
+    if len(normalized) > 16 or not all(char.isalnum() or char in ".-=^" for char in normalized):
         raise ValueError("El ticker contiene caracteres no válidos.")
     return normalized
 
