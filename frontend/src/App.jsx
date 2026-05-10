@@ -3,6 +3,7 @@ import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
 import { InputPanel } from './InputPanel'
 import { InvestmentPanel } from './InvestmentPanel'
+import { PortfolioPanel } from './PortfolioPanel'
 import { createObjective, objectiveFromApi, objectiveToPayload } from './objectives'
 import {
   filterObjectiveRows,
@@ -58,6 +59,12 @@ export function App() {
   const activeObjectives = useMemo(() => objectives.filter((objective) => objective.nombre.trim()), [objectives])
   const validationMessages = useMemo(() => validateFinanceInput(params, activeObjectives), [activeObjectives, params])
   const hasValidationErrors = validationMessages.length > 0
+  const areaSubtitle =
+    activeArea === 'finanzas'
+      ? 'Procesado de finanzas personales'
+      : activeArea === 'invertir'
+        ? 'Análisis de inversión por dividendos'
+        : 'Cartera local de inversión'
 
   useEffect(() => {
     loadObjectives({ silent: true })
@@ -242,7 +249,7 @@ export function App() {
       <header className="topbar">
         <div>
           <h1>Gestiones</h1>
-          <p>{activeArea === 'finanzas' ? 'Procesado de finanzas personales' : 'Análisis de inversión por dividendos'}</p>
+          <p>{areaSubtitle}</p>
         </div>
         <div className="topbar-actions">
           <nav className="area-switch" aria-label="Área de trabajo">
@@ -259,6 +266,13 @@ export function App() {
               onClick={() => setActiveArea('invertir')}
             >
               Invertir
+            </button>
+            <button
+              className={activeArea === 'cartera' ? 'active' : ''}
+              type="button"
+              onClick={() => setActiveArea('cartera')}
+            >
+              Cartera
             </button>
           </nav>
           <button className="ghost-button" type="button" onClick={checkHealth} disabled={isChecking}>
@@ -311,8 +325,10 @@ export function App() {
             onExportObjectivesCsv={exportObjectivesCsv}
           />
         </section>
-      ) : (
+      ) : activeArea === 'invertir' ? (
         <InvestmentPanel />
+      ) : (
+        <PortfolioPanel />
       )}
     </main>
   )

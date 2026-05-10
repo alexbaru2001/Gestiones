@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import get_cors_origins
 from backend.domain.investments import analyze_ticker
 from backend.domain.models import PipelineConfig
+from backend.domain.portfolio import UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
 from backend.infrastructure.objectives_repository import (
     JsonObjectivesRepository,
@@ -12,9 +13,11 @@ from backend.infrastructure.objectives_repository import (
     ObjectivesValidationError,
     parse_objectives_json,
 )
+from backend.infrastructure.portfolio_repository import LocalPortfolioRepository
 
 app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
+portfolio_repository = LocalPortfolioRepository()
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,6 +57,28 @@ def analyze_investment(ticker: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/portfolio")
+def get_portfolio() -> dict[str, Any]:
+    snapshot = portfolio_repository.load()
+    return {"ok": True, "result": snapshot}
+
+
+@app.post("/api/v1/portfolio/import")
+async def import_portfolio(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    if not files:
+        raise HTTPException(status_code=400, detail="Selecciona al menos un PDF o Excel de cartera.")
+
+    uploaded_files = []
+    for file in files:
+        filename = file.filename or "documento"
+        if not filename.lower().endswith((".pdf", ".xlsx")):
+            raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF o XLSX de cartera.")
+        uploaded_files.append(UploadedInvestmentFile(filename=filename, content=await file.read()))
+
+    snapshot = portfolio_repository.save_uploads_and_rebuild(uploaded_files)
+    return {"ok": True, "result": snapshot}
 
 
 @app.post("/api/v1/process")

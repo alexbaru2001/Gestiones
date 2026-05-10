@@ -186,6 +186,12 @@ button:disabled {
   color: #ffffff;
 }
 
+.inline-primary {
+  width: auto;
+  margin-top: 0;
+  padding: 0 16px;
+}
+
 .text-button {
   min-height: 34px;
   border-radius: 6px;
@@ -360,6 +366,17 @@ button:disabled {
   color: #286b57;
   font-size: 14px;
   font-weight: 700;
+}
+
+.warning-panel {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e8d8aa;
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 12px;
+  color: #6f5a1e;
+  font-size: 14px;
 }
 
 .result-panel {
@@ -1657,6 +1674,141 @@ th {
   min-height: 220px;
 }
 
+.portfolio-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.portfolio-import {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.compact-file-input {
+  margin-bottom: 0;
+}
+
+.portfolio-dashboard {
+  display: grid;
+  gap: 18px;
+}
+
+.portfolio-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portfolio-summary article,
+.portfolio-card,
+.broker-grid article,
+.imported-files article {
+  min-width: 0;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.portfolio-summary article {
+  padding: 14px;
+}
+
+.portfolio-summary span,
+.broker-grid span,
+.imported-files span {
+  display: block;
+  color: #637069;
+  font-size: 13px;
+}
+
+.portfolio-summary strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 22px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-summary small {
+  display: block;
+  margin-top: 5px;
+  color: #286b57;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.portfolio-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.portfolio-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.portfolio-distribution {
+  display: grid;
+  gap: 12px;
+}
+
+.portfolio-distribution article {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.portfolio-distribution strong {
+  display: block;
+  font-size: 14px;
+}
+
+.portfolio-distribution span {
+  color: #637069;
+  font-size: 13px;
+}
+
+.portfolio-bar {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.portfolio-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #286b57;
+}
+
+.broker-grid,
+.imported-files {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.broker-grid article,
+.imported-files article {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.broker-grid strong,
+.imported-files strong {
+  overflow-wrap: anywhere;
+}
+
+.compact-table-wrap {
+  overflow-x: auto;
+}
+
 .processing-state {
   gap: 10px;
 }
@@ -1685,7 +1837,12 @@ th {
   .investment-summary,
   .reserve-summary,
   .prediction-grid,
-  .typology-latest {
+  .typology-latest,
+  .portfolio-import,
+  .portfolio-summary,
+  .portfolio-distribution article,
+  .broker-grid,
+  .imported-files {
     grid-template-columns: 1fr;
   }
 

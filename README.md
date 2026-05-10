@@ -33,6 +33,7 @@ El frontend usa `VITE_API_URL` para localizar el backend. Si no se define, apunt
 - `VITE_API_URL`: URL pública del backend para el frontend.
 - `GESTIONES_CORS_ORIGINS`: orígenes permitidos por CORS, separados por comas.
 - `GESTIONES_OBJECTIVES_PATH`: ruta del JSON donde se guardan los objetivos.
+- `GESTIONES_INVESTMENTS_PATH`: carpeta local para extractos y snapshot de cartera. Por defecto usa `Personal_finanzas/Data/Inversiones/`, que está ignorada por Git.
 - `GROQ_API_KEY`: clave opcional para activar el análisis automático en la sección `Invertir`.
 - `GROQ_MODEL`: modelo de Groq usado para el análisis, por defecto `llama-3.3-70b-versatile`.
 
@@ -45,6 +46,7 @@ docker compose up --build
 
 El frontend espera a que `/health` del backend esté sano antes de arrancar.
 Los objetivos se persisten en `Personal_finanzas/Data/objetivos_vista.json` mediante un volumen local.
+La cartera de inversión guarda PDFs/XLSX y el resumen procesado en `Personal_finanzas/Data/Inversiones/`; esa carpeta no se versiona para mantener los datos privados fuera de GitHub.
 
 ## Tests
 ```bash
@@ -63,4 +65,4 @@ docker compose --profile test run --rm backend-test
 - Fase 5 completada: endurecimiento operativo con variables de entorno, healthcheck, persistencia local de objetivos, `.dockerignore` y targets Docker separados para runtime/tests.
 - Fase 6 completada: endurecimiento de experiencia de uso con cliente API frontend, validación local, estados accesibles de carga/error y tests unitarios ligeros para `api`, `exporters` y validación.
 - Fase 7 completada: modularización del frontend con `App.jsx` reducido a orquestador, componentes de entrada/resultados y lógica pura testeable para formato, objetivos y derivaciones de resultados.
-- Fase 8 iniciada: recuperación progresiva de los análisis de Streamlit mediante pestañas de resultados (`Resumen`, `Presupuesto`, `Gastos`, `Ahorro`, `Inversiones`, `Reservas`, `Tipologías`, `Objetivos`, `Datos`) y visualización explícita del exceso de gasto mensual/acumulado, regalos, vacaciones, fondo de reserva, evolución por tipologías con periodo seleccionable y predicción simple. Se añade también el primer módulo de `Invertir`: vista propia para analizar un ticker con métricas de dividendos crecientes, score por bloques, banderas rojas, gráfico económico de precio, histórico de dividendos, análisis Groq opcional y guía de ratios.
+- Fase 8 iniciada: recuperación progresiva de los análisis de Streamlit mediante pestañas de resultados (`Resumen`, `Presupuesto`, `Gastos`, `Ahorro`, `Inversiones`, `Reservas`, `Tipologías`, `Objetivos`, `Datos`) y visualización explícita del exceso de gasto mensual/acumulado, regalos, vacaciones, fondo de reserva, evolución por tipologías con periodo seleccionable y predicción simple. Se añade también el módulo de `Invertir` con análisis por ticker, métricas de dividendos crecientes, score por bloques, banderas rojas, gráfico económico de precio, histórico de dividendos, análisis Groq opcional, guía de ratios y una vista `Cartera` para importar extractos locales de DeGiro, MyInvestor y Trade Republic sin subir datos privados al repositorio.
