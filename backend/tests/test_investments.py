@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend.domain import investments
 from backend.domain.investments import build_ai_analysis, normalize_ticker
 
 
@@ -14,6 +15,18 @@ def test_ai_analysis_is_optional_without_groq_key(monkeypatch):
 
     assert analysis["configured"] is False
     assert "GROQ_API_KEY" in analysis["error"]
+
+
+def test_ai_analysis_uses_groq_when_key_is_configured(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(investments, "build_groq_prompt", lambda *_args: "prompt")
+    monkeypatch.setattr(investments, "request_groq_analysis", lambda *_args: "Análisis generado")
+
+    analysis = build_ai_analysis(metrics=None, rules=None, total_score=0, breakdown={}, flags=[])
+
+    assert analysis["configured"] is True
+    assert analysis["text"] == "Análisis generado"
+    assert analysis["error"] is None
 
 
 def test_analyze_investment_returns_payload(monkeypatch):

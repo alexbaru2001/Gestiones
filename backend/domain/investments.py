@@ -6,8 +6,6 @@ import json
 import math
 import os
 from typing import Any
-import urllib.error
-import urllib.request
 
 import pandas as pd
 
@@ -543,6 +541,8 @@ Devuelve en español:
 
 
 def request_groq_analysis(api_key: str, model: str, prompt: str) -> str:
+    import requests
+
     payload = {
         "model": model,
         "messages": [
@@ -552,21 +552,28 @@ def request_groq_analysis(api_key: str, model: str, prompt: str) -> str:
         "temperature": 0.2,
         "max_tokens": 900,
     }
-    request = urllib.request.Request(
+    response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        json=payload,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Gestiones/0.1",
         },
-        method="POST",
+        timeout=60,
     )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(detail or exc.reason) from exc
+
+    if response.status_code >= 400:
+        detail = response.text.strip()
+        try:
+            parsed = response.json()
+            detail = parsed.get("error", {}).get("message") or parsed.get("message") or detail
+        except ValueError:
+            pass
+        raise RuntimeError(f"HTTP {response.status_code}: {detail[:500]}")
+
+    data = response.json()
     return data["choices"][0]["message"]["content"].strip()
 
 
