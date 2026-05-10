@@ -1,11 +1,19 @@
 from fastapi.testclient import TestClient
 
 from backend import main
-from backend.domain.investments import normalize_ticker
+from backend.domain.investments import build_ai_analysis, normalize_ticker
 
 
 def test_normalize_ticker_keeps_market_suffix_dot():
     assert normalize_ticker(" rovi.mc ") == "ROVI.MC"
+
+
+def test_ai_analysis_is_optional_without_groq_key(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    analysis = build_ai_analysis(metrics=None, rules=None, total_score=0, breakdown={}, flags=[])
+
+    assert analysis["configured"] is False
+    assert "GROQ_API_KEY" in analysis["error"]
 
 
 def test_analyze_investment_returns_payload(monkeypatch):

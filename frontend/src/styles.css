@@ -1307,6 +1307,138 @@ button:disabled {
   font-size: 16px;
 }
 
+.price-card {
+  background: #f7faf8;
+}
+
+.chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chart-header h3 {
+  margin-bottom: 4px;
+}
+
+.chart-header span {
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.period-tabs {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid #d8e2d4;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 4px;
+}
+
+.period-tabs button {
+  min-height: 30px;
+  border-radius: 6px;
+  background: transparent;
+  color: #4f5a52;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.period-tabs button.active {
+  background: #286b57;
+  color: #ffffff;
+}
+
+.economic-chart-wrap {
+  position: relative;
+  border: 1px solid #d8e2d4;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7faf8 100%);
+  padding: 12px;
+}
+
+.economic-chart {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+}
+
+.economic-grid-line,
+.economic-axis-tick {
+  stroke: #dfe7dc;
+  stroke-width: 1;
+}
+
+.economic-area {
+  fill: url("#priceArea");
+}
+
+.economic-price-line {
+  fill: none;
+  stroke: #286b57;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3.5;
+}
+
+.economic-average-line {
+  fill: none;
+  stroke: #5c6f9e;
+  stroke-dasharray: 8 7;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.economic-axis-label {
+  fill: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.economic-hover-point {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.economic-hover-point:hover {
+  fill: rgba(40, 107, 87, 0.16);
+  stroke: #286b57;
+  stroke-width: 2;
+}
+
+.economic-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.economic-legend span::before {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: #286b57;
+  vertical-align: middle;
+  content: "";
+}
+
+.economic-legend span:nth-child(2)::before {
+  background: repeating-linear-gradient(90deg, #5c6f9e 0 7px, transparent 7px 12px);
+}
+
+.investment-tooltip {
+  min-width: 150px;
+}
+
 .score-breakdown {
   display: grid;
   gap: 12px;
@@ -1349,15 +1481,6 @@ button:disabled {
   background: #286b57;
 }
 
-.investment-line-chart {
-  display: block;
-  width: 100%;
-  min-height: 220px;
-  border: 1px solid #e1e8dd;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
 .dividend-bars {
   display: grid;
   gap: 10px;
@@ -1370,13 +1493,15 @@ button:disabled {
   align-items: center;
 }
 
-.criteria-grid {
+.criteria-grid,
+.ratio-guide-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.criteria-grid article {
+.criteria-grid article,
+.ratio-guide-grid article {
   display: grid;
   gap: 8px;
   border: 1px solid #e1e8dd;
@@ -1385,15 +1510,35 @@ button:disabled {
   padding: 10px;
 }
 
-.criteria-grid strong {
+.criteria-grid strong,
+.ratio-guide-grid strong {
   color: #27322b;
   font-size: 14px;
 }
 
-.criteria-grid span {
+.criteria-grid span,
+.ratio-guide-grid span {
   color: #637069;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.ai-analysis {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-analysis > span {
+  color: #637069;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-analysis p {
+  margin: 0;
+  color: #3f4b42;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .table-wrap {
@@ -1626,8 +1771,19 @@ th {
   .investment-kpis,
   .investment-analysis-grid,
   .criteria-grid,
+  .ratio-guide-grid,
   .dividend-bars article {
     grid-template-columns: 1fr;
+  }
+
+  .chart-header,
+  .period-tabs {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .period-tabs button {
+    width: 100%;
   }
 
   .inline-primary {

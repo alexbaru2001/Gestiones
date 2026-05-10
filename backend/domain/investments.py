@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from functools import lru_cache
+import json
 import math
+import os
 from typing import Any
+import urllib.error
+import urllib.request
 
 import pandas as pd
 
@@ -120,8 +124,9 @@ def _analyze_ticker_cached(ticker: str) -> dict[str, Any]:
             "rules": asdict(rules),
             "breakdown": breakdown,
             "details": details,
+            "ai_analysis": build_ai_analysis(metrics, rules, total_score, breakdown, flags),
             "dividends_by_year": series_to_records(dividends, "year", "amount"),
-            "price_history": series_to_records(prices.tail(260), "date", "close"),
+            "price_history": series_to_records(prices.tail(1260), "date", "close"),
         }
     )
 
@@ -452,6 +457,117 @@ def recommendation(total_score: float, flags: list[str]) -> str:
     if total_score >= 60:
         return "Vigilar o DCA prudente"
     return "Mantenerse al margen"
+
+
+def build_ai_analysis(
+    metrics: TickerMetrics,
+    rules: SectorRules,
+    total_score: float,
+    breakdown: dict[str, float],
+    flags: list[str],
+) -> dict[str, Any]:
+    api_key = os.getenv("GROQ_API_KEY") or os.getenv("groq_api_key")
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    if not api_key:
+        return {
+            "configured": False,
+            "model": model,
+            "text": None,
+            "error": "Configura GROQ_API_KEY para activar el análisis automático.",
+        }
+
+    try:
+        text = request_groq_analysis(api_key, model, build_groq_prompt(metrics, rules, total_score, breakdown, flags))
+        return {"configured": True, "model": model, "text": text, "error": None}
+    except Exception as exc:
+        return {"configured": True, "model": model, "text": None, "error": f"No se pudo generar análisis Groq: {exc}"}
+
+
+def build_groq_prompt(
+    metrics: TickerMetrics,
+    rules: SectorRules,
+    total_score: float,
+    breakdown: dict[str, float],
+    flags: list[str],
+) -> str:
+    return f"""
+Eres un analista conservador de inversión a largo plazo por dividendos crecientes.
+Usa únicamente los datos proporcionados. Si falta un dato, dilo claramente como dato no disponible.
+
+Empresa:
+- Ticker: {metrics.ticker}
+- Nombre: {metrics.name}
+- Sector: {metrics.sector}
+- País: {metrics.country}
+- Divisa: {metrics.currency}
+- Precio: {metrics.price}
+
+Ratios:
+- RPD TTM (%): {metrics.rpd_ttm}
+- RPD forward (%): {metrics.rpd_forward}
+- DGR 5a (%): {metrics.dgr5}
+- DGR 10a (%): {metrics.dgr10}
+- Payout (%): {metrics.payout}
+- Payout FCF (%): {metrics.payout_fcf}
+- PER TTM: {metrics.per_ttm}
+- Deuda/Patrimonio (x): {metrics.de_ratio}
+- ROE (%): {metrics.roe}
+- EV/EBITDA (x): {metrics.ev_ebitda}
+- FCF Yield (%): {metrics.fcf_yield}
+- Racha de pagos: {metrics.streak_years}
+- Racha de crecimiento: {metrics.streak_growth}
+- Años FCF positivo: {metrics.fcf_pos_years}
+- DGR fiable: {metrics.dgr_reliable}
+
+Umbrales sectoriales:
+- RPD: {rules.rpd_min}-{rules.rpd_max} %
+- DGR 5a mínimo: {rules.dgr5_min} %
+- Payout: {rules.payout_min}-{rules.payout_max} %
+- PER: {rules.per_min}-{rules.per_max}
+- Deuda máxima: {rules.de_max} x
+- ROE mínimo: {rules.roe_min} %
+- Racha mínima: {rules.streak_min} años
+
+Score:
+- Total: {total_score}
+- Desglose: {breakdown}
+- Banderas rojas: {flags if flags else "Ninguna"}
+
+Devuelve en español:
+1. Resumen ejecutivo en 5 líneas.
+2. Diagnóstico del dividendo.
+3. Solidez financiera.
+4. Valoración frente a los umbrales.
+5. Conclusión: Apta, Dudosa o No apta para dividendos crecientes, con 3 acciones prácticas.
+""".strip()
+
+
+def request_groq_analysis(api_key: str, model: str, prompt: str) -> str:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Responde como analista financiero conservador. No inventes cifras."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 900,
+    }
+    request = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(detail or exc.reason) from exc
+    return data["choices"][0]["message"]["content"].strip()
 
 
 def series_to_records(series: pd.Series, index_key: str, value_key: str) -> list[dict[str, Any]]:
