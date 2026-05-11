@@ -259,7 +259,7 @@ def parse_trade_republic_account_pdf(text: str, filename: str) -> dict[str, Any]
     compact = normalize_spaces(text)
     operation_pattern = re.compile(
         r"(?P<day>\d{2}|[0-3]?\d)\s+(?P<month>[a-z]{3})(?:\s+\d{4})?\s+(?P<type>Operar|Rentabilidad|Interés|Bonificación|Transferencia)\s+"
-        r"(?P<description>.*?)(?=(?:\d{2}|[0-3]?\d)\s+[a-z]{3}(?:\s+\d{4})?\s+(?:Operar|Rentabilidad|Interés|Bonificación|Transferencia|Transacción)|RESUMEN DEL BALANCE|$)",
+        r"(?P<description>.*?)(?=(?:\d{2}|[0-3]?\d)\s+[a-z]{3}(?:\s+\d{4})?\s+(?:Operar|Rentabilidad|Interés|Bonificación|Transferencia|Transacción|Invitación)|RESUMEN DEL BALANCE|TRADE REPUBLIC BANK|$)",
         re.I,
     )
     for match in operation_pattern.finditer(compact):
@@ -371,7 +371,7 @@ def build_snapshot(
 ) -> dict[str, Any]:
     positions = merge_positions(raw_positions)
     cost_by_key = defaultdict(float)
-    dividends_by_key = defaultdict(float)
+    dividends_by_key, dividends_by_broker = calculate_effective_dividends(transactions)
     fees_by_broker = defaultdict(float)
     interest_by_broker = defaultdict(float)
     deposits_by_broker = defaultdict(float)
@@ -381,8 +381,6 @@ def build_snapshot(
         amount = transaction.get("amount") or 0.0
         if transaction["kind"] == "buy" and key:
             cost_by_key[key] += abs(amount)
-        elif transaction["kind"] == "dividend" and key:
-            dividends_by_key[key] += amount
         elif transaction["kind"] == "fee":
             fees_by_broker[transaction["broker"]] += abs(amount)
         elif transaction["kind"] == "interest":
@@ -409,12 +407,12 @@ def build_snapshot(
             }
         )
 
-    summary = summarize(enriched_positions, transactions, fees_by_broker, interest_by_broker, deposits_by_broker)
+    summary = summarize(enriched_positions, transactions, fees_by_broker, interest_by_broker, deposits_by_broker, dividends_by_broker)
     return {
         "summary": summary,
         "positions": sorted(enriched_positions, key=lambda item: (item["broker"], item["asset_type"], item["name"])),
         "transactions": transactions,
-        "brokers": summarize_brokers(enriched_positions, transactions),
+        "brokers": summarize_brokers(enriched_positions, transactions, dividends_by_broker),
         "files": files_summary,
         "warnings": build_warnings(enriched_positions),
     }
@@ -439,13 +437,14 @@ def summarize(
     fees_by_broker: dict[str, float],
     interest_by_broker: dict[str, float],
     deposits_by_broker: dict[str, float],
+    dividends_by_broker: dict[str, float],
 ) -> dict[str, Any]:
     total_value = sum(position.get("current_value") or 0.0 for position in positions)
     cash = sum(position.get("current_value") or 0.0 for position in positions if position["asset_type"] == "cash")
     invested = total_value - cash
     known_cost = sum(position.get("cost") or 0.0 for position in positions if position["asset_type"] != "cash")
     known_gain = sum(position.get("unrealized_gain") or 0.0 for position in positions if position.get("unrealized_gain") is not None)
-    dividends = sum(transaction.get("amount") or 0.0 for transaction in transactions if transaction["kind"] == "dividend")
+    dividends = sum(dividends_by_broker.values())
     interest = sum(interest_by_broker.values())
     fees = sum(fees_by_broker.values())
     return {
@@ -464,7 +463,11 @@ def summarize(
     }
 
 
-def summarize_brokers(positions: list[dict[str, Any]], transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def summarize_brokers(
+    positions: list[dict[str, Any]],
+    transactions: list[dict[str, Any]],
+    dividends_by_broker: dict[str, float],
+) -> list[dict[str, Any]]:
     brokers = sorted({position["broker"] for position in positions} | {transaction["broker"] for transaction in transactions})
     rows = []
     for broker in brokers:
@@ -483,11 +486,110 @@ def summarize_brokers(positions: list[dict[str, Any]], transactions: list[dict[s
                 "known_cost": round(cost, 2),
                 "known_unrealized_gain": round(gain, 2),
                 "known_unrealized_gain_pct": round(gain / cost * 100.0, 2) if cost else None,
-                "dividends": round(sum(t.get("amount") or 0.0 for t in broker_transactions if t["kind"] == "dividend"), 2),
+                "dividends": round(dividends_by_broker.get(broker, 0.0), 2),
                 "interest": round(sum(t.get("amount") or 0.0 for t in broker_transactions if t["kind"] == "interest"), 2),
             }
         )
     return rows
+
+
+def calculate_effective_dividends(transactions: list[dict[str, Any]]) -> tuple[dict[tuple[str, str], float], dict[str, float]]:
+    by_key: defaultdict[tuple[str, str], float] = defaultdict(float)
+    by_broker: defaultdict[str, float] = defaultdict(float)
+
+    for broker in sorted({transaction["broker"] for transaction in transactions}):
+        broker_transactions = [transaction for transaction in transactions if transaction["broker"] == broker]
+        if broker == "Trade Republic":
+            add_trade_republic_dividends(broker_transactions, by_key, by_broker)
+        elif broker == "DeGiro":
+            add_degiro_dividends(broker_transactions, by_key, by_broker)
+        else:
+            add_direct_dividends(broker_transactions, by_key, by_broker)
+
+    return dict(by_key), dict(by_broker)
+
+
+def add_direct_dividends(
+    transactions: list[dict[str, Any]],
+    by_key: defaultdict[tuple[str, str], float],
+    by_broker: defaultdict[str, float],
+) -> None:
+    for transaction in transactions:
+        if transaction["kind"] != "dividend":
+            continue
+        amount = transaction.get("amount") or 0.0
+        add_effective_dividend(transaction, amount, by_key, by_broker)
+
+
+def add_trade_republic_dividends(
+    transactions: list[dict[str, Any]],
+    by_key: defaultdict[tuple[str, str], float],
+    by_broker: defaultdict[str, float],
+) -> None:
+    grouped: defaultdict[tuple[str | None, float], list[dict[str, Any]]] = defaultdict(list)
+    for transaction in transactions:
+        if transaction["kind"] == "dividend":
+            grouped[(transaction.get("isin"), round(abs(transaction.get("amount") or 0.0), 2))].append(transaction)
+
+    for (_isin, amount), dividend_rows in grouped.items():
+        if not dividend_rows or amount == 0:
+            continue
+        net_amount = amount if len(dividend_rows) % 2 else 0.0
+        if net_amount:
+            add_effective_dividend(dividend_rows[-1], net_amount, by_key, by_broker)
+
+
+def add_degiro_dividends(
+    transactions: list[dict[str, Any]],
+    by_key: defaultdict[tuple[str, str], float],
+    by_broker: defaultdict[str, float],
+) -> None:
+    assigned_dividends: set[int] = set()
+    for index, transaction in enumerate(transactions):
+        if transaction["kind"] != "fx" or transaction.get("currency") != "EUR" or (transaction.get("amount") or 0.0) <= 0:
+            continue
+        candidate = find_nearby_foreign_dividend(transactions, index, assigned_dividends)
+        if candidate is None:
+            continue
+        assigned_dividends.add(candidate)
+        add_effective_dividend(transactions[candidate], transaction.get("amount") or 0.0, by_key, by_broker)
+
+    for index, transaction in enumerate(transactions):
+        if index in assigned_dividends or transaction["kind"] != "dividend":
+            continue
+        if transaction.get("currency") == "EUR":
+            add_effective_dividend(transaction, transaction.get("amount") or 0.0, by_key, by_broker)
+
+
+def find_nearby_foreign_dividend(
+    transactions: list[dict[str, Any]],
+    fx_index: int,
+    assigned_dividends: set[int],
+) -> int | None:
+    candidates = []
+    for index, transaction in enumerate(transactions):
+        if index in assigned_dividends:
+            continue
+        if transaction["kind"] != "dividend" or transaction.get("currency") == "EUR" or (transaction.get("amount") or 0.0) <= 0:
+            continue
+        distance = abs(index - fx_index)
+        if distance <= 6:
+            candidates.append((distance, index))
+    return min(candidates)[1] if candidates else None
+
+
+def add_effective_dividend(
+    transaction: dict[str, Any],
+    amount: float,
+    by_key: defaultdict[tuple[str, str], float],
+    by_broker: defaultdict[str, float],
+) -> None:
+    if not amount:
+        return
+    key = position_key(transaction)
+    if key:
+        by_key[key] += amount
+    by_broker[transaction["broker"]] += amount
 
 
 def build_warnings(positions: list[dict[str, Any]]) -> list[str]:
@@ -567,10 +669,10 @@ def classify_description(description: str) -> str:
     lowered = description.lower()
     if lowered.startswith("compra"):
         return "buy"
-    if "dividendo" in lowered:
-        return "dividend"
     if "retención" in lowered or "tax" in lowered:
         return "tax"
+    if "dividendo" in lowered:
+        return "dividend"
     if "costes" in lowered or "comisión" in lowered:
         return "fee"
     if "cambio de divisa" in lowered:
