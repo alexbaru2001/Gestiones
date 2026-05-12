@@ -78,3 +78,27 @@ def test_import_portfolio_endpoint_persists_local_snapshot(tmp_path, monkeypatch
     assert response.status_code == 200
     assert response.json()["result"]["summary"]["positions"] == 2
     assert (tmp_path / "processed" / "portfolio_snapshot.json").exists()
+
+
+def test_portfolio_snapshot_uses_finance_invested_for_matching_month(tmp_path):
+    history_path = tmp_path / "historial.csv"
+    history_path.write_text(
+        "Mes,Inversiones,Dinero Invertido\n"
+        "2025-12,-100.50,6689.94\n",
+        encoding="utf-8",
+    )
+    repository = main.LocalPortfolioRepository(tmp_path / "portfolio", finance_history_path=history_path)
+
+    snapshot = repository.enrich_with_finance_history(
+        build_snapshot_from_files(
+            [
+                UploadedInvestmentFile("Portfolio.xlsx", make_degiro_portfolio_workbook()),
+                UploadedInvestmentFile("Account.xlsx", make_degiro_account_workbook()),
+            ]
+        )
+    )
+
+    assert snapshot["snapshot_month"] == "2025-12"
+    assert snapshot["summary"]["known_cost"] == 186.75
+    assert snapshot["summary"]["finance_invested"] == 6689.94
+    assert snapshot["summary"]["investment_bucket"] == -100.5

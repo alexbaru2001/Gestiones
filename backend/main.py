@@ -7,6 +7,7 @@ from backend.domain.investments import analyze_ticker
 from backend.domain.models import PipelineConfig
 from backend.domain.portfolio import UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
+from backend.infrastructure.finance_history_repository import CsvFinanceHistoryRepository
 from backend.infrastructure.objectives_repository import (
     JsonObjectivesRepository,
     ObjectivesStorageError,
@@ -18,6 +19,7 @@ from backend.infrastructure.portfolio_repository import LocalPortfolioRepository
 app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
 portfolio_repository = LocalPortfolioRepository()
+finance_history_repository = CsvFinanceHistoryRepository()
 
 app.add_middleware(
     CORSMiddleware,
@@ -123,4 +125,5 @@ async def process_workbook(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    finance_history_repository.save(result.historial.resumen)
     return {"ok": True, "result": result.to_dict()}

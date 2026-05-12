@@ -328,7 +328,7 @@ export function App() {
       ) : activeArea === 'invertir' ? (
         <InvestmentPanel />
       ) : (
-        <PortfolioPanel />
+        <PortfolioPanel financeRows={rows} />
       )}
     </main>
   )

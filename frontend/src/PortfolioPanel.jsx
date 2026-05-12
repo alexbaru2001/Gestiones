@@ -26,7 +26,7 @@ const chartModes = [
   { id: 'asset_type', label: 'Tipo' },
 ]
 
-export function PortfolioPanel() {
+export function PortfolioPanel({ financeRows = [] }) {
   const fileInputRef = useRef(null)
   const [snapshot, setSnapshot] = useState(null)
   const [files, setFiles] = useState([])
@@ -39,7 +39,8 @@ export function PortfolioPanel() {
   const [chartMode, setChartMode] = useState('position')
   const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState('')
 
-  const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots), [snapshot, snapshots])
+  const financeByMonth = useMemo(() => buildFinanceByMonth(financeRows), [financeRows])
+  const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots, financeByMonth), [financeByMonth, snapshot, snapshots])
   const selectedSnapshot = useMemo(
     () => snapshotOptions.find((item) => item.snapshot_month === selectedSnapshotMonth) ?? snapshot ?? snapshotOptions.at(-1) ?? null,
     [selectedSnapshotMonth, snapshot, snapshotOptions],
@@ -52,9 +53,11 @@ export function PortfolioPanel() {
     () => investmentPositions.reduce((total, position) => total + Number(position.current_value ?? 0), 0),
     [investmentPositions],
   )
-  const costTotal = Number(summary?.known_cost ?? 0)
+  const financeInvested = summary?.finance_invested ?? null
+  const costTotal = Number(financeInvested ?? summary?.known_cost ?? 0)
+  const brokerCost = Number(summary?.known_cost ?? 0)
   const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
-  const evolutionRows = useMemo(() => buildEvolutionRows(snapshots), [snapshots])
+  const evolutionRows = useMemo(() => buildEvolutionRows(snapshots, financeByMonth), [financeByMonth, snapshots])
   const evolutionMax = useMemo(
     () => Math.max(...evolutionRows.flatMap((row) => [row.invested, row.cost]), 0),
     [evolutionRows],
@@ -179,7 +182,7 @@ export function PortfolioPanel() {
               <select value={selectedSnapshot.snapshot_month ?? ''} onChange={(event) => setSelectedSnapshotMonth(event.target.value)}>
                 {snapshotOptions.map((item) => (
                   <option key={item.snapshot_month ?? 'actual'} value={item.snapshot_month ?? ''}>
-                    {item.snapshot_month ?? 'Sin fecha'} · {formatMoney(item.summary?.known_cost)} invertido
+                    {item.snapshot_month ?? 'Sin fecha'} · {formatMoney(item.summary?.finance_invested ?? item.summary?.known_cost)} invertido
                   </option>
                 ))}
               </select>
@@ -194,7 +197,7 @@ export function PortfolioPanel() {
             <article>
               <span>Dinero invertido</span>
               <strong>{formatMoney(costTotal)}</strong>
-              <small>Coste histórico conocido</small>
+              <small>{financeInvested === null ? 'Coste broker detectado' : 'Según Finanzas'}</small>
             </article>
             <article>
               <span>Rentabilidad conocida</span>
@@ -290,7 +293,11 @@ export function PortfolioPanel() {
                   </article>
                   <article>
                     <span>Dinero invertido</span>
-                    <strong>{formatMoney(summary?.known_cost)}</strong>
+                    <strong>{formatMoney(summary?.finance_invested ?? summary?.known_cost)}</strong>
+                  </article>
+                  <article>
+                    <span>Coste broker detectado</span>
+                    <strong>{formatMoney(brokerCost)}</strong>
                   </article>
                   <article>
                     <span>Efectivo no principal</span>
@@ -313,7 +320,7 @@ export function PortfolioPanel() {
                       <strong>{broker.broker}</strong>
                       <span>Total: {formatMoney(broker.total_value)}</span>
                       <span>Valor actual invertido: {formatMoney(broker.invested)}</span>
-                      <span>Dinero invertido: {formatMoney(broker.known_cost)}</span>
+                      <span>Coste broker detectado: {formatMoney(broker.known_cost)}</span>
                       <span>Efectivo: {formatMoney(broker.cash)}</span>
                       <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
                       <span>Dividendos: {formatMoney(broker.dividends)}</span>
@@ -473,29 +480,58 @@ function buildDonutBackground(items) {
   return `conic-gradient(${segments.join(', ')})`
 }
 
-function buildSnapshotOptions(snapshot, snapshots) {
+function buildSnapshotOptions(snapshot, snapshots, financeByMonth) {
   const byMonth = new Map()
   ;(snapshots ?? []).forEach((item) => {
-    if (item?.snapshot_month) byMonth.set(item.snapshot_month, item)
+    if (item?.snapshot_month) byMonth.set(item.snapshot_month, enrichSnapshotWithFinance(item, financeByMonth))
   })
-  if (snapshot?.snapshot_month) byMonth.set(snapshot.snapshot_month, snapshot)
+  if (snapshot?.snapshot_month) byMonth.set(snapshot.snapshot_month, enrichSnapshotWithFinance(snapshot, financeByMonth))
   return Array.from(byMonth.values()).sort((left, right) =>
     (left.snapshot_month ?? '').localeCompare(right.snapshot_month ?? ''),
   )
 }
 
-function buildEvolutionRows(snapshots) {
+function buildEvolutionRows(snapshots, financeByMonth) {
   return (snapshots ?? [])
     .filter((snapshot) => snapshot?.snapshot_month)
-    .map((snapshot) => ({
-      month: snapshot.snapshot_month,
-      date: snapshot.snapshot_date,
-      invested: Number(snapshot.summary?.invested ?? 0),
-      cost: Number(snapshot.summary?.known_cost ?? 0),
-      gain: Number(snapshot.summary?.known_unrealized_gain ?? 0),
-      dividends: Number(snapshot.summary?.dividends ?? 0),
-    }))
+    .map((snapshot) => {
+      const enriched = enrichSnapshotWithFinance(snapshot, financeByMonth)
+      return {
+        month: enriched.snapshot_month,
+        date: enriched.snapshot_date,
+        invested: Number(enriched.summary?.invested ?? 0),
+        cost: Number(enriched.summary?.finance_invested ?? enriched.summary?.known_cost ?? 0),
+        gain: Number(enriched.summary?.known_unrealized_gain ?? 0),
+        dividends: Number(enriched.summary?.dividends ?? 0),
+      }
+    })
     .sort((left, right) => left.month.localeCompare(right.month))
+}
+
+function buildFinanceByMonth(rows) {
+  return new Map(
+    (rows ?? [])
+      .filter((row) => row?.Mes)
+      .map((row) => [
+        row.Mes,
+        {
+          finance_invested: Number(row['Dinero Invertido'] ?? 0),
+          investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
+        },
+      ]),
+  )
+}
+
+function enrichSnapshotWithFinance(snapshot, financeByMonth) {
+  const finance = financeByMonth.get(snapshot?.snapshot_month)
+  if (!finance) return snapshot
+  const summary = {
+    ...(snapshot.summary ?? {}),
+    finance_invested: finance.finance_invested,
+    investment_bucket: finance.investment_bucket,
+    investment_net_worth: finance.finance_invested + finance.investment_bucket,
+  }
+  return { ...snapshot, summary }
 }
 
 function formatAssetType(assetType) {
