@@ -37,21 +37,29 @@ export function PortfolioPanel() {
   const [isImporting, setIsImporting] = useState(false)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
   const [chartMode, setChartMode] = useState('position')
+  const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState('')
 
-  const positions = snapshot?.positions ?? []
-  const brokers = snapshot?.brokers ?? []
-  const summary = snapshot?.summary
+  const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots), [snapshot, snapshots])
+  const selectedSnapshot = useMemo(
+    () => snapshotOptions.find((item) => item.snapshot_month === selectedSnapshotMonth) ?? snapshot ?? snapshotOptions.at(-1) ?? null,
+    [selectedSnapshotMonth, snapshot, snapshotOptions],
+  )
+  const positions = selectedSnapshot?.positions ?? []
+  const brokers = selectedSnapshot?.brokers ?? []
+  const summary = selectedSnapshot?.summary
   const investmentPositions = useMemo(() => positions.filter((position) => position.asset_type !== 'cash'), [positions])
   const investedTotal = useMemo(
     () => investmentPositions.reduce((total, position) => total + Number(position.current_value ?? 0), 0),
     [investmentPositions],
   )
+  const costTotal = Number(summary?.known_cost ?? 0)
   const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
   const evolutionRows = useMemo(() => buildEvolutionRows(snapshots), [snapshots])
   const evolutionMax = useMemo(
-    () => Math.max(...evolutionRows.map((row) => row.invested), 0),
+    () => Math.max(...evolutionRows.flatMap((row) => [row.invested, row.cost]), 0),
     [evolutionRows],
   )
+  const donutBackground = useMemo(() => buildDonutBackground(chartItems), [chartItems])
 
   useEffect(() => {
     loadPortfolio()
@@ -75,7 +83,9 @@ export function PortfolioPanel() {
   const loadSnapshots = async () => {
     try {
       const data = await requestJson('/api/v1/portfolio/snapshots', {}, 'No se pudo cargar el histórico de cartera')
-      setSnapshots(data.result ?? [])
+      const loadedSnapshots = data.result ?? []
+      setSnapshots(loadedSnapshots)
+      setSelectedSnapshotMonth((current) => current || loadedSnapshots.at(-1)?.snapshot_month || '')
     } catch (err) {
       setError(err.message)
     }
@@ -104,7 +114,9 @@ export function PortfolioPanel() {
         'No se pudo importar la cartera',
       )
       setSnapshot(data.result)
-      setSnapshots(data.snapshots ?? [])
+      const loadedSnapshots = data.snapshots ?? []
+      setSnapshots(loadedSnapshots)
+      setSelectedSnapshotMonth(data.result?.snapshot_month || loadedSnapshots.at(-1)?.snapshot_month || '')
       setStatus(`${files.length} documentos importados y guardados en local`)
       setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -147,17 +159,42 @@ export function PortfolioPanel() {
       {status ? <p className="status-message">{status}</p> : null}
       {error ? <p className="error-message">{error}</p> : null}
 
-      {!snapshot ? (
+      {!selectedSnapshot ? (
         <div className="empty-state compact-empty">
           <strong>Sin cartera local</strong>
           <span>Importa los extractos de Trade Republic, MyInvestor y DeGiro para generar el resumen.</span>
         </div>
       ) : (
         <div className="portfolio-dashboard">
+          <section className="portfolio-card portfolio-snapshot-card">
+            <div>
+              <h3>Snapshot seleccionado</h3>
+              <span className="muted-text">
+                {selectedSnapshot.snapshot_date ?? 'Sin fecha de referencia'} · {selectedSnapshot.positions?.length ?? 0} posiciones ·{' '}
+                {selectedSnapshot.transactions?.length ?? 0} movimientos
+              </span>
+            </div>
+            <label>
+              Mes
+              <select value={selectedSnapshot.snapshot_month ?? ''} onChange={(event) => setSelectedSnapshotMonth(event.target.value)}>
+                {snapshotOptions.map((item) => (
+                  <option key={item.snapshot_month ?? 'actual'} value={item.snapshot_month ?? ''}>
+                    {item.snapshot_month ?? 'Sin fecha'} · {formatMoney(item.summary?.known_cost)} invertido
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+
           <section className="portfolio-hero">
             <article>
-              <span>Valor invertido visible</span>
+              <span>Valor actual invertido</span>
               <strong>{formatMoney(investedTotal)}</strong>
+            </article>
+            <article>
+              <span>Dinero invertido</span>
+              <strong>{formatMoney(costTotal)}</strong>
+              <small>Coste histórico conocido</small>
             </article>
             <article>
               <span>Rentabilidad conocida</span>
@@ -170,10 +207,10 @@ export function PortfolioPanel() {
             </article>
           </section>
 
-          {snapshot.warnings?.length ? (
+          {selectedSnapshot.warnings?.length ? (
             <section className="warning-panel">
               <strong>Avisos de cálculo</strong>
-              {snapshot.warnings.map((warning) => (
+              {selectedSnapshot.warnings.map((warning) => (
                 <span key={warning}>{warning}</span>
               ))}
             </section>
@@ -195,17 +232,27 @@ export function PortfolioPanel() {
                 ))}
               </div>
             </div>
-            <div className="portfolio-stacked-bar" aria-label="Distribución porcentual de cartera invertida">
-              {chartItems.map((item, index) => (
-                <span
-                  key={item.label}
-                  style={{
-                    background: getChartColor(index),
-                    width: getWeight(item.value, investedTotal),
-                  }}
-                  title={`${item.label}: ${formatMoney(item.value)} · ${formatNumber(item.weight, '%')}`}
-                />
-              ))}
+            <div className="portfolio-structure">
+              <div
+                className="portfolio-donut"
+                aria-label="Estructura porcentual de cartera"
+                style={{ background: donutBackground }}
+              >
+                <strong>{formatMoney(investedTotal)}</strong>
+                <span>valor actual</span>
+              </div>
+              <div className="portfolio-stacked-bar" aria-label="Distribución porcentual de cartera invertida">
+                {chartItems.map((item, index) => (
+                  <span
+                    key={item.label}
+                    style={{
+                      background: getChartColor(index),
+                      width: getWeight(item.value, investedTotal),
+                    }}
+                    title={`${item.label}: ${formatMoney(item.value)} · ${formatNumber(item.weight, '%')}`}
+                  />
+                ))}
+              </div>
             </div>
             <div className="portfolio-distribution">
               {chartItems.map((item, index) => (
@@ -238,8 +285,12 @@ export function PortfolioPanel() {
                     <strong>{formatMoney(summary?.total_value)}</strong>
                   </article>
                   <article>
-                    <span>Invertido</span>
+                    <span>Valor actual invertido</span>
                     <strong>{formatMoney(summary?.invested)}</strong>
+                  </article>
+                  <article>
+                    <span>Dinero invertido</span>
+                    <strong>{formatMoney(summary?.known_cost)}</strong>
                   </article>
                   <article>
                     <span>Efectivo no principal</span>
@@ -261,7 +312,8 @@ export function PortfolioPanel() {
                     <article key={broker.broker}>
                       <strong>{broker.broker}</strong>
                       <span>Total: {formatMoney(broker.total_value)}</span>
-                      <span>Invertido: {formatMoney(broker.invested)}</span>
+                      <span>Valor actual invertido: {formatMoney(broker.invested)}</span>
+                      <span>Dinero invertido: {formatMoney(broker.known_cost)}</span>
                       <span>Efectivo: {formatMoney(broker.cash)}</span>
                       <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
                       <span>Dividendos: {formatMoney(broker.dividends)}</span>
@@ -337,13 +389,24 @@ export function PortfolioPanel() {
             {evolutionRows.length ? (
               <div className="portfolio-evolution">
                 {evolutionRows.map((row) => (
-                  <article key={row.month}>
+                  <article className={row.month === selectedSnapshot.snapshot_month ? 'active' : ''} key={row.month}>
                     <span>{row.month}</span>
-                    <div className="portfolio-bar">
-                      <span style={{ width: getWeight(row.invested, evolutionMax) }} />
+                    <div className="portfolio-evolution-bars">
+                      <div>
+                        <small>Dinero</small>
+                        <div className="portfolio-bar portfolio-cost-bar">
+                          <span style={{ width: getWeight(row.cost, evolutionMax) }} />
+                        </div>
+                      </div>
+                      <div>
+                        <small>Valor</small>
+                        <div className="portfolio-bar">
+                          <span style={{ width: getWeight(row.invested, evolutionMax) }} />
+                        </div>
+                      </div>
                     </div>
                     <strong>{formatMoney(row.invested)}</strong>
-                    <small>{formatMoney(row.gain)} · {formatMoney(row.dividends)} dividendos</small>
+                    <small>{formatMoney(row.cost)} invertido · {formatMoney(row.gain)} P/L</small>
                   </article>
                 ))}
               </div>
@@ -355,7 +418,7 @@ export function PortfolioPanel() {
           <section className="portfolio-card">
             <h3>Archivos importados</h3>
             <div className="imported-files">
-              {(snapshot.files ?? []).map((file) => (
+              {(selectedSnapshot.files ?? []).map((file) => (
                 <article key={file.filename}>
                   <strong>{file.filename}</strong>
                   <span>{file.kind}</span>
@@ -398,6 +461,29 @@ function getChartColor(index) {
   return colors[index % colors.length]
 }
 
+function buildDonutBackground(items) {
+  if (!items.length) return '#e8eee5'
+  let start = 0
+  const segments = items.map((item, index) => {
+    const end = start + item.weight
+    const segment = `${getChartColor(index)} ${start}% ${end}%`
+    start = end
+    return segment
+  })
+  return `conic-gradient(${segments.join(', ')})`
+}
+
+function buildSnapshotOptions(snapshot, snapshots) {
+  const byMonth = new Map()
+  ;(snapshots ?? []).forEach((item) => {
+    if (item?.snapshot_month) byMonth.set(item.snapshot_month, item)
+  })
+  if (snapshot?.snapshot_month) byMonth.set(snapshot.snapshot_month, snapshot)
+  return Array.from(byMonth.values()).sort((left, right) =>
+    (left.snapshot_month ?? '').localeCompare(right.snapshot_month ?? ''),
+  )
+}
+
 function buildEvolutionRows(snapshots) {
   return (snapshots ?? [])
     .filter((snapshot) => snapshot?.snapshot_month)
@@ -405,6 +491,7 @@ function buildEvolutionRows(snapshots) {
       month: snapshot.snapshot_month,
       date: snapshot.snapshot_date,
       invested: Number(snapshot.summary?.invested ?? 0),
+      cost: Number(snapshot.summary?.known_cost ?? 0),
       gain: Number(snapshot.summary?.known_unrealized_gain ?? 0),
       dividends: Number(snapshot.summary?.dividends ?? 0),
     }))

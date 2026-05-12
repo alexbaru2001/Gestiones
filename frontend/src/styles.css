@@ -1698,7 +1698,7 @@ th {
 .portfolio-hero,
 .portfolio-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1758,6 +1758,28 @@ th {
   font-size: 16px;
 }
 
+.portfolio-snapshot-card {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  align-items: end;
+}
+
+.portfolio-snapshot-card label {
+  display: grid;
+  gap: 7px;
+  color: #4f5a52;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.portfolio-snapshot-card select {
+  min-height: 38px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17201a;
+  padding: 0 10px;
+}
+
 .portfolio-chart-header {
   display: flex;
   align-items: center;
@@ -1804,6 +1826,55 @@ th {
 .portfolio-stacked-bar span {
   display: block;
   min-width: 2px;
+}
+
+.portfolio-structure {
+  display: grid;
+  grid-template-columns: minmax(150px, 180px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.portfolio-donut {
+  width: min(180px, 100%);
+  aspect-ratio: 1;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.portfolio-donut::before {
+  content: "";
+  position: absolute;
+  inset: 20px;
+  border-radius: inherit;
+  background: #fbfcfa;
+  box-shadow: inset 0 0 0 1px #e1e8dd;
+}
+
+.portfolio-donut strong,
+.portfolio-donut span {
+  position: relative;
+  z-index: 1;
+  max-width: 116px;
+}
+
+.portfolio-donut strong {
+  font-size: 18px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-donut span {
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .portfolio-distribution {
@@ -1883,10 +1954,31 @@ th {
   background: #fbfcfa;
 }
 
+.portfolio-evolution article.active {
+  border-color: #286b57;
+  box-shadow: inset 0 0 0 1px #286b57;
+}
+
 .portfolio-evolution span,
 .portfolio-evolution small {
   color: #637069;
   font-size: 13px;
+}
+
+.portfolio-evolution-bars {
+  display: grid;
+  gap: 7px;
+}
+
+.portfolio-evolution-bars > div {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.portfolio-cost-bar span {
+  background: #b85a4b;
 }
 
 .portfolio-position-grid article {
@@ -1934,6 +2026,8 @@ th {
   .portfolio-hero,
   .portfolio-import,
   .portfolio-summary,
+  .portfolio-snapshot-card,
+  .portfolio-structure,
   .portfolio-distribution article,
   .broker-grid,
   .imported-files,
