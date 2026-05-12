@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 import json
 import re
@@ -37,6 +38,25 @@ FUND_NAME_MAP = {
     "VANGUARD US 500": "IE0032126645",
 }
 
+ASSET_METADATA = {
+    "DE0007074007": {"region": "Europa", "sector": "Consumo defensivo", "focus": "Acciones calidad"},
+    "ES0144580Y14": {"region": "Europa", "sector": "Utilities", "focus": "Dividendos"},
+    "ES0173516115": {"region": "Europa", "sector": "Energia", "focus": "Dividendos"},
+    "US91324P1021": {"region": "Norteamerica", "sector": "Salud", "focus": "Salud defensiva"},
+    "FR0000121014": {"region": "Europa", "sector": "Lujo", "focus": "Acciones calidad"},
+    "US7427181091": {"region": "Norteamerica", "sector": "Consumo defensivo", "focus": "Dividendos"},
+    "US9311421039": {"region": "Norteamerica", "sector": "Consumo defensivo", "focus": "Dividendos"},
+    "ES0157261019": {"region": "Europa", "sector": "Salud", "focus": "Acciones calidad"},
+    "XFC000A2YY6Q": {"region": "Global", "sector": "Criptoactivo", "focus": "Alternativos"},
+    "LU0389811539": {"region": "Europa", "sector": "Renta variable diversificada", "focus": "Indexados"},
+    "LU0996175948": {"region": "Emergentes", "sector": "Renta variable diversificada", "focus": "Indexados"},
+    "LU0968301142": {"region": "Frontera", "sector": "Renta variable diversificada", "focus": "Mercados frontera"},
+    "IE00B6RVWW34": {"region": "Japon", "sector": "Renta variable diversificada", "focus": "Indexados"},
+    "IE00B83YJG36": {"region": "Global", "sector": "Inmobiliario", "focus": "Real estate"},
+    "IE00B42W4L06": {"region": "Global", "sector": "Small caps", "focus": "Indexados"},
+    "IE0032126645": {"region": "Norteamerica", "sector": "Renta variable diversificada", "focus": "Indexados"},
+}
+
 
 @dataclass(frozen=True)
 class UploadedInvestmentFile:
@@ -48,21 +68,30 @@ def build_snapshot_from_files(files: list[UploadedInvestmentFile]) -> dict[str, 
     positions: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
     files_summary: list[dict[str, Any]] = []
+    primary_reference_dates: list[str] = []
+    fallback_reference_dates: list[str] = []
 
     for file in files:
         parsed = parse_investment_file(file.filename, file.content)
         positions.extend(parsed["positions"])
         transactions.extend(parsed["transactions"])
+        if parsed.get("reference_date"):
+            if parsed["kind"] in {"trade_republic_net_worth", "myinvestor_statement"}:
+                primary_reference_dates.append(parsed["reference_date"])
+            else:
+                fallback_reference_dates.append(parsed["reference_date"])
         files_summary.append(
             {
                 "filename": file.filename,
                 "kind": parsed["kind"],
                 "positions": len(parsed["positions"]),
                 "transactions": len(parsed["transactions"]),
+                "reference_date": parsed.get("reference_date"),
             }
         )
 
-    return build_snapshot(positions, transactions, files_summary)
+    reference_dates = primary_reference_dates or fallback_reference_dates
+    return build_snapshot(positions, transactions, files_summary, max(reference_dates) if reference_dates else None)
 
 
 def parse_investment_file(filename: str, content: bytes) -> dict[str, Any]:
@@ -82,7 +111,7 @@ def parse_investment_file(filename: str, content: bytes) -> dict[str, Any]:
             return parse_trade_republic_account_pdf(text, filename)
         if "myinvestor" in text.lower() or "posición integrada" in text.lower() or "posicion integrada" in text.lower():
             return parse_myinvestor_statement_pdf(text, filename)
-    return {"kind": "desconocido", "positions": [], "transactions": []}
+    return {"kind": "desconocido", "positions": [], "transactions": [], "reference_date": None}
 
 
 def extract_pdf_text(content: bytes) -> str:
@@ -122,7 +151,7 @@ def parse_degiro_portfolio_xlsx(content: bytes, filename: str) -> dict[str, Any]
             }
         )
 
-    return {"kind": "degiro_portfolio", "positions": positions, "transactions": []}
+    return {"kind": "degiro_portfolio", "positions": positions, "transactions": [], "reference_date": None}
 
 
 def parse_degiro_account_xlsx(content: bytes, filename: str) -> dict[str, Any]:
@@ -164,7 +193,8 @@ def parse_degiro_account_xlsx(content: bytes, filename: str) -> dict[str, Any]:
             }
         )
 
-    return {"kind": "degiro_account", "positions": [], "transactions": transactions}
+    reference_dates = [transaction["date"] for transaction in transactions if transaction.get("date")]
+    return {"kind": "degiro_account", "positions": [], "transactions": transactions, "reference_date": max_iso_date(reference_dates)}
 
 
 def parse_myinvestor_movements_xlsx(content: bytes, filename: str) -> dict[str, Any]:
@@ -207,28 +237,13 @@ def parse_myinvestor_movements_xlsx(content: bytes, filename: str) -> dict[str, 
             }
         )
 
-    return {"kind": "myinvestor_movements", "positions": [], "transactions": transactions}
+    reference_dates = [transaction["date"] for transaction in transactions if transaction.get("date")]
+    return {"kind": "myinvestor_movements", "positions": [], "transactions": transactions, "reference_date": max_iso_date(reference_dates)}
 
 
 def parse_trade_republic_net_worth_pdf(text: str, filename: str) -> dict[str, Any]:
     positions = []
-    cash_match = re.search(r"Cuenta corriente\s+([\d.,]+)\s+EUR", text)
-    if cash_match:
-        positions.append(
-            {
-                "broker": "Trade Republic",
-                "source": filename,
-                "asset_type": "cash",
-                "isin": None,
-                "ticker": None,
-                "name": "Cuenta corriente",
-                "quantity": None,
-                "price": None,
-                "currency": "EUR",
-                "current_value": parse_euro(cash_match.group(1)),
-            }
-        )
-
+    reference_date = extract_trade_republic_net_worth_date(text)
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     isin_indexes = [(index, match.group(1)) for index, line in enumerate(lines) if (match := re.search(r"ISIN:\s*([A-Z0-9]{12})", line))]
     for index, isin in isin_indexes:
@@ -251,7 +266,7 @@ def parse_trade_republic_net_worth_pdf(text: str, filename: str) -> dict[str, An
             }
         )
 
-    return {"kind": "trade_republic_net_worth", "positions": positions, "transactions": []}
+    return {"kind": "trade_republic_net_worth", "positions": positions, "transactions": [], "reference_date": reference_date}
 
 
 def parse_trade_republic_account_pdf(text: str, filename: str) -> dict[str, Any]:
@@ -301,11 +316,13 @@ def parse_trade_republic_account_pdf(text: str, filename: str) -> dict[str, Any]
             }
         )
 
-    return {"kind": "trade_republic_account", "positions": [], "transactions": transactions}
+    reference_dates = [transaction["date"] for transaction in transactions if transaction.get("date")]
+    return {"kind": "trade_republic_account", "positions": [], "transactions": transactions, "reference_date": max_iso_date(reference_dates)}
 
 
 def parse_myinvestor_statement_pdf(text: str, filename: str) -> dict[str, Any]:
     positions = []
+    reference_date = extract_myinvestor_statement_date(text)
     cash_match = re.search(r"Efectivo\s+([\d.,]+)\s*€", text)
     investment_match = re.search(r"Inversión\s+([\d.,]+)\s*€", text)
     if cash_match:
@@ -361,13 +378,14 @@ def parse_myinvestor_statement_pdf(text: str, filename: str) -> dict[str, Any]:
                 "current_value": parse_euro(investment_match.group(1)),
             }
         )
-    return {"kind": "myinvestor_statement", "positions": positions, "transactions": []}
+    return {"kind": "myinvestor_statement", "positions": positions, "transactions": [], "reference_date": reference_date}
 
 
 def build_snapshot(
     raw_positions: list[dict[str, Any]],
     transactions: list[dict[str, Any]],
     files_summary: list[dict[str, Any]],
+    reference_date: str | None = None,
 ) -> dict[str, Any]:
     positions = merge_positions(raw_positions)
     cost_by_key = defaultdict(float)
@@ -404,11 +422,14 @@ def build_snapshot(
                 "unrealized_gain": round(pnl, 4) if pnl is not None else None,
                 "unrealized_gain_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
                 "horizon": infer_horizon(position),
+                **get_asset_metadata(position),
             }
         )
 
     summary = summarize(enriched_positions, transactions, fees_by_broker, interest_by_broker, deposits_by_broker, dividends_by_broker)
     return {
+        "snapshot_date": reference_date,
+        "snapshot_month": reference_date[:7] if reference_date else None,
         "summary": summary,
         "positions": sorted(enriched_positions, key=lambda item: (item["broker"], item["asset_type"], item["name"])),
         "transactions": transactions,
@@ -614,6 +635,19 @@ def infer_horizon(position: dict[str, Any]) -> str:
     return "medio"
 
 
+def get_asset_metadata(position: dict[str, Any]) -> dict[str, str]:
+    if position["asset_type"] == "cash":
+        return {"region": "Liquidez", "sector": "Efectivo", "focus": "Liquidez"}
+    metadata = ASSET_METADATA.get(position.get("isin") or "")
+    if metadata:
+        return metadata
+    if position["asset_type"] == "fund":
+        return {"region": "Global", "sector": "Renta variable diversificada", "focus": "Fondos"}
+    if position["asset_type"] == "crypto":
+        return {"region": "Global", "sector": "Criptoactivo", "focus": "Alternativos"}
+    return {"region": "Sin clasificar", "sector": "Sin clasificar", "focus": "Sin clasificar"}
+
+
 def parse_number(value: Any) -> float | None:
     if value is None:
         return None
@@ -636,6 +670,14 @@ def parse_euro(value: str) -> float | None:
 def normalize_date(value: Any) -> str | None:
     if value is None:
         return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    text = str(value).strip()
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            pass
     return str(value).strip()
 
 
@@ -655,6 +697,30 @@ def parse_spanish_date(day: str, month: str) -> str:
         "dic": "12",
     }
     return f"2026-{months.get(month.lower(), '01')}-{int(day):02d}"
+
+
+def parse_spanish_full_date(day: str, month: str, year: str) -> str:
+    months = {
+        "enero": "01",
+        "febrero": "02",
+        "marzo": "03",
+        "abril": "04",
+        "mayo": "05",
+        "junio": "06",
+        "julio": "07",
+        "agosto": "08",
+        "septiembre": "09",
+        "setiembre": "09",
+        "octubre": "10",
+        "noviembre": "11",
+        "diciembre": "12",
+    }
+    return f"{year}-{months.get(month.lower(), '01')}-{int(day):02d}"
+
+
+def max_iso_date(values: list[str | None]) -> str | None:
+    iso_values = [value for value in values if value and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)]
+    return max(iso_values) if iso_values else None
 
 
 def pad(row: tuple[Any, ...], length: int) -> tuple[Any, ...]:
@@ -734,6 +800,21 @@ def extract_trade_republic_position_values(lines: list[str], isin_index: int) ->
                 if value is not None:
                     return price, value
     return price, None
+
+
+def extract_trade_republic_net_worth_date(text: str) -> str | None:
+    match = re.search(r"a\s+(\d{2})\.(\d{2})\.(\d{4})", text)
+    if not match:
+        return None
+    day, month, year = match.groups()
+    return f"{year}-{month}-{day}"
+
+
+def extract_myinvestor_statement_date(text: str) -> str | None:
+    match = re.search(r"FECHA:\s+(\d{1,2})\s+de\s+([A-Za-záéíóúÁÉÍÓÚ]+)\s+de\s+(\d{4})", text, re.I)
+    if not match:
+        return None
+    return parse_spanish_full_date(match.group(1), match.group(2), match.group(3))
 
 
 def extract_myinvestor_position_lines(text: str) -> list[str]:

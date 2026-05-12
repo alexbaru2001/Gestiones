@@ -65,6 +65,12 @@ def get_portfolio() -> dict[str, Any]:
     return {"ok": True, "result": snapshot}
 
 
+@app.get("/api/v1/portfolio/snapshots")
+def get_portfolio_snapshots() -> dict[str, Any]:
+    snapshots = portfolio_repository.load_snapshots()
+    return {"ok": True, "result": snapshots}
+
+
 @app.post("/api/v1/portfolio/import")
 async def import_portfolio(files: list[UploadFile] = File(...)) -> dict[str, Any]:
     if not files:
@@ -78,7 +84,7 @@ async def import_portfolio(files: list[UploadFile] = File(...)) -> dict[str, Any
         uploaded_files.append(UploadedInvestmentFile(filename=filename, content=await file.read()))
 
     snapshot = portfolio_repository.save_uploads_and_rebuild(uploaded_files)
-    return {"ok": True, "result": snapshot}
+    return {"ok": True, "result": snapshot, "snapshots": portfolio_repository.load_snapshots()}
 
 
 @app.post("/api/v1/process")

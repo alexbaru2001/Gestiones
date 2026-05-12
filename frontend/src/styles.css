@@ -1695,34 +1695,41 @@ th {
   gap: 18px;
 }
 
+.portfolio-hero,
 .portfolio-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
+.portfolio-hero article,
 .portfolio-summary article,
 .portfolio-card,
 .broker-grid article,
-.imported-files article {
+.imported-files article,
+.portfolio-position-grid article {
   min-width: 0;
   border: 1px solid #e1e8dd;
   border-radius: 8px;
   background: #fbfcfa;
 }
 
+.portfolio-hero article,
 .portfolio-summary article {
   padding: 14px;
 }
 
+.portfolio-hero span,
 .portfolio-summary span,
 .broker-grid span,
-.imported-files span {
+.imported-files span,
+.portfolio-position-grid span {
   display: block;
   color: #637069;
   font-size: 13px;
 }
 
+.portfolio-hero strong,
 .portfolio-summary strong {
   display: block;
   margin-top: 8px;
@@ -1731,6 +1738,7 @@ th {
   overflow-wrap: anywhere;
 }
 
+.portfolio-hero small,
 .portfolio-summary small {
   display: block;
   margin-top: 5px;
@@ -1750,6 +1758,54 @@ th {
   font-size: 16px;
 }
 
+.portfolio-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.portfolio-chart-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.portfolio-chart-tabs button,
+.portfolio-summary-toggle {
+  min-height: 34px;
+  border: 1px solid #d8e2d4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #4f5a52;
+  padding: 0 10px;
+  font-weight: 700;
+}
+
+.portfolio-chart-tabs button.active {
+  border-color: #286b57;
+  background: #286b57;
+  color: #ffffff;
+}
+
+.portfolio-summary-toggle {
+  justify-self: start;
+}
+
+.portfolio-stacked-bar {
+  display: flex;
+  min-height: 28px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.portfolio-stacked-bar span {
+  display: block;
+  min-width: 2px;
+}
+
 .portfolio-distribution {
   display: grid;
   gap: 12px;
@@ -1757,14 +1813,23 @@ th {
 
 .portfolio-distribution article {
   display: grid;
-  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr);
+  grid-template-columns: minmax(170px, 0.35fr) minmax(64px, auto) minmax(0, 1fr);
   gap: 14px;
   align-items: center;
 }
 
 .portfolio-distribution strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
+}
+
+.portfolio-distribution strong i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
 }
 
 .portfolio-distribution span {
@@ -1787,22 +1852,50 @@ th {
 }
 
 .broker-grid,
-.imported-files {
+.imported-files,
+.portfolio-position-grid,
+.portfolio-evolution {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .broker-grid article,
-.imported-files article {
+.imported-files article,
+.portfolio-position-grid article,
+.portfolio-evolution article {
   display: grid;
   gap: 6px;
   padding: 12px;
 }
 
 .broker-grid strong,
-.imported-files strong {
+.imported-files strong,
+.portfolio-position-grid strong,
+.portfolio-evolution strong {
   overflow-wrap: anywhere;
+}
+
+.portfolio-evolution article {
+  min-width: 0;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.portfolio-evolution span,
+.portfolio-evolution small {
+  color: #637069;
+  font-size: 13px;
+}
+
+.portfolio-position-grid article {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.portfolio-position-grid .portfolio-bar {
+  grid-column: 1 / -1;
 }
 
 .compact-table-wrap {
@@ -1838,12 +1931,26 @@ th {
   .reserve-summary,
   .prediction-grid,
   .typology-latest,
+  .portfolio-hero,
   .portfolio-import,
   .portfolio-summary,
   .portfolio-distribution article,
   .broker-grid,
-  .imported-files {
+  .imported-files,
+  .portfolio-position-grid,
+  .portfolio-evolution {
     grid-template-columns: 1fr;
+  }
+
+  .portfolio-chart-header,
+  .portfolio-chart-tabs {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolio-chart-tabs button,
+  .portfolio-summary-toggle {
+    width: 100%;
   }
 
   .objective-row {

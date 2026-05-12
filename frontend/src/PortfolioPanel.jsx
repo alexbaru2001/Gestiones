@@ -17,22 +17,45 @@ function getWeight(value, total) {
   return `${Math.max(0, Math.min(100, (Number(value) / total) * 100))}%`
 }
 
+const chartModes = [
+  { id: 'position', label: 'Valores' },
+  { id: 'region', label: 'Continente' },
+  { id: 'sector', label: 'Sector' },
+  { id: 'focus', label: 'Foco' },
+  { id: 'broker', label: 'Broker' },
+  { id: 'asset_type', label: 'Tipo' },
+]
+
 export function PortfolioPanel() {
   const fileInputRef = useRef(null)
   const [snapshot, setSnapshot] = useState(null)
   const [files, setFiles] = useState([])
+  const [snapshots, setSnapshots] = useState([])
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false)
+  const [chartMode, setChartMode] = useState('position')
 
   const positions = snapshot?.positions ?? []
   const brokers = snapshot?.brokers ?? []
   const summary = snapshot?.summary
-  const distribution = useMemo(() => buildDistribution(positions, summary?.total_value), [positions, summary])
+  const investmentPositions = useMemo(() => positions.filter((position) => position.asset_type !== 'cash'), [positions])
+  const investedTotal = useMemo(
+    () => investmentPositions.reduce((total, position) => total + Number(position.current_value ?? 0), 0),
+    [investmentPositions],
+  )
+  const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
+  const evolutionRows = useMemo(() => buildEvolutionRows(snapshots), [snapshots])
+  const evolutionMax = useMemo(
+    () => Math.max(...evolutionRows.map((row) => row.invested), 0),
+    [evolutionRows],
+  )
 
   useEffect(() => {
     loadPortfolio()
+    loadSnapshots()
   }, [])
 
   const loadPortfolio = async () => {
@@ -46,6 +69,15 @@ export function PortfolioPanel() {
       setError(err.message)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadSnapshots = async () => {
+    try {
+      const data = await requestJson('/api/v1/portfolio/snapshots', {}, 'No se pudo cargar el histórico de cartera')
+      setSnapshots(data.result ?? [])
+    } catch (err) {
+      setError(err.message)
     }
   }
 
@@ -72,6 +104,7 @@ export function PortfolioPanel() {
         'No se pudo importar la cartera',
       )
       setSnapshot(data.result)
+      setSnapshots(data.snapshots ?? [])
       setStatus(`${files.length} documentos importados y guardados en local`)
       setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -121,18 +154,10 @@ export function PortfolioPanel() {
         </div>
       ) : (
         <div className="portfolio-dashboard">
-          <div className="portfolio-summary">
+          <section className="portfolio-hero">
             <article>
-              <span>Patrimonio visible</span>
-              <strong>{formatMoney(summary?.total_value)}</strong>
-            </article>
-            <article>
-              <span>Invertido</span>
-              <strong>{formatMoney(summary?.invested)}</strong>
-            </article>
-            <article>
-              <span>Efectivo</span>
-              <strong>{formatMoney(summary?.cash)}</strong>
+              <span>Valor invertido visible</span>
+              <strong>{formatMoney(investedTotal)}</strong>
             </article>
             <article>
               <span>Rentabilidad conocida</span>
@@ -140,14 +165,10 @@ export function PortfolioPanel() {
               <small>{formatNumber(summary?.known_unrealized_gain_pct, '%')}</small>
             </article>
             <article>
-              <span>Dividendos</span>
+              <span>Dividendos netos</span>
               <strong>{formatMoney(summary?.dividends)}</strong>
             </article>
-            <article>
-              <span>Intereses</span>
-              <strong>{formatMoney(summary?.interest)}</strong>
-            </article>
-          </div>
+          </section>
 
           {snapshot.warnings?.length ? (
             <section className="warning-panel">
@@ -159,16 +180,46 @@ export function PortfolioPanel() {
           ) : null}
 
           <section className="portfolio-card">
-            <h3>Distribución</h3>
+            <div className="portfolio-chart-header">
+              <h3>Distribución dinámica</h3>
+              <div className="portfolio-chart-tabs" role="tablist" aria-label="Vista de distribución de cartera">
+                {chartModes.map((mode) => (
+                  <button
+                    className={chartMode === mode.id ? 'active' : ''}
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setChartMode(mode.id)}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="portfolio-stacked-bar" aria-label="Distribución porcentual de cartera invertida">
+              {chartItems.map((item, index) => (
+                <span
+                  key={item.label}
+                  style={{
+                    background: getChartColor(index),
+                    width: getWeight(item.value, investedTotal),
+                  }}
+                  title={`${item.label}: ${formatMoney(item.value)} · ${formatNumber(item.weight, '%')}`}
+                />
+              ))}
+            </div>
             <div className="portfolio-distribution">
-              {distribution.map((item) => (
+              {chartItems.map((item, index) => (
                 <article key={item.label}>
                   <div>
-                    <strong>{item.label}</strong>
+                    <strong>
+                      <i style={{ background: getChartColor(index) }} />
+                      {item.label}
+                    </strong>
                     <span>{formatMoney(item.value)}</span>
                   </div>
+                  <span>{formatNumber(item.weight, '%')}</span>
                   <div className="portfolio-bar">
-                    <span style={{ width: getWeight(item.value, summary?.total_value) }} />
+                    <span style={{ background: getChartColor(index), width: getWeight(item.value, investedTotal) }} />
                   </div>
                 </article>
               ))}
@@ -176,17 +227,65 @@ export function PortfolioPanel() {
           </section>
 
           <section className="portfolio-card">
-            <h3>Brokers</h3>
-            <div className="broker-grid">
-              {brokers.map((broker) => (
-                <article key={broker.broker}>
-                  <strong>{broker.broker}</strong>
-                  <span>Total: {formatMoney(broker.total_value)}</span>
-                  <span>Invertido: {formatMoney(broker.invested)}</span>
-                  <span>Efectivo: {formatMoney(broker.cash)}</span>
-                  <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
-                  <span>Dividendos: {formatMoney(broker.dividends)}</span>
-                  <span>Intereses: {formatMoney(broker.interest)}</span>
+            <button className="portfolio-summary-toggle" type="button" onClick={() => setIsSummaryOpen((current) => !current)}>
+              {isSummaryOpen ? 'Ocultar resumen' : 'Mostrar resumen'}
+            </button>
+            {isSummaryOpen ? (
+              <>
+                <div className="portfolio-summary">
+                  <article>
+                    <span>Total local visible</span>
+                    <strong>{formatMoney(summary?.total_value)}</strong>
+                  </article>
+                  <article>
+                    <span>Invertido</span>
+                    <strong>{formatMoney(summary?.invested)}</strong>
+                  </article>
+                  <article>
+                    <span>Efectivo no principal</span>
+                    <strong>{formatMoney(summary?.cash)}</strong>
+                  </article>
+                  <article>
+                    <span>Rentabilidad conocida</span>
+                    <strong>{formatMoney(summary?.known_unrealized_gain)}</strong>
+                    <small>{formatNumber(summary?.known_unrealized_gain_pct, '%')}</small>
+                  </article>
+                  <article>
+                    <span>Dividendos netos</span>
+                    <strong>{formatMoney(summary?.dividends)}</strong>
+                  </article>
+                </div>
+
+                <div className="broker-grid">
+                  {brokers.map((broker) => (
+                    <article key={broker.broker}>
+                      <strong>{broker.broker}</strong>
+                      <span>Total: {formatMoney(broker.total_value)}</span>
+                      <span>Invertido: {formatMoney(broker.invested)}</span>
+                      <span>Efectivo: {formatMoney(broker.cash)}</span>
+                      <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
+                      <span>Dividendos: {formatMoney(broker.dividends)}</span>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </section>
+
+          <section className="portfolio-card">
+            <h3>Posiciones</h3>
+            <div className="portfolio-position-grid">
+              {investmentPositions.map((position) => (
+                <article key={`${position.broker}-${position.isin ?? position.name}-${position.asset_type}`}>
+                  <div>
+                    <strong>{position.ticker ?? position.name}</strong>
+                    <span>{position.broker} · {position.region ?? 'Sin región'} · {position.sector ?? 'Sin sector'}</span>
+                  </div>
+                  <strong>{formatMoney(position.current_value)}</strong>
+                  <div className="portfolio-bar">
+                    <span style={{ width: getWeight(position.current_value, investedTotal) }} />
+                  </div>
+                  <span>{formatNumber((Number(position.current_value ?? 0) / investedTotal) * 100, '%')}</span>
                 </article>
               ))}
             </div>
@@ -205,11 +304,13 @@ export function PortfolioPanel() {
                     <th>Valor</th>
                     <th>Coste</th>
                     <th>P/L</th>
+                    <th>Sector</th>
+                    <th>Región</th>
                     <th>Horizonte</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((position) => (
+                  {investmentPositions.map((position) => (
                     <tr key={`${position.broker}-${position.isin ?? position.name}-${position.asset_type}`}>
                       <td>{position.broker}</td>
                       <td>{position.ticker ?? position.name}</td>
@@ -218,12 +319,37 @@ export function PortfolioPanel() {
                       <td>{formatMoney(position.current_value)}</td>
                       <td>{formatMoney(position.cost)}</td>
                       <td>{formatMoney(position.unrealized_gain)}</td>
+                      <td>{position.sector ?? 's/d'}</td>
+                      <td>{position.region ?? 's/d'}</td>
                       <td>{position.horizon}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="portfolio-card">
+            <div className="portfolio-chart-header">
+              <h3>Evolución mensual</h3>
+              <span className="muted-text">{evolutionRows.length} snapshots locales</span>
+            </div>
+            {evolutionRows.length ? (
+              <div className="portfolio-evolution">
+                {evolutionRows.map((row) => (
+                  <article key={row.month}>
+                    <span>{row.month}</span>
+                    <div className="portfolio-bar">
+                      <span style={{ width: getWeight(row.invested, evolutionMax) }} />
+                    </div>
+                    <strong>{formatMoney(row.invested)}</strong>
+                    <small>{formatMoney(row.gain)} · {formatMoney(row.dividends)} dividendos</small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-text">Aún no hay snapshots mensuales guardados.</p>
+            )}
           </section>
 
           <section className="portfolio-card">
@@ -244,16 +370,45 @@ export function PortfolioPanel() {
   )
 }
 
-function buildDistribution(positions, total) {
+function buildPortfolioChart(positions, mode) {
+  const total = positions.reduce((acc, position) => acc + Number(position.current_value ?? 0), 0)
   if (!positions.length || !total) return []
   const groups = positions.reduce((acc, position) => {
-    const label = position.asset_type === 'cash' ? 'Efectivo' : position.asset_type === 'fund' ? 'Fondos' : position.asset_type === 'crypto' ? 'Cripto' : 'Acciones'
+    const label = getChartLabel(position, mode)
     acc[label] = (acc[label] ?? 0) + Number(position.current_value ?? 0)
     return acc
   }, {})
   return Object.entries(groups)
-    .map(([label, value]) => ({ label, value }))
+    .map(([label, value]) => ({ label, value, weight: (value / total) * 100 }))
     .sort((left, right) => right.value - left.value)
+}
+
+function getChartLabel(position, mode) {
+  if (mode === 'position') return position.ticker ?? position.name
+  if (mode === 'region') return position.region ?? 'Sin clasificar'
+  if (mode === 'sector') return position.sector ?? 'Sin clasificar'
+  if (mode === 'focus') return position.focus ?? 'Sin clasificar'
+  if (mode === 'broker') return position.broker
+  if (mode === 'asset_type') return formatAssetType(position.asset_type)
+  return position.name
+}
+
+function getChartColor(index) {
+  const colors = ['#286b57', '#b85a4b', '#d2a53f', '#436a92', '#6c7a72', '#8a6d3b', '#4f8b6f', '#a55769']
+  return colors[index % colors.length]
+}
+
+function buildEvolutionRows(snapshots) {
+  return (snapshots ?? [])
+    .filter((snapshot) => snapshot?.snapshot_month)
+    .map((snapshot) => ({
+      month: snapshot.snapshot_month,
+      date: snapshot.snapshot_date,
+      invested: Number(snapshot.summary?.invested ?? 0),
+      gain: Number(snapshot.summary?.known_unrealized_gain ?? 0),
+      dividends: Number(snapshot.summary?.dividends ?? 0),
+    }))
+    .sort((left, right) => left.month.localeCompare(right.month))
 }
 
 function formatAssetType(assetType) {
