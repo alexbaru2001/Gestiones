@@ -5,6 +5,7 @@ import { comparisonRows } from './resultSelectors'
 const moneyFields = [
   'total',
   '💰 Ahorros',
+  'Dinero Invertido',
   '💳 Gasto del mes',
   '💸 Presupuesto Mes',
   '🧾 Presupuesto Disponible',
@@ -30,6 +31,7 @@ const tabs = [
 
 const typologyFields = [
   { field: '💰 Ahorros', label: 'Ahorros', color: '#286b57' },
+  { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#3f7f8f' },
   { field: '💼 Vacaciones', label: 'Vacaciones', color: '#d2a53f' },
   { field: '📈 Inversiones', label: 'Reserva inversión', color: '#5c6f9e' },
   { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#6c7a72' },
@@ -40,6 +42,7 @@ const typologyFields = [
 
 const defaultTypologyFields = [
   '💰 Ahorros',
+  '💸 Presupuesto Mes',
   '💼 Vacaciones',
   '📈 Inversiones',
   'Fondo de reserva cargado',
@@ -178,6 +181,39 @@ function getPeriodRows(rows, period) {
   return rows.slice(-Number(period))
 }
 
+function getSummaryGroups(row) {
+  return {
+    patrimony: [
+      { label: 'Total', value: row.total },
+      { label: 'Ahorros', value: row['💰 Ahorros'] },
+      { label: 'Dinero invertido', value: row['Dinero Invertido'] },
+      { label: 'Fondo emergencia', value: row['Fondo de reserva cargado'] },
+      { label: 'Vacaciones', value: row['💼 Vacaciones'] },
+      { label: 'Regalos', value: row['🎁 Regalos'] },
+    ],
+    budget: [
+      { label: 'Presupuesto mes', value: row['💸 Presupuesto Mes'] },
+      { label: 'Presupuesto disponible', value: row['🧾 Presupuesto Disponible'] },
+      { label: 'Gasto del mes', value: row['💳 Gasto del mes'] },
+      { label: 'Deuda presupuestaria', value: row['📉 Deuda Presupuestaria mensual'] },
+      { label: 'Deuda acumulada', value: row['📉 Deuda Presupuestaria acumulada'] },
+    ],
+  }
+}
+
+function getCategoryAmount(expenseAnalysis, month, category) {
+  const normalizedCategory = category.toLowerCase()
+  const monthlyRow = expenseAnalysis.categorias.find((row) => row.Mes === month)
+  if (!monthlyRow) return 0
+  const key = Object.keys(monthlyRow).find((field) => field.toLowerCase() === normalizedCategory)
+  return asNumber(key ? monthlyRow[key] : 0)
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return '0,0%'
+  return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -206,6 +242,13 @@ export function ResultsPanel({
   const expenseMax = Math.max(...expenseAnalysis.totales_categoria.map((row) => asNumber(row.total)), 1)
   const savingsAnalysis = getSavingsAnalysis(result)
   const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
+  const savingsPercentRows = savingsAnalysis.mensual.slice(-12)
+  const savingsPercentValues = savingsPercentRows.map((row) => asNumber(row.porcentaje_ahorro))
+  const savingsAverageValues = movingAverage(savingsPercentValues)
+  const savingsPercentBounds = {
+    max: Math.max(...savingsPercentValues, ...savingsAverageValues, 100),
+    min: Math.min(...savingsPercentValues, ...savingsAverageValues, 0),
+  }
   const investmentMax = Math.max(
     ...rows.map((row) => Math.max(Math.abs(asNumber(row['📈 Inversiones'])), Math.abs(asNumber(row['Dinero Invertido'])))),
     1,
@@ -223,6 +266,12 @@ export function ResultsPanel({
   const typologyRows = getPeriodRows(rows, typologyPeriod)
   const selectedTypologyFields = typologyFields.filter(({ field }) => activeTypologyFields.includes(field))
   const typologyBounds = getTypologyBounds(typologyRows, selectedTypologyFields)
+  const summaryGroups = selectedRow ? getSummaryGroups(selectedRow) : null
+  const totalMoney = asNumber(selectedRow?.total)
+  const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
+  const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
+  const interestAmount = selectedRow ? getCategoryAmount(expenseAnalysis, selectedRow.Mes, 'intereses') : 0
+  const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
   const toggleTypologyField = (field) => {
     setTypologyTooltip(null)
     setActiveTypologyFields((current) =>
@@ -293,14 +342,60 @@ export function ResultsPanel({
           <div className="tab-content" role="tabpanel">
             {activeTab === 'resumen' && (
               <>
-                <div className="metrics-grid">
-                  {moneyFields.map((field) => (
-                    <article className="metric" key={field}>
-                      <span>{field}</span>
-                      <strong>{formatMoney(selectedRow[field])}</strong>
+                <section className="summary-dashboard">
+                  <div className="summary-groups">
+                    <div className="summary-group">
+                      <h3>Patrimonio</h3>
+                      <div className="summary-metrics">
+                        {summaryGroups.patrimony.map((item) => (
+                          <article className={item.label === 'Total' ? 'metric total-metric' : 'metric'} key={item.label}>
+                            <span>{item.label}</span>
+                            <strong>{formatMoney(item.value)}</strong>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="summary-group">
+                      <h3>Presupuesto</h3>
+                      <div className="summary-metrics budget-metrics">
+                        {summaryGroups.budget.map((item) => (
+                          <article className="metric" key={item.label}>
+                            <span>{item.label}</span>
+                            <strong>{formatMoney(item.value)}</strong>
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <aside className="summary-ratios">
+                    <article>
+                      <span>Dinero invertido sobre total</span>
+                      <strong>{formatPercent(investedPct)}</strong>
+                      <div className="ratio-bar">
+                        <span style={{ width: `${Math.max(0, Math.min(100, investedPct))}%` }} />
+                      </div>
+                      <small>
+                        {formatMoney(investedMoney)} de {formatMoney(totalMoney)}
+                      </small>
                     </article>
-                  ))}
-                </div>
+                    <article className="interest-ratio">
+                      <div
+                        className="mini-donut"
+                        style={{
+                          '--donut-value': `${Math.max(0, Math.min(100, interestPct))}%`,
+                        }}
+                      >
+                        <strong>{formatPercent(interestPct)}</strong>
+                      </div>
+                      <div>
+                        <span>Intereses sobre dinero invertido</span>
+                        <strong>{formatMoney(interestAmount)}</strong>
+                      </div>
+                    </article>
+                  </aside>
+                </section>
 
                 {previousRow && (
                   <div className="comparison-grid">
@@ -502,6 +597,49 @@ export function ResultsPanel({
                       <strong>{asNumber(savingsAnalysis.ultimo_mes?.porcentaje_ahorro).toFixed(1)}%</strong>
                     </article>
                   </div>
+
+                  <section className="trend-panel compact-trend savings-percent-panel">
+                    <div className="table-toolbar compact-toolbar">
+                      <h3 className="table-title">Porcentaje de ahorro</h3>
+                      <span>Media móvil 3 meses</span>
+                    </div>
+                    <div className="chart-scale">
+                      <span>{formatPercent(savingsPercentBounds.max)}</span>
+                      <span>{formatPercent(savingsPercentBounds.min)}</span>
+                    </div>
+                    <svg className="savings-percent-chart" viewBox="0 0 640 220" role="img" aria-label="Porcentaje de ahorro mensual">
+                      <line className="chart-axis" x1="18" x2="622" y1="202" y2="202" />
+                      <line className="chart-axis" x1="18" x2="18" y1="18" y2="202" />
+                      <polyline
+                        fill="none"
+                        points={getSvgPoints(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max)}
+                        stroke="#286b57"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="3"
+                      />
+                      <polyline
+                        className="chart-moving-line"
+                        fill="none"
+                        points={getSvgPoints(savingsAverageValues, savingsPercentBounds.min, savingsPercentBounds.max)}
+                        stroke="#b85a4b"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="3"
+                      />
+                      {getSvgCoordinates(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max).map(({ x, y }, index) => (
+                        <circle cx={x} cy={y} fill="#286b57" key={savingsPercentRows[index]?.Mes} r="4">
+                          <title>
+                            {savingsPercentRows[index]?.Mes}: {formatPercent(savingsPercentValues[index])}
+                          </title>
+                        </circle>
+                      ))}
+                    </svg>
+                    <div className="savings-percent-legend">
+                      <span>Ahorro mensual</span>
+                      <span>Media móvil</span>
+                    </div>
+                  </section>
 
                   <section className="trend-panel compact-trend">
                     <h3 className="table-title">Balance mensual</h3>
