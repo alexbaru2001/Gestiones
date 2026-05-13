@@ -95,7 +95,45 @@ class LegacyPipelineAdapter:
         if isinstance(gastos, pd.DataFrame) and isinstance(ingresos, pd.DataFrame):
             analysis["gastos"] = self._build_expense_analysis(gastos, ingresos)
             analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos)
+            analysis["ingresos"] = self._build_income_analysis(ingresos)
         return analysis
+
+    def _build_income_analysis(self, ingresos: pd.DataFrame) -> dict[str, Any]:
+        required = {"fecha", "categoria", "cantidad"}
+        if ingresos.empty or not required.issubset(ingresos.columns):
+            return {"categorias": [], "totales_categoria": [], "ultimo_mes": None}
+
+        data = ingresos.copy()
+        data["fecha"] = pd.to_datetime(data["fecha"], errors="coerce")
+        data["cantidad"] = pd.to_numeric(data["cantidad"].astype(str).str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
+        data = data.dropna(subset=["fecha"])
+        if data.empty:
+            return {"categorias": [], "totales_categoria": [], "ultimo_mes": None}
+
+        data["Mes"] = data["fecha"].dt.to_period("M").astype(str)
+        categorias = data.pivot_table(index="Mes", columns="categoria", values="cantidad", aggfunc="sum", fill_value=0)
+        categorias_records = self._dataframe_to_records(categorias.reset_index())
+        totals = categorias.sum().sort_values(ascending=False)
+        totals_records = [
+            self._clean_record({"categoria": category, "total": amount})
+            for category, amount in totals.items()
+            if float(amount) != 0
+        ]
+        latest_month = str(categorias.index.max())
+        latest_values = categorias.loc[latest_month].sort_values(ascending=False)
+        latest_records = [
+            self._clean_record({"categoria": category, "total": amount})
+            for category, amount in latest_values.items()
+            if float(amount) != 0
+        ]
+        return {
+            "categorias": categorias_records,
+            "totales_categoria": totals_records,
+            "ultimo_mes": {
+                "Mes": latest_month,
+                "categorias": latest_records,
+            },
+        }
 
     def _build_expense_analysis(self, gastos: pd.DataFrame, ingresos: pd.DataFrame) -> dict[str, Any]:
         from logic import resumen_gastos, resumen_mensual  # type: ignore

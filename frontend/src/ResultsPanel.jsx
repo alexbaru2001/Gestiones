@@ -127,6 +127,14 @@ function getSavingsAnalysis(result) {
   }
 }
 
+function getIncomeAnalysis(result) {
+  return result?.analisis?.ingresos ?? {
+    categorias: [],
+    totales_categoria: [],
+    ultimo_mes: null,
+  }
+}
+
 function movingAverage(values, windowSize = 3) {
   return values.map((_, index) => {
     const start = Math.max(0, index - windowSize + 1)
@@ -246,6 +254,7 @@ export function ResultsPanel({
   const [typologyTooltip, setTypologyTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
+  const incomeAnalysis = getIncomeAnalysis(result)
   const expenseMax = Math.max(...expenseAnalysis.totales_categoria.map((row) => asNumber(row.total)), 1)
   const savingsAnalysis = getSavingsAnalysis(result)
   const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
@@ -277,7 +286,7 @@ export function ResultsPanel({
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
-  const interestAmount = selectedRow ? getCategoryAmount(expenseAnalysis, selectedRow.Mes, ['interes', 'intereses']) : 0
+  const interestAmount = selectedRow ? getCategoryAmount(incomeAnalysis, selectedRow.Mes, ['interes', 'intereses']) : 0
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
   const toggleTypologyField = (field) => {
     setTypologyTooltip(null)
