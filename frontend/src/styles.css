@@ -420,7 +420,7 @@ button:disabled {
 
 .summary-dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -445,12 +445,12 @@ button:disabled {
 
 .summary-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
 .budget-metrics {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .metric {
@@ -487,6 +487,7 @@ button:disabled {
 
 .summary-ratios {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 

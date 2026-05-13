@@ -201,11 +201,18 @@ function getSummaryGroups(row) {
   }
 }
 
-function getCategoryAmount(expenseAnalysis, month, category) {
-  const normalizedCategory = category.toLowerCase()
+function normalizeLabel(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function getCategoryAmount(expenseAnalysis, month, categories) {
+  const normalizedCategories = (Array.isArray(categories) ? categories : [categories]).map(normalizeLabel)
   const monthlyRow = expenseAnalysis.categorias.find((row) => row.Mes === month)
   if (!monthlyRow) return 0
-  const key = Object.keys(monthlyRow).find((field) => field.toLowerCase() === normalizedCategory)
+  const key = Object.keys(monthlyRow).find((field) => normalizedCategories.includes(normalizeLabel(field)))
   return asNumber(key ? monthlyRow[key] : 0)
 }
 
@@ -270,7 +277,7 @@ export function ResultsPanel({
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
-  const interestAmount = selectedRow ? getCategoryAmount(expenseAnalysis, selectedRow.Mes, 'intereses') : 0
+  const interestAmount = selectedRow ? getCategoryAmount(expenseAnalysis, selectedRow.Mes, ['interes', 'intereses']) : 0
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
   const toggleTypologyField = (field) => {
     setTypologyTooltip(null)
@@ -391,7 +398,7 @@ export function ResultsPanel({
                       </div>
                       <div>
                         <span>Intereses sobre dinero invertido</span>
-                        <strong>{formatMoney(interestAmount)}</strong>
+                        <strong>{formatMoney(Math.abs(interestAmount))}</strong>
                       </div>
                     </article>
                   </aside>
