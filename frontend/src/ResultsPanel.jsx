@@ -224,10 +224,14 @@ function getCategoryAmount(expenseAnalysis, month, categories) {
   return asNumber(key ? monthlyRow[key] : 0)
 }
 
-function getCategoryTotal(analysis, categories) {
+function getCategoryTotalUntilMonth(analysis, month, categories) {
   const normalizedCategories = (Array.isArray(categories) ? categories : [categories]).map(normalizeLabel)
-  const row = analysis.totales_categoria.find((item) => normalizedCategories.includes(normalizeLabel(item.categoria)))
-  return asNumber(row?.total)
+  return analysis.categorias
+    .filter((row) => !month || String(row.Mes) <= String(month))
+    .reduce((total, row) => {
+      const key = Object.keys(row).find((field) => normalizedCategories.includes(normalizeLabel(field)))
+      return total + asNumber(key ? row[key] : 0)
+    }, 0)
 }
 
 function formatPercent(value) {
@@ -292,7 +296,7 @@ export function ResultsPanel({
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
-  const interestAmount = getCategoryTotal(incomeAnalysis, ['interes', 'intereses'])
+  const interestAmount = getCategoryTotalUntilMonth(incomeAnalysis, selectedRow?.Mes, ['interes', 'intereses'])
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
   const toggleTypologyField = (field) => {
     setTypologyTooltip(null)
