@@ -5,9 +5,13 @@ from functools import lru_cache
 import json
 import math
 import os
+from pathlib import Path
+import re
 from typing import Any
 
 import pandas as pd
+
+from backend.config import get_investment_knowledge_path
 
 
 EXCHANGE_NAMES = {
@@ -24,6 +28,38 @@ EXCHANGE_NAMES = {
     "GER": "Xetra",
     "MIL": "Borsa Italiana",
 }
+
+LONG_TERM_DIVIDEND_PROFILE = """
+Perfil de análisis: inversión a largo plazo por dividendos crecientes.
+- Horizonte principal: 10-30 años. El objetivo son rentas crecientes y sostenibles, no adivinar movimientos de corto plazo.
+- Priorizar empresas sólidas, estables, entendibles, con ventajas competitivas y dividendo sostenible.
+- Evitar chicharros, modas, empresas excesivamente cíclicas o negocios donde el dividendo dependa de supuestos débiles.
+- Valorar disciplina de compras periódicas, diversificación por sectores/países y reinversión de dividendos.
+- Usar métricas simples: RPD, crecimiento del dividendo, payout, caja, deuda, estabilidad del negocio y calidad del historial.
+- Separar datos objetivos de interpretación cualitativa. No inventar cifras ni fuentes.
+""".strip()
+
+LONG_TERM_REPORT_SCHEMA = """
+ANÁLISIS A LARGO PLAZO - INVERSIÓN POR DIVIDENDOS
+
+Empresa:
+Ticker / Mercado:
+Sector:
+País:
+Tipo de inversor al que encaja:
+
+1. DESCRIPCIÓN DEL NEGOCIO
+2. ESTABILIDAD Y PREVISIBILIDAD
+3. VENTAJAS COMPETITIVAS
+4. HISTORIAL DE DIVIDENDOS
+5. SOSTENIBILIDAD DEL DIVIDENDO
+6. DEUDA Y SALUD FINANCIERA
+7. RIESGOS PRINCIPALES A LARGO PLAZO
+8. ENCAJE EN UNA CARTERA DE DIVIDENDOS
+9. VALORACIÓN CUALITATIVA, SIN PRECIO OBJETIVO
+10. CONCLUSIÓN PARA EL INVERSOR PACIENTE
+11. FUENTES UTILIZADAS Y GRADO DE CONFIANZA
+""".strip()
 
 
 @dataclass(frozen=True)
@@ -475,8 +511,16 @@ def build_ai_analysis(
         }
 
     try:
-        text = request_groq_analysis(api_key, model, build_groq_prompt(metrics, rules, total_score, breakdown, flags))
-        return {"configured": True, "model": model, "text": text, "error": None}
+        knowledge = load_investment_knowledge()
+        text = request_groq_analysis(api_key, model, build_groq_prompt(metrics, rules, total_score, breakdown, flags, knowledge))
+        return {
+            "configured": True,
+            "model": model,
+            "profile": "largo_plazo_dividendos",
+            "knowledge_sources": knowledge["sources"],
+            "text": text,
+            "error": None,
+        }
     except Exception as exc:
         return {"configured": True, "model": model, "text": None, "error": f"No se pudo generar análisis Groq: {exc}"}
 
@@ -487,10 +531,22 @@ def build_groq_prompt(
     total_score: float,
     breakdown: dict[str, float],
     flags: list[str],
+    knowledge: dict[str, Any] | None = None,
 ) -> str:
+    knowledge = knowledge or {"sources": [], "context": ""}
+    sources_text = "\n".join(f"- {source}" for source in knowledge["sources"]) or "- Sin documentos locales cargados"
     return f"""
-Eres un analista conservador de inversión a largo plazo por dividendos crecientes.
-Usa únicamente los datos proporcionados. Si falta un dato, dilo claramente como dato no disponible.
+Eres un analista de inversión a largo plazo por dividendos crecientes, inspirado en principios divulgativos de inversión paciente.
+No afirmes ser una persona real ni atribuyas opiniones personales a autores concretos.
+Usa los datos cuantitativos proporcionados y el contexto local como guía cualitativa. Si falta un dato, dilo claramente.
+No inventes cifras, fuentes, recortes de dividendos ni políticas corporativas.
+Prioriza el razonamiento conservador y diferencia datos objetivos de valoración cualitativa.
+
+Perfil obligatorio:
+{LONG_TERM_DIVIDEND_PROFILE}
+
+Contexto local extraído de documentos de educación financiera e inversión a largo plazo:
+{knowledge["context"] or "No hay extractos locales disponibles. Usa solo el perfil y los datos cuantitativos."}
 
 Empresa:
 - Ticker: {metrics.ticker}
@@ -531,12 +587,18 @@ Score:
 - Desglose: {breakdown}
 - Banderas rojas: {flags if flags else "Ninguna"}
 
-Devuelve en español:
-1. Resumen ejecutivo en 5 líneas.
-2. Diagnóstico del dividendo.
-3. Solidez financiera.
-4. Valoración frente a los umbrales.
-5. Conclusión: Apta, Dudosa o No apta para dividendos crecientes, con 3 acciones prácticas.
+Formato obligatorio del informe:
+{LONG_TERM_REPORT_SCHEMA}
+
+Fuentes disponibles para este análisis:
+- Datos cuantitativos calculados por la aplicación con yfinance.
+{sources_text}
+
+En la sección 11 indica:
+- Fuentes principales usadas.
+- Fuentes secundarias si aplica.
+- Grado de confianza: Alto, Medio o Bajo.
+- Nota explícita si faltan fuentes primarias de la empresa o contraste regulatorio.
 """.strip()
 
 
@@ -546,11 +608,17 @@ def request_groq_analysis(api_key: str, model: str, prompt: str) -> str:
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "Responde como analista financiero conservador. No inventes cifras."},
+            {
+                "role": "system",
+                "content": (
+                    "Responde como analista financiero conservador de largo plazo por dividendos crecientes. "
+                    "No inventes cifras ni fuentes. Redacta en español claro, didáctico y estructurado."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
-        "max_tokens": 900,
+        "max_tokens": 2200,
     }
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -575,6 +643,85 @@ def request_groq_analysis(api_key: str, model: str, prompt: str) -> str:
 
     data = response.json()
     return data["choices"][0]["message"]["content"].strip()
+
+
+@lru_cache(maxsize=1)
+def load_investment_knowledge() -> dict[str, Any]:
+    path = get_investment_knowledge_path()
+    if not path.exists():
+        return {"sources": [], "context": ""}
+
+    documents = []
+    for file_path in sorted(path.iterdir()):
+        if file_path.suffix.lower() not in {".pdf", ".txt", ".md"}:
+            continue
+        text = extract_knowledge_text(file_path)
+        if not text:
+            continue
+        documents.append((file_path.name, text))
+
+    snippets = []
+    sources = []
+    for filename, text in documents:
+        sources.append(filename)
+        snippets.extend(select_knowledge_snippets(filename, text))
+
+    return {
+        "sources": sources,
+        "context": "\n\n".join(snippets[:10])[:7000],
+    }
+
+
+def extract_knowledge_text(file_path: Path) -> str:
+    try:
+        if file_path.suffix.lower() == ".pdf":
+            from pypdf import PdfReader
+
+            reader = PdfReader(file_path)
+            pages = [(page.extract_text() or "") for page in reader.pages[:80]]
+            return normalize_knowledge_text("\n".join(pages))
+        return normalize_knowledge_text(file_path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return ""
+
+
+def normalize_knowledge_text(text: str) -> str:
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def select_knowledge_snippets(filename: str, text: str) -> list[str]:
+    keywords = [
+        "dividendo",
+        "largo plazo",
+        "renta",
+        "reinvertir",
+        "diversificación",
+        "deuda",
+        "empresa",
+        "psicología",
+        "inflación",
+        "comprar",
+    ]
+    lowered = text.lower()
+    snippets = []
+    used_ranges: list[tuple[int, int]] = []
+    for keyword in keywords:
+        index = lowered.find(keyword)
+        if index == -1:
+            continue
+        start = max(0, index - 350)
+        end = min(len(text), index + 850)
+        if any(max(start, saved_start) < min(end, saved_end) for saved_start, saved_end in used_ranges):
+            continue
+        used_ranges.append((start, end))
+        snippet = text[start:end].strip()
+        snippets.append(f"Fuente local ({filename}): {snippet}")
+        if len(snippets) >= 3:
+            break
+    if not snippets and text:
+        snippets.append(f"Fuente local ({filename}): {text[:1000]}")
+    return snippets
 
 
 def series_to_records(series: pd.Series, index_key: str, value_key: str) -> list[dict[str, Any]]:

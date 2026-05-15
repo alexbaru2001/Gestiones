@@ -270,6 +270,10 @@ function AiAnalysis({ analysis }) {
   return (
     <div className="ai-analysis">
       <span>Modelo: {analysis.model}</span>
+      {analysis.profile ? <span>Perfil: largo plazo por dividendos crecientes</span> : null}
+      {analysis.knowledge_sources?.length ? (
+        <span>Conocimiento local: {analysis.knowledge_sources.join(', ')}</span>
+      ) : null}
       {analysis.text.split('\n').map((line, index) => (
         <p key={`${index}-${line}`}>{line || '\u00a0'}</p>
       ))}

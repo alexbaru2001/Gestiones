@@ -8,6 +8,7 @@ services:
       GESTIONES_CORS_ORIGINS: ${GESTIONES_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       GESTIONES_OBJECTIVES_PATH: ${GESTIONES_OBJECTIVES_PATH:-/app/Personal_finanzas/Data/objetivos_vista.json}
       GESTIONES_INVESTMENTS_PATH: ${GESTIONES_INVESTMENTS_PATH:-/app/Personal_finanzas/Data/Inversiones}
+      GESTIONES_INVESTMENT_KNOWLEDGE_PATH: ${GESTIONES_INVESTMENT_KNOWLEDGE_PATH:-/app/Personal_finanzas/Data/Inversiones/knowledge}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
     ports:
