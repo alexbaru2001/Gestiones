@@ -997,10 +997,14 @@ button:disabled {
   gap: 10px;
 }
 
+.savings-chart-wrap {
+  position: relative;
+}
+
 .savings-percent-chart {
   display: block;
   width: 100%;
-  min-height: 230px;
+  min-height: 280px;
 }
 
 .savings-percent-legend {
@@ -1208,6 +1212,33 @@ button:disabled {
   stroke-width: 1;
 }
 
+.chart-grid-line {
+  stroke: #e5ece4;
+  stroke-dasharray: 4 6;
+  stroke-width: 1;
+}
+
+.chart-axis-tick {
+  stroke: #b9c7bd;
+  stroke-width: 1.2;
+}
+
+.chart-axis-label {
+  fill: #617069;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.chart-value-label {
+  fill: #13231c;
+  font-size: 11px;
+  font-weight: 850;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+
 .chart-moving-line {
   stroke-dasharray: 8 7;
   opacity: 0.65;
@@ -1216,7 +1247,21 @@ button:disabled {
 .chart-point {
   cursor: pointer;
   stroke: #ffffff;
+  stroke-width: 2.5;
+  transition:
+    filter 160ms ease,
+    r 160ms ease;
+}
+
+.chart-average-point {
+  opacity: 0.72;
+  stroke: #ffffff;
   stroke-width: 2;
+}
+
+.chart-point:hover,
+.chart-point:focus {
+  filter: drop-shadow(0 3px 8px rgba(19, 106, 81, 0.28));
 }
 
 .chart-point:focus {
@@ -1626,6 +1671,10 @@ button:disabled {
 
 .investment-tooltip {
   min-width: 150px;
+}
+
+.savings-tooltip {
+  min-width: 170px;
 }
 
 .score-breakdown {

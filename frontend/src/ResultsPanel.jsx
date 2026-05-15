@@ -143,21 +143,36 @@ function movingAverage(values, windowSize = 3) {
   })
 }
 
-function getSvgPoints(values, min, max) {
-  return getSvgCoordinates(values, min, max)
+function getSvgPoints(values, min, max, options) {
+  return getSvgCoordinates(values, min, max, options)
     .map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`)
     .join(' ')
 }
 
-function getSvgCoordinates(values, min, max) {
-  const width = 640
-  const height = 220
-  const padding = 18
+function getSvgCoordinates(values, min, max, options = {}) {
+  const width = options.width ?? 640
+  const height = options.height ?? 220
+  const padding = options.padding ?? 18
+  const paddingLeft = options.paddingLeft ?? padding
+  const paddingRight = options.paddingRight ?? padding
+  const paddingTop = options.paddingTop ?? padding
+  const paddingBottom = options.paddingBottom ?? padding
   const range = max - min || 1
   return values.map((value, index) => ({
-    x: padding + (index / Math.max(1, values.length - 1)) * (width - padding * 2),
-    y: height - padding - ((value - min) / range) * (height - padding * 2),
+    x: paddingLeft + (index / Math.max(1, values.length - 1)) * (width - paddingLeft - paddingRight),
+    y: height - paddingBottom - ((value - min) / range) * (height - paddingTop - paddingBottom),
   }))
+}
+
+function getAxisTicks(min, max, count = 5) {
+  const range = max - min || 1
+  return Array.from({ length: count }, (_, index) => min + (range / Math.max(1, count - 1)) * index)
+}
+
+function formatMonthLabel(value) {
+  const [year, month] = String(value ?? '').split('-')
+  if (!year || !month) return value
+  return `${month}/${year.slice(-2)}`
 }
 
 function getTypologyBounds(rows, fields) {
@@ -262,6 +277,7 @@ export function ResultsPanel({
   const [activeTypologyFields, setActiveTypologyFields] = useState(defaultTypologyFields)
   const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [typologyTooltip, setTypologyTooltip] = useState(null)
+  const [savingsTooltip, setSavingsTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
   const incomeAnalysis = getIncomeAnalysis(result)
@@ -275,6 +291,28 @@ export function ResultsPanel({
     max: Math.max(...savingsPercentValues, ...savingsAverageValues, 100),
     min: Math.min(...savingsPercentValues, ...savingsAverageValues, 0),
   }
+  const savingsChart = {
+    width: 640,
+    height: 260,
+    paddingLeft: 54,
+    paddingRight: 22,
+    paddingTop: 24,
+    paddingBottom: 42,
+  }
+  const savingsCoordinates = getSvgCoordinates(
+    savingsPercentValues,
+    savingsPercentBounds.min,
+    savingsPercentBounds.max,
+    savingsChart,
+  )
+  const savingsAverageCoordinates = getSvgCoordinates(
+    savingsAverageValues,
+    savingsPercentBounds.min,
+    savingsPercentBounds.max,
+    savingsChart,
+  )
+  const savingsYAxisTicks = getAxisTicks(savingsPercentBounds.min, savingsPercentBounds.max, 5)
+  const savingsXLabelStep = Math.max(1, Math.ceil(savingsPercentRows.length / 6))
   const investmentMax = Math.max(
     ...rows.map((row) => Math.max(Math.abs(asNumber(row['📈 Inversiones'])), Math.abs(asNumber(row['Dinero Invertido'])))),
     1,
@@ -629,38 +667,110 @@ export function ResultsPanel({
                       <h3 className="table-title">Porcentaje de ahorro</h3>
                       <span>Media móvil 3 meses</span>
                     </div>
-                    <div className="chart-scale">
-                      <span>{formatPercent(savingsPercentBounds.max)}</span>
-                      <span>{formatPercent(savingsPercentBounds.min)}</span>
+                    <div className="savings-chart-wrap">
+                      <svg
+                        className="savings-percent-chart"
+                        onMouseLeave={() => setSavingsTooltip(null)}
+                        viewBox="0 0 640 260"
+                        role="img"
+                        aria-label="Porcentaje de ahorro mensual"
+                      >
+                        {savingsYAxisTicks.map((tick) => {
+                          const y =
+                            savingsChart.height -
+                            savingsChart.paddingBottom -
+                            ((tick - savingsPercentBounds.min) / (savingsPercentBounds.max - savingsPercentBounds.min || 1)) *
+                              (savingsChart.height - savingsChart.paddingTop - savingsChart.paddingBottom)
+                          return (
+                            <g key={tick.toFixed(2)}>
+                              <line className="chart-grid-line" x1="54" x2="618" y1={y} y2={y} />
+                              <text className="chart-axis-label" x="44" y={y + 4} textAnchor="end">
+                                {formatPercent(tick)}
+                              </text>
+                            </g>
+                          )
+                        })}
+                        <line className="chart-axis" x1="54" x2="618" y1="218" y2="218" />
+                        <line className="chart-axis" x1="54" x2="54" y1="24" y2="218" />
+                        {savingsPercentRows.map((row, index) =>
+                          index % savingsXLabelStep === 0 || index === savingsPercentRows.length - 1 ? (
+                            <g key={row.Mes}>
+                              <line className="chart-axis-tick" x1={savingsCoordinates[index]?.x} x2={savingsCoordinates[index]?.x} y1="218" y2="224" />
+                              <text className="chart-axis-label" x={savingsCoordinates[index]?.x} y="244" textAnchor="middle">
+                                {formatMonthLabel(row.Mes)}
+                              </text>
+                            </g>
+                          ) : null,
+                        )}
+                        <polyline
+                          fill="none"
+                          points={getSvgPoints(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max, savingsChart)}
+                          stroke="#286b57"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="3"
+                        />
+                        <polyline
+                          className="chart-moving-line"
+                          fill="none"
+                          points={getSvgPoints(savingsAverageValues, savingsPercentBounds.min, savingsPercentBounds.max, savingsChart)}
+                          stroke="#b85a4b"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="3"
+                        />
+                        {savingsAverageCoordinates.map(({ x, y }, index) => (
+                          <circle className="chart-average-point" cx={x} cy={y} fill="#b85a4b" key={`avg-${savingsPercentRows[index]?.Mes}`} r="3" />
+                        ))}
+                        {savingsCoordinates.map(({ x, y }, index) => (
+                          <g key={savingsPercentRows[index]?.Mes}>
+                            <text className="chart-value-label" x={x} y={y < 42 ? y + 18 : y - 10} textAnchor="middle">
+                              {formatPercent(savingsPercentValues[index])}
+                            </text>
+                            <circle
+                              className="chart-point"
+                              cx={x}
+                              cy={y}
+                              fill="#286b57"
+                              onFocus={() =>
+                                setSavingsTooltip({
+                                  average: savingsAverageValues[index],
+                                  month: savingsPercentRows[index]?.Mes,
+                                  value: savingsPercentValues[index],
+                                  x,
+                                  y,
+                                })
+                              }
+                              onMouseEnter={() =>
+                                setSavingsTooltip({
+                                  average: savingsAverageValues[index],
+                                  month: savingsPercentRows[index]?.Mes,
+                                  value: savingsPercentValues[index],
+                                  x,
+                                  y,
+                                })
+                              }
+                              r="5"
+                              tabIndex="0"
+                            />
+                          </g>
+                        ))}
+                      </svg>
+                      {savingsTooltip && (
+                        <div
+                          className="chart-tooltip savings-tooltip"
+                          style={{
+                            '--tooltip-color': '#286b57',
+                            left: `${(savingsTooltip.x / savingsChart.width) * 100}%`,
+                            top: `${(savingsTooltip.y / savingsChart.height) * 100}%`,
+                          }}
+                        >
+                          <strong>{savingsTooltip.month}</strong>
+                          <span>Ahorro: {formatPercent(savingsTooltip.value)}</span>
+                          <span>Media móvil: {formatPercent(savingsTooltip.average)}</span>
+                        </div>
+                      )}
                     </div>
-                    <svg className="savings-percent-chart" viewBox="0 0 640 220" role="img" aria-label="Porcentaje de ahorro mensual">
-                      <line className="chart-axis" x1="18" x2="622" y1="202" y2="202" />
-                      <line className="chart-axis" x1="18" x2="18" y1="18" y2="202" />
-                      <polyline
-                        fill="none"
-                        points={getSvgPoints(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max)}
-                        stroke="#286b57"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="3"
-                      />
-                      <polyline
-                        className="chart-moving-line"
-                        fill="none"
-                        points={getSvgPoints(savingsAverageValues, savingsPercentBounds.min, savingsPercentBounds.max)}
-                        stroke="#b85a4b"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="3"
-                      />
-                      {getSvgCoordinates(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max).map(({ x, y }, index) => (
-                        <circle cx={x} cy={y} fill="#286b57" key={savingsPercentRows[index]?.Mes} r="4">
-                          <title>
-                            {savingsPercentRows[index]?.Mes}: {formatPercent(savingsPercentValues[index])}
-                          </title>
-                        </circle>
-                      ))}
-                    </svg>
                     <div className="savings-percent-legend">
                       <span>Ahorro mensual</span>
                       <span>Media móvil</span>
