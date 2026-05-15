@@ -1,6 +1,23 @@
 :root {
-  color: #17201a;
-  background: #f5f7f1;
+  --color-ink: #13231c;
+  --color-muted: #617069;
+  --color-subtle: #7d8a83;
+  --color-bg: #eef2ef;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f7f9f5;
+  --color-surface-raised: #fbfcf9;
+  --color-line: #d8e0d7;
+  --color-line-strong: #c5d1c6;
+  --color-primary: #136a51;
+  --color-primary-strong: #0c4f3c;
+  --color-primary-soft: #e4f1ec;
+  --color-blue: #486c9f;
+  --color-gold: #c89532;
+  --color-danger: #b24b3c;
+  --shadow-soft: 0 18px 45px rgba(18, 35, 28, 0.08);
+  --shadow-card: 0 10px 24px rgba(18, 35, 28, 0.06);
+  color: var(--color-ink);
+  background: var(--color-bg);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -15,6 +32,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0, rgba(238, 242, 239, 0.92) 360px),
+    linear-gradient(135deg, #edf3ef 0%, #f8f6ef 48%, #edf1f7 100%);
 }
 
 button,
@@ -2157,6 +2177,499 @@ th {
   border-top-color: #286b57;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+/* Visual refresh: financial dashboard style */
+.app-shell {
+  width: min(1320px, calc(100% - 40px));
+  padding: 24px 0 48px;
+}
+
+.topbar {
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  margin-bottom: 18px;
+  border: 1px solid rgba(197, 209, 198, 0.82);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(14px);
+  padding: 16px 18px;
+}
+
+.topbar h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-ink);
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 850;
+}
+
+.topbar h1::before {
+  width: 12px;
+  height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--color-primary), var(--color-blue));
+  content: "";
+}
+
+.topbar p {
+  color: var(--color-muted);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.area-switch {
+  border-color: #d4ded6;
+  background: #f4f7f3;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.area-switch button,
+.tab-button,
+.period-tabs button,
+.portfolio-chart-tabs button {
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.area-switch button:hover,
+.tab-button:hover,
+.period-tabs button:hover,
+.portfolio-chart-tabs button:hover,
+.ghost-button:hover,
+.text-button:hover {
+  transform: translateY(-1px);
+}
+
+.area-switch button.active,
+.tab-button.active,
+.period-tabs button.active,
+.portfolio-chart-tabs button.active {
+  background: var(--color-primary);
+  box-shadow: 0 8px 18px rgba(19, 106, 81, 0.18);
+  color: #ffffff;
+}
+
+.workspace {
+  grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.panel,
+.portfolio-card,
+.investment-card,
+.summary-group,
+.summary-ratios article,
+.trend-panel,
+.budget-card,
+.budget-summary article,
+.expenses-panel,
+.typology-chart-panel,
+.typology-predictions {
+  border-color: rgba(210, 220, 210, 0.92);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-card);
+}
+
+.panel {
+  padding: 20px;
+}
+
+.panel-header {
+  align-items: center;
+  border-bottom: 1px solid #e5ebe3;
+  padding-bottom: 14px;
+}
+
+.panel-header h2,
+.table-title,
+.summary-group h3,
+.investment-card h3,
+.portfolio-card h3,
+.section-heading h3 {
+  color: var(--color-ink);
+  font-weight: 850;
+}
+
+.panel-header span,
+.muted-text,
+.movement-strip span,
+.chart-header span,
+.portfolio-evolution span,
+.portfolio-evolution small {
+  color: var(--color-muted);
+}
+
+.ghost-button,
+.text-button,
+.primary-button,
+.file-input span,
+.month-selector select,
+.period-selector select,
+.table-toolbar select,
+.portfolio-snapshot-card select,
+.field-grid input,
+.objective-row input,
+.ticker-form input {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.primary-button {
+  background: linear-gradient(180deg, #17765a 0%, var(--color-primary-strong) 100%);
+  box-shadow: 0 12px 22px rgba(19, 106, 81, 0.22);
+}
+
+.primary-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 28px rgba(19, 106, 81, 0.25);
+}
+
+.ghost-button,
+.text-button {
+  border-color: #d6e1d8;
+  background: #f7faf6;
+}
+
+.text-button {
+  color: var(--color-primary);
+}
+
+.text-button.danger {
+  color: var(--color-danger);
+}
+
+.file-input span {
+  border-color: #a9beb3;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(234, 243, 238, 0.8)),
+    var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.field-grid input,
+.objective-row input,
+.ticker-form input,
+.month-selector select,
+.period-selector select,
+.table-toolbar select,
+.portfolio-snapshot-card select {
+  border-color: #cedacf;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(19, 35, 28, 0.03);
+}
+
+.field-grid input:focus,
+.objective-row input:focus,
+.ticker-form input:focus,
+.month-selector select:focus,
+.period-selector select:focus,
+.table-toolbar select:focus,
+.portfolio-snapshot-card select:focus,
+button:focus-visible {
+  outline: 3px solid rgba(19, 106, 81, 0.18);
+  outline-offset: 2px;
+  border-color: var(--color-primary);
+}
+
+.objectives-section {
+  border-top-color: #e4ebe2;
+}
+
+.objective-row {
+  border-color: #dfe8de;
+  background: #f8faf6;
+}
+
+.tabs-nav {
+  gap: 9px;
+  border-bottom-color: #e3ebe3;
+  padding-bottom: 12px;
+}
+
+.tab-button {
+  border-color: #d6e0d5;
+  background: #ffffff;
+  color: #47564f;
+}
+
+.summary-dashboard {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 280px);
+  gap: 16px;
+}
+
+.summary-group {
+  padding: 16px;
+}
+
+.summary-metrics,
+.budget-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+}
+
+.metric,
+.savings-summary article,
+.investment-summary article,
+.reserve-summary article,
+.investment-kpis article,
+.portfolio-hero article,
+.portfolio-summary article,
+.broker-grid article,
+.imported-files article,
+.portfolio-position-grid article,
+.portfolio-evolution article,
+.objective-summary article,
+.comparison-item,
+.prediction-card,
+.criteria-grid article,
+.ratio-guide-grid article,
+.typology-latest article {
+  border-color: #dce6dc;
+  background: linear-gradient(180deg, #ffffff 0%, #f8faf7 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset;
+}
+
+.metric {
+  position: relative;
+  overflow: hidden;
+  min-height: 104px;
+  padding: 15px;
+}
+
+.metric::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: #d8e4de;
+  content: "";
+}
+
+.metric.total-metric::before {
+  background: var(--color-primary);
+}
+
+.metric span,
+.summary-ratios span,
+.summary-ratios small,
+.budget-summary span,
+.savings-summary span,
+.investment-summary span,
+.reserve-summary span,
+.investment-kpis span,
+.portfolio-hero span,
+.portfolio-summary span {
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.metric strong,
+.budget-summary strong,
+.savings-summary strong,
+.investment-summary strong,
+.reserve-summary strong,
+.portfolio-hero strong,
+.portfolio-summary strong,
+.summary-ratios strong {
+  color: #0e1f18;
+  font-weight: 850;
+}
+
+.total-metric {
+  border-color: rgba(19, 106, 81, 0.24);
+  background:
+    linear-gradient(180deg, rgba(228, 241, 236, 0.88), rgba(255, 255, 255, 0.94));
+}
+
+.summary-ratios {
+  grid-template-columns: 1fr;
+  align-self: start;
+}
+
+.ratio-bar,
+.trend-bar,
+.budget-bar,
+.category-bar,
+.savings-bar,
+.investment-bar,
+.reserve-bar,
+.portfolio-bar,
+.score-bar,
+.dividend-bars div {
+  background: #e3ebe5;
+}
+
+.ratio-bar span,
+.trend-bar.total span,
+.category-bar span,
+.savings-bar.positive span,
+.investment-bar.planned span,
+.reserve-bar.emergency span,
+.portfolio-bar span,
+.score-bar span,
+.dividend-bars div span {
+  background: var(--color-primary);
+}
+
+.trend-bar.gasto span,
+.savings-bar.negative span,
+.reserve-bar.gifts span,
+.portfolio-cost-bar span {
+  background: var(--color-danger);
+}
+
+.trend-bar.presupuesto span,
+.budget-segment.remaining,
+.reserve-bar.holidays span {
+  background: var(--color-gold);
+}
+
+.budget-segment.committed {
+  background: #65736c;
+}
+
+.budget-segment.spent {
+  background: var(--color-danger);
+}
+
+.investment-bar.invested span {
+  background: var(--color-blue);
+}
+
+.mini-donut {
+  background: conic-gradient(var(--color-danger) 0 var(--donut-value), #e3ebe5 var(--donut-value) 100%);
+}
+
+.mini-donut::before,
+.portfolio-donut::before {
+  background: #ffffff;
+}
+
+.movement-strip span {
+  border-color: #dbe5db;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(18, 35, 28, 0.03);
+}
+
+.trend-panel,
+.expenses-panel,
+.typology-chart-panel,
+.typology-predictions,
+.portfolio-card,
+.investment-card {
+  padding: 16px;
+}
+
+.category-row,
+.portfolio-distribution article,
+.trend-row,
+.savings-row,
+.investment-row,
+.reserve-row,
+.score-row,
+.dividend-bars article {
+  border-radius: 8px;
+}
+
+.economic-chart-wrap {
+  border-color: #d8e2d8;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 245, 0.92)),
+    repeating-linear-gradient(0deg, rgba(19, 35, 28, 0.035) 0 1px, transparent 1px 44px);
+}
+
+.economic-price-line {
+  stroke: var(--color-primary);
+}
+
+.economic-average-line {
+  stroke: var(--color-blue);
+}
+
+.economic-hover-point:hover {
+  fill: rgba(19, 106, 81, 0.14);
+  stroke: var(--color-primary);
+}
+
+.portfolio-structure {
+  padding-top: 4px;
+}
+
+.portfolio-donut {
+  box-shadow:
+    0 12px 28px rgba(18, 35, 28, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.portfolio-summary-toggle {
+  border-color: #d6e0d5;
+  background: #f7faf6;
+  color: var(--color-primary);
+}
+
+.portfolio-summary-toggle:hover {
+  transform: translateY(-1px);
+}
+
+.table-wrap {
+  border: 1px solid #dce6dc;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.table-wrap .table-title,
+.table-wrap .table-toolbar {
+  padding: 14px 14px 0;
+}
+
+table {
+  min-width: 680px;
+}
+
+th {
+  background: #f5f8f4;
+  color: #53615a;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+td {
+  color: #24332c;
+}
+
+tbody tr:hover {
+  background: #f8fbf7;
+}
+
+.empty-state {
+  border: 1px dashed #d8e2d8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.spinner {
+  border-color: #dbe6df;
+  border-top-color: var(--color-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 @keyframes spin {
