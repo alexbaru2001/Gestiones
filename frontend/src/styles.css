@@ -2211,6 +2211,250 @@ th {
   grid-column: 1 / -1;
 }
 
+.portfolio-global-card {
+  gap: 18px;
+}
+
+.life-context-grid,
+.portfolio-analysis-grid,
+.position-analysis-head,
+.position-ratio-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.life-context-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.life-context-grid label {
+  display: grid;
+  gap: 7px;
+  color: #4f5a52;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.life-context-grid input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #cfd8cc;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #17201a;
+  padding: 0 10px;
+}
+
+.portfolio-analysis-grid,
+.position-analysis-head {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.portfolio-analysis-grid article,
+.position-analysis-head article {
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.portfolio-analysis-grid span,
+.position-analysis-head span,
+.position-score span {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+}
+
+.portfolio-analysis-grid strong,
+.position-analysis-head strong,
+.position-score strong {
+  display: block;
+  margin-top: 6px;
+  color: #17201a;
+  font-size: 20px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-analysis-grid small,
+.position-analysis-head small {
+  display: block;
+  margin-top: 6px;
+  color: #286b57;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.portfolio-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portfolio-guidance article {
+  border: 1px solid #dce6dc;
+  border-left: 4px solid #286b57;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 12px;
+}
+
+.portfolio-guidance strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #17201a;
+}
+
+.portfolio-guidance span {
+  color: #4f5a52;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portfolio-general-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 14px;
+}
+
+.portfolio-general-review section {
+  border: 1px solid #dce6dc;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 14px;
+}
+
+.portfolio-general-review h4 {
+  margin: 0 0 12px;
+  color: #17201a;
+  font-size: 15px;
+}
+
+.review-pill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-pill-grid article {
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.review-pill-grid span,
+.review-pill-grid small {
+  display: block;
+  color: #637069;
+  font-size: 12px;
+}
+
+.review-pill-grid strong {
+  display: block;
+  margin: 5px 0;
+  color: #17201a;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.next-steps-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding-left: 20px;
+  color: #3f4b42;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.next-steps-list li::marker {
+  color: #286b57;
+  font-weight: 850;
+}
+
+.portfolio-analysis-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portfolio-analysis-list article {
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.position-score {
+  justify-self: end;
+  min-width: 92px;
+  text-align: right;
+}
+
+.position-card-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.position-card-footer > span {
+  color: #637069;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.position-analysis {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  border-top: 1px solid #e1e8dd;
+  padding-top: 12px;
+}
+
+.position-analysis-head {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.position-ratio-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.position-ratio-grid span,
+.position-flags span {
+  border: 1px solid #e1e8dd;
+  border-radius: 999px;
+  background: #f8faf6;
+  color: #4f5a52;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.position-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.position-flags span {
+  border-color: #edcfbc;
+  background: #fff8f3;
+  color: #8f4638;
+}
+
+.position-ai-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.position-ai-summary p {
+  margin: 0;
+  color: #3f4b42;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .compact-table-wrap {
   overflow-x: auto;
 }
@@ -2364,6 +2608,7 @@ th {
 .period-selector select,
 .table-toolbar select,
 .portfolio-snapshot-card select,
+.life-context-grid input,
 .field-grid input,
 .objective-row input,
 .ticker-form input {
@@ -2418,6 +2663,12 @@ th {
   box-shadow: inset 0 1px 0 rgba(19, 35, 28, 0.03);
 }
 
+.life-context-grid input {
+  border-color: #cedacf;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(19, 35, 28, 0.03);
+}
+
 .field-grid input:focus,
 .objective-row input:focus,
 .ticker-form input:focus,
@@ -2425,6 +2676,7 @@ th {
 .period-selector select:focus,
 .table-toolbar select:focus,
 .portfolio-snapshot-card select:focus,
+.life-context-grid input:focus,
 button:focus-visible {
   outline: 3px solid rgba(19, 106, 81, 0.18);
   outline-offset: 2px;
@@ -2477,6 +2729,8 @@ button:focus-visible {
 .imported-files article,
 .portfolio-position-grid article,
 .portfolio-evolution article,
+.portfolio-analysis-grid article,
+.position-analysis-head article,
 .objective-summary article,
 .comparison-item,
 .prediction-card,
@@ -2746,6 +3000,14 @@ tbody tr:hover {
   .portfolio-snapshot-card,
   .portfolio-structure,
   .portfolio-distribution article,
+  .life-context-grid,
+  .portfolio-analysis-grid,
+  .portfolio-guidance,
+  .portfolio-general-review,
+  .review-pill-grid,
+  .portfolio-analysis-list,
+  .position-analysis-head,
+  .position-ratio-grid,
   .broker-grid,
   .imported-files,
   .portfolio-position-grid,
@@ -2762,6 +3024,16 @@ tbody tr:hover {
   .portfolio-chart-tabs button,
   .portfolio-summary-toggle {
     width: 100%;
+  }
+
+  .position-score {
+    justify-self: start;
+    text-align: left;
+  }
+
+  .position-card-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .objective-row {

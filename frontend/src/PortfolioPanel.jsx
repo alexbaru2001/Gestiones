@@ -26,6 +26,15 @@ const chartModes = [
   { id: 'asset_type', label: 'Tipo' },
 ]
 
+const defaultLifeContext = {
+  homePrice: 400000,
+  downPaymentPct: 30,
+  ownSharePct: 60,
+  maxMonthlyInvestment: '',
+}
+
+const lifeContextStorageKey = 'gestiones:portfolio-life-context'
+
 export function PortfolioPanel({ financeRows = [] }) {
   const fileInputRef = useRef(null)
   const [snapshot, setSnapshot] = useState(null)
@@ -38,6 +47,9 @@ export function PortfolioPanel({ financeRows = [] }) {
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
   const [chartMode, setChartMode] = useState('position')
   const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState('')
+  const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
+  const [expandedPositionKey, setExpandedPositionKey] = useState('')
+  const [positionAnalyses, setPositionAnalyses] = useState({})
 
   const financeByMonth = useMemo(() => buildFinanceByMonth(financeRows), [financeRows])
   const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots, financeByMonth), [financeByMonth, snapshot, snapshots])
@@ -49,6 +61,10 @@ export function PortfolioPanel({ financeRows = [] }) {
   const brokers = selectedSnapshot?.brokers ?? []
   const summary = selectedSnapshot?.summary
   const investmentPositions = useMemo(() => positions.filter((position) => position.asset_type !== 'cash'), [positions])
+  const analyzableStockPositions = useMemo(
+    () => investmentPositions.filter((position) => position.asset_type === 'stock' && position.ticker),
+    [investmentPositions],
+  )
   const investedTotal = useMemo(
     () => investmentPositions.reduce((total, position) => total + Number(position.current_value ?? 0), 0),
     [investmentPositions],
@@ -63,6 +79,14 @@ export function PortfolioPanel({ financeRows = [] }) {
     [evolutionRows],
   )
   const donutBackground = useMemo(() => buildDonutBackground(chartItems), [chartItems])
+  const selectedFinance = useMemo(
+    () => financeByMonth.get(selectedSnapshot?.snapshot_month) ?? getLatestFinance(financeByMonth),
+    [financeByMonth, selectedSnapshot?.snapshot_month],
+  )
+  const globalAnalysis = useMemo(
+    () => buildGlobalPortfolioAnalysis(investmentPositions, investedTotal, costTotal, selectedFinance, lifeContext),
+    [costTotal, investedTotal, investmentPositions, lifeContext, selectedFinance],
+  )
 
   useEffect(() => {
     loadPortfolio()
@@ -128,6 +152,34 @@ export function PortfolioPanel({ financeRows = [] }) {
       setStatus('')
     } finally {
       setIsImporting(false)
+    }
+  }
+
+  const updateLifeContext = (key, value) => {
+    const next = {
+      ...lifeContext,
+      [key]: key === 'maxMonthlyInvestment' ? value : Number(value),
+    }
+    setLifeContext(next)
+    localStorage.setItem(lifeContextStorageKey, JSON.stringify(next))
+  }
+
+  const togglePositionAnalysis = async (position) => {
+    const key = getPositionKey(position)
+    const isOpening = expandedPositionKey !== key
+    setExpandedPositionKey(isOpening ? key : '')
+    if (!isOpening || !position.ticker || positionAnalyses[key]?.status === 'loaded' || positionAnalyses[key]?.status === 'loading') return
+
+    setPositionAnalyses((current) => ({ ...current, [key]: { status: 'loading' } }))
+    try {
+      const data = await requestJson(
+        `/api/v1/investments/analyze?ticker=${encodeURIComponent(position.ticker)}`,
+        {},
+        `No se pudo analizar ${position.ticker}`,
+      )
+      setPositionAnalyses((current) => ({ ...current, [key]: { status: 'loaded', result: data.result } }))
+    } catch (err) {
+      setPositionAnalyses((current) => ({ ...current, [key]: { status: 'error', error: err.message } }))
     }
   }
 
@@ -208,6 +260,110 @@ export function PortfolioPanel({ financeRows = [] }) {
               <span>Dividendos netos</span>
               <strong>{formatMoney(summary?.dividends)}</strong>
             </article>
+          </section>
+
+          <section className="portfolio-card portfolio-global-card">
+            <div className="portfolio-chart-header">
+              <div>
+                <h3>Análisis global</h3>
+                <span className="muted-text">Cartera, liquidez y objetivo vivienda</span>
+              </div>
+            </div>
+            <div className="life-context-grid">
+              <label>
+                Vivienda objetivo
+                <input
+                  min="0"
+                  onChange={(event) => updateLifeContext('homePrice', event.target.value)}
+                  step="1000"
+                  type="number"
+                  value={lifeContext.homePrice}
+                />
+              </label>
+              <label>
+                Entrada
+                <input
+                  min="0"
+                  onChange={(event) => updateLifeContext('downPaymentPct', event.target.value)}
+                  step="1"
+                  type="number"
+                  value={lifeContext.downPaymentPct}
+                />
+              </label>
+              <label>
+                Mi parte
+                <input
+                  min="0"
+                  onChange={(event) => updateLifeContext('ownSharePct', event.target.value)}
+                  step="1"
+                  type="number"
+                  value={lifeContext.ownSharePct}
+                />
+              </label>
+              <label>
+                Inversión mensual máx.
+                <input
+                  min="0"
+                  onChange={(event) => updateLifeContext('maxMonthlyInvestment', event.target.value)}
+                  placeholder={formatMoney(globalAnalysis.plannedMonthlyInvestment)}
+                  step="50"
+                  type="number"
+                  value={lifeContext.maxMonthlyInvestment}
+                />
+              </label>
+            </div>
+            <div className="portfolio-analysis-grid">
+              <article>
+                <span>Objetivo entrada propia</span>
+                <strong>{formatMoney(globalAnalysis.ownDownPaymentGoal)}</strong>
+                <small>{formatMoney(globalAnalysis.downPaymentGoal)} entrada total</small>
+              </article>
+              <article>
+                <span>Liquidez visible</span>
+                <strong>{formatMoney(globalAnalysis.visibleLiquidity)}</strong>
+                <small>{formatNumber(globalAnalysis.goalProgress, '%')} del objetivo</small>
+              </article>
+              <article>
+                <span>Cartera invertida</span>
+                <strong>{formatMoney(investedTotal)}</strong>
+                <small>{formatNumber(globalAnalysis.investedWeight, '%')} del patrimonio visible</small>
+              </article>
+              <article>
+                <span>Margen hasta objetivo</span>
+                <strong>{formatMoney(globalAnalysis.remainingGoal)}</strong>
+                <small>{globalAnalysis.monthsToGoal ? `${globalAnalysis.monthsToGoal} meses al ritmo actual` : 'sin ritmo suficiente'}</small>
+              </article>
+            </div>
+            <div className="portfolio-guidance">
+              {globalAnalysis.messages.map((message) => (
+                <article key={message.title}>
+                  <strong>{message.title}</strong>
+                  <span>{message.text}</span>
+                </article>
+              ))}
+            </div>
+            <div className="portfolio-general-review">
+              <section>
+                <h4>Lectura de cartera completa</h4>
+                <div className="review-pill-grid">
+                  {globalAnalysis.reviewPills.map((pill) => (
+                    <article key={pill.label}>
+                      <span>{pill.label}</span>
+                      <strong>{pill.value}</strong>
+                      <small>{pill.detail}</small>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <h4>Siguientes pasos sugeridos</h4>
+                <ol className="next-steps-list">
+                  {globalAnalysis.nextSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </section>
+            </div>
           </section>
 
           {selectedSnapshot.warnings?.length ? (
@@ -332,22 +488,42 @@ export function PortfolioPanel({ financeRows = [] }) {
           </section>
 
           <section className="portfolio-card">
-            <h3>Posiciones</h3>
-            <div className="portfolio-position-grid">
-              {investmentPositions.map((position) => (
-                <article key={`${position.broker}-${position.isin ?? position.name}-${position.asset_type}`}>
+            <h3>Análisis por acción</h3>
+            {analyzableStockPositions.length ? (
+              <div className="portfolio-position-grid portfolio-analysis-list">
+                {analyzableStockPositions.map((position) => (
+                <article key={getPositionKey(position)}>
                   <div>
                     <strong>{position.ticker ?? position.name}</strong>
                     <span>{position.broker} · {position.region ?? 'Sin región'} · {position.sector ?? 'Sin sector'}</span>
                   </div>
-                  <strong>{formatMoney(position.current_value)}</strong>
+                  <div className="position-score">
+                    <span>Puntuación</span>
+                    <strong>{formatPositionScore(positionAnalyses[getPositionKey(position)], position)}</strong>
+                  </div>
                   <div className="portfolio-bar">
                     <span style={{ width: getWeight(position.current_value, investedTotal) }} />
                   </div>
-                  <span>{formatNumber((Number(position.current_value ?? 0) / investedTotal) * 100, '%')}</span>
+                  <div className="position-card-footer">
+                    <span>{formatMoney(position.current_value)} · {formatNumber((Number(position.current_value ?? 0) / investedTotal) * 100, '%')}</span>
+                    <button
+                      className="portfolio-summary-toggle"
+                      type="button"
+                      onClick={() => togglePositionAnalysis(position)}
+                      disabled={!position.ticker}
+                    >
+                      {expandedPositionKey === getPositionKey(position) ? 'Cerrar análisis' : position.ticker ? 'Ver análisis' : 'Sin ticker'}
+                    </button>
+                  </div>
+                  {expandedPositionKey === getPositionKey(position) ? (
+                    <PositionAnalysis analysis={positionAnalyses[getPositionKey(position)]} position={position} />
+                  ) : null}
                 </article>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-text">No hay acciones con ticker compatible para análisis automático en este snapshot.</p>
+            )}
           </section>
 
           <section className="portfolio-card">
@@ -515,11 +691,24 @@ function buildFinanceByMonth(rows) {
       .map((row) => [
         row.Mes,
         {
+          month: row.Mes,
+          total: Number(row.total ?? 0),
+          savings: Number(row['💰 Ahorros'] ?? 0),
+          gifts: Number(row['🎁 Regalos'] ?? 0),
+          holidays: Number(row['💼 Vacaciones'] ?? 0),
+          emergencyFund: Number(row['Fondo de reserva cargado'] ?? 0),
+          monthlyBudget: Number(row['💸 Presupuesto Mes'] ?? 0),
+          monthlySpend: Number(row['💳 Gasto del mes'] ?? 0),
           finance_invested: Number(row['Dinero Invertido'] ?? 0),
           investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
+          availableBudget: Number(row['🧾 Presupuesto Disponible'] ?? 0),
         },
       ]),
   )
+}
+
+function getLatestFinance(financeByMonth) {
+  return Array.from(financeByMonth.values()).sort((left, right) => String(left.month).localeCompare(String(right.month))).at(-1) ?? null
 }
 
 function enrichSnapshotWithFinance(snapshot, financeByMonth) {
@@ -532,6 +721,266 @@ function enrichSnapshotWithFinance(snapshot, financeByMonth) {
     investment_net_worth: finance.finance_invested + finance.investment_bucket,
   }
   return { ...snapshot, summary }
+}
+
+function loadLifeContext() {
+  try {
+    return { ...defaultLifeContext, ...JSON.parse(localStorage.getItem(lifeContextStorageKey) || '{}') }
+  } catch (_err) {
+    return defaultLifeContext
+  }
+}
+
+function getPositionKey(position) {
+  return `${position.broker}-${position.isin ?? position.ticker ?? position.name}-${position.asset_type}`
+}
+
+function buildGlobalPortfolioAnalysis(positions, investedTotal, costTotal, finance, context) {
+  const homePrice = Number(context.homePrice || 0)
+  const downPaymentGoal = homePrice * (Number(context.downPaymentPct || 0) / 100)
+  const ownDownPaymentGoal = downPaymentGoal * (Number(context.ownSharePct || 0) / 100)
+  const visibleLiquidity = Math.max(
+    0,
+    Number(finance?.savings ?? 0) +
+      Number(finance?.investment_bucket ?? 0) +
+      Number(finance?.holidays ?? 0) +
+      Number(finance?.gifts ?? 0) +
+      Number(finance?.emergencyFund ?? 0),
+  )
+  const visibleNetWorth = Math.max(0, visibleLiquidity + investedTotal)
+  const plannedMonthlyInvestment = Number(finance?.investment_bucket ?? 0)
+  const maxMonthlyInvestment = Number(context.maxMonthlyInvestment || plannedMonthlyInvestment || 0)
+  const remainingGoal = Math.max(0, ownDownPaymentGoal - visibleLiquidity)
+  const goalProgress = ownDownPaymentGoal > 0 ? (visibleLiquidity / ownDownPaymentGoal) * 100 : 0
+  const investedWeight = visibleNetWorth > 0 ? (investedTotal / visibleNetWorth) * 100 : 0
+  const monthsToGoal = maxMonthlyInvestment > 0 ? Math.ceil(remainingGoal / maxMonthlyInvestment) : null
+  const concentration = getTopConcentration(positions, investedTotal)
+  const returnPct = costTotal > 0 ? ((investedTotal - costTotal) / costTotal) * 100 : null
+  const assetBreakdown = buildBreakdown(positions, 'asset_type', investedTotal)
+  const regionBreakdown = buildBreakdown(positions, 'region', investedTotal)
+  const sectorBreakdown = buildBreakdown(positions, 'sector', investedTotal)
+  const stockWeight = assetBreakdown.find((item) => item.label === 'stock')?.weight ?? 0
+  const fundWeight = assetBreakdown.find((item) => item.label === 'fund')?.weight ?? 0
+  const topRegion = regionBreakdown[0]
+  const topSector = sectorBreakdown[0]
+  const topPosition = [...positions].sort((left, right) => Number(right.current_value ?? 0) - Number(left.current_value ?? 0))[0]
+  const messages = [
+    {
+      title: 'Situación actual',
+      text: `Tienes ${formatMoney(investedTotal)} invertidos y ${formatMoney(visibleLiquidity)} de liquidez visible. La cartera pesa ${formatNumber(investedWeight, '%')} sobre patrimonio visible de cartera + liquidez.`,
+    },
+    {
+      title: 'Objetivo vivienda',
+      text: `Para una vivienda de ${formatMoney(homePrice)}, una entrada del ${formatNumber(context.downPaymentPct, '%')} supone ${formatMoney(downPaymentGoal)}. Tu objetivo del ${formatNumber(context.ownSharePct, '%')} son ${formatMoney(ownDownPaymentGoal)}.`,
+    },
+    {
+      title: 'Ritmo y prudencia',
+      text:
+        remainingGoal <= 0
+          ? 'Con la liquidez visible ya cubrirías la referencia marcada para tu parte de la entrada. El siguiente paso sería proteger ese capital de volatilidad innecesaria.'
+          : `Faltan ${formatMoney(remainingGoal)}. Con una aportación máxima de ${formatMoney(maxMonthlyInvestment)} al mes, el objetivo tardaría aproximadamente ${monthsToGoal ?? 's/d'} meses.`,
+    },
+    {
+      title: 'Cartera',
+      text: `La mayor posición pesa ${formatNumber(concentration, '%')}. La rentabilidad conocida de la cartera está en ${returnPct === null ? 's/d' : formatNumber(returnPct, '%')}; para un objetivo de vivienda cercano, conviene que las nuevas compras no comprometan la liquidez planificada.`,
+    },
+  ]
+  const reviewPills = [
+    {
+      label: 'Fondos',
+      value: formatNumber(fundWeight, '%'),
+      detail: `${assetBreakdown.find((item) => item.label === 'fund')?.count ?? 0} posiciones diversificadas`,
+    },
+    {
+      label: 'Acciones directas',
+      value: formatNumber(stockWeight, '%'),
+      detail: `${assetBreakdown.find((item) => item.label === 'stock')?.count ?? 0} valores individuales`,
+    },
+    {
+      label: 'Mayor región',
+      value: topRegion?.label ?? 's/d',
+      detail: topRegion ? `${formatNumber(topRegion.weight, '%')} de la cartera` : 'sin clasificar',
+    },
+    {
+      label: 'Mayor sector',
+      value: topSector?.label ?? 's/d',
+      detail: topSector ? `${formatNumber(topSector.weight, '%')} de la cartera` : 'sin clasificar',
+    },
+    {
+      label: 'Mayor posición',
+      value: topPosition?.ticker ?? topPosition?.name ?? 's/d',
+      detail: `${formatNumber(concentration, '%')} de peso`,
+    },
+    {
+      label: 'Rentabilidad',
+      value: returnPct === null ? 's/d' : formatNumber(returnPct, '%'),
+      detail: `${formatMoney(investedTotal - costTotal)} frente a dinero invertido`,
+    },
+  ]
+  const nextSteps = buildNextSteps({
+    concentration,
+    fundWeight,
+    goalProgress,
+    investedWeight,
+    maxMonthlyInvestment,
+    monthsToGoal,
+    remainingGoal,
+    stockWeight,
+    topRegion,
+    topSector,
+  })
+
+  return {
+    downPaymentGoal,
+    goalProgress,
+    investedWeight,
+    messages,
+    monthsToGoal,
+    nextSteps,
+    ownDownPaymentGoal,
+    plannedMonthlyInvestment,
+    remainingGoal,
+    reviewPills,
+    visibleLiquidity,
+  }
+}
+
+function buildBreakdown(positions, field, investedTotal) {
+  if (!investedTotal) return []
+  const groups = positions.reduce((acc, position) => {
+    const label = field === 'asset_type' ? position.asset_type : position[field] || 'Sin clasificar'
+    if (!acc[label]) acc[label] = { count: 0, value: 0 }
+    acc[label].count += 1
+    acc[label].value += Number(position.current_value ?? 0)
+    return acc
+  }, {})
+  return Object.entries(groups)
+    .map(([label, item]) => ({ label, count: item.count, value: item.value, weight: (item.value / investedTotal) * 100 }))
+    .sort((left, right) => right.value - left.value)
+}
+
+function buildNextSteps({
+  concentration,
+  fundWeight,
+  goalProgress,
+  investedWeight,
+  maxMonthlyInvestment,
+  monthsToGoal,
+  remainingGoal,
+  stockWeight,
+  topRegion,
+  topSector,
+}) {
+  const steps = []
+  if (remainingGoal > 0) {
+    steps.push(
+      `Priorizar liquidez para vivienda: faltan ${formatMoney(remainingGoal)} y, al ritmo configurado, quedan aproximadamente ${monthsToGoal ?? 's/d'} meses.`,
+    )
+  } else {
+    steps.push('Separar mentalmente la entrada de la vivienda del dinero de inversión: si ya está cubierta, conviene reducir volatilidad de esa parte.')
+  }
+  if (maxMonthlyInvestment > 0) {
+    steps.push(`Mantener como techo de nuevas compras ${formatMoney(maxMonthlyInvestment)} al mes mientras el objetivo vivienda siga abierto.`)
+  }
+  if (investedWeight > 35 && goalProgress < 100) {
+    steps.push('Evitar aumentar mucho el peso invertido hasta que la entrada esté más avanzada; la liquidez tiene prioridad temporal.')
+  }
+  if (concentration > 20) {
+    steps.push(`Revisar concentración: la posición principal pesa ${formatNumber(concentration, '%')}, por encima de un nivel cómodo para una cartera en construcción.`)
+  }
+  if (stockWeight > fundWeight && goalProgress < 100) {
+    steps.push('Para nuevas aportaciones, favorecer fondos diversificados o liquidez frente a acciones individuales mientras el objetivo vivienda sea dominante.')
+  } else if (fundWeight >= stockWeight) {
+    steps.push('La base de fondos ayuda a diversificar; las acciones individuales deberían añadirse de forma selectiva y con importes controlados.')
+  }
+  if (topRegion?.weight > 55) {
+    steps.push(`Vigilar sesgo geográfico: ${topRegion.label} concentra ${formatNumber(topRegion.weight, '%')} de la cartera.`)
+  }
+  if (topSector?.weight > 35) {
+    steps.push(`Vigilar sesgo sectorial: ${topSector.label} concentra ${formatNumber(topSector.weight, '%')} de la cartera.`)
+  }
+  return steps.slice(0, 6)
+}
+
+function getTopConcentration(positions, investedTotal) {
+  if (!investedTotal) return 0
+  const top = Math.max(...positions.map((position) => Number(position.current_value ?? 0)), 0)
+  return (top / investedTotal) * 100
+}
+
+function formatPositionScore(analysis, position) {
+  if (analysis?.status === 'loading') return '...'
+  if (analysis?.result?.score !== undefined) return `${Math.round(Number(analysis.result.score))}/100`
+  return position.asset_type === 'stock' && position.ticker ? 'Pendiente' : 's/d'
+}
+
+function PositionAnalysis({ analysis, position }) {
+  if (!position.ticker) {
+    return <p className="muted-text position-analysis">Esta posición no tiene ticker compatible para análisis automático.</p>
+  }
+  if (!analysis || analysis.status === 'loading') {
+    return <p className="muted-text position-analysis">Analizando {position.ticker}...</p>
+  }
+  if (analysis.status === 'error') {
+    return <p className="error-message position-analysis">{analysis.error}</p>
+  }
+
+  const result = analysis.result
+  const metrics = result?.metrics ?? {}
+  const aiText = result?.ai_analysis?.text ?? ''
+  const paragraphs = aiText
+    ? aiText
+        .split(/\n{2,}/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean)
+        .slice(0, 6)
+    : []
+
+  return (
+    <div className="position-analysis">
+      <div className="position-analysis-head">
+        <article>
+          <span>Resultado</span>
+          <strong>{Math.round(Number(result.score ?? 0))}/100</strong>
+          <small>{result.recommendation}</small>
+        </article>
+        <article>
+          <span>Precio</span>
+          <strong>{formatNumber(result.price, metrics.currency)}</strong>
+          <small>{result.exchange?.name ?? 'Mercado s/d'}</small>
+        </article>
+        <article>
+          <span>Sector</span>
+          <strong>{result.sector ?? metrics.sector ?? 's/d'}</strong>
+          <small>{result.exchange?.country ?? metrics.country ?? 'País s/d'}</small>
+        </article>
+      </div>
+      <div className="position-ratio-grid">
+        <span>RPD TTM: {formatNumber(metrics.rpd_ttm, '%')}</span>
+        <span>DGR 5 años: {formatNumber(metrics.dgr5, '%')}</span>
+        <span>Payout: {formatNumber(metrics.payout, '%')}</span>
+        <span>PER: {formatNumber(metrics.per_ttm)}</span>
+        <span>Deuda/capital: {formatNumber(metrics.de_ratio)}</span>
+        <span>Racha dividendo: {formatNumber(metrics.streak_years, 'años')}</span>
+      </div>
+      {result.flags?.length ? (
+        <div className="position-flags">
+          {result.flags.map((flag) => (
+            <span key={flag}>{flag}</span>
+          ))}
+        </div>
+      ) : null}
+      {paragraphs.length ? (
+        <div className="position-ai-summary">
+          {paragraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
+        </div>
+      ) : (
+        <p className="muted-text">Sin análisis cualitativo disponible para este ticker.</p>
+      )}
+    </div>
+  )
 }
 
 function formatAssetType(assetType) {
