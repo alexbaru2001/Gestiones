@@ -57,6 +57,15 @@ ASSET_METADATA = {
     "IE0032126645": {"region": "Norteamerica", "sector": "Renta variable diversificada", "focus": "Indexados"},
 }
 
+EXPECTED_DOCUMENTS = [
+    {"kind": "trade_republic_net_worth", "label": "Trade Republic - patrimonio neto"},
+    {"kind": "trade_republic_account", "label": "Trade Republic - transacciones de cuenta"},
+    {"kind": "myinvestor_statement", "label": "MyInvestor - posicion integrada"},
+    {"kind": "myinvestor_movements", "label": "MyInvestor - movimientos"},
+    {"kind": "degiro_portfolio", "label": "DeGiro - cartera"},
+    {"kind": "degiro_account", "label": "DeGiro - cuenta"},
+]
+
 
 @dataclass(frozen=True)
 class UploadedInvestmentFile:
@@ -435,7 +444,24 @@ def build_snapshot(
         "transactions": transactions,
         "brokers": summarize_brokers(enriched_positions, transactions, dividends_by_broker),
         "files": files_summary,
+        "documents": build_documents_status(files_summary),
         "warnings": build_warnings(enriched_positions),
+    }
+
+
+def build_documents_status(files_summary: list[dict[str, Any]]) -> dict[str, Any]:
+    uploaded_kinds = {file["kind"] for file in files_summary if file.get("kind") != "desconocido"}
+    expected = [
+        {
+            **document,
+            "uploaded": document["kind"] in uploaded_kinds,
+        }
+        for document in EXPECTED_DOCUMENTS
+    ]
+    return {
+        "expected": expected,
+        "missing": [document for document in expected if not document["uploaded"]],
+        "unknown": [file for file in files_summary if file.get("kind") == "desconocido"],
     }
 
 

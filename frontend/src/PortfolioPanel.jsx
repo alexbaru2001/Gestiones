@@ -33,6 +33,15 @@ const defaultLifeContext = {
   maxMonthlyInvestment: '',
 }
 
+const expectedPortfolioDocuments = [
+  { kind: 'trade_republic_net_worth', label: 'Trade Republic - patrimonio neto' },
+  { kind: 'trade_republic_account', label: 'Trade Republic - transacciones de cuenta' },
+  { kind: 'myinvestor_statement', label: 'MyInvestor - posicion integrada' },
+  { kind: 'myinvestor_movements', label: 'MyInvestor - movimientos' },
+  { kind: 'degiro_portfolio', label: 'DeGiro - cartera' },
+  { kind: 'degiro_account', label: 'DeGiro - cuenta' },
+]
+
 const lifeContextStorageKey = 'gestiones:portfolio-life-context'
 
 export function PortfolioPanel({ financeRows = [] }) {
@@ -87,6 +96,8 @@ export function PortfolioPanel({ financeRows = [] }) {
     () => buildGlobalPortfolioAnalysis(investmentPositions, investedTotal, costTotal, selectedFinance, lifeContext),
     [costTotal, investedTotal, investmentPositions, lifeContext, selectedFinance],
   )
+  const selectedDocumentStatus = useMemo(() => buildSelectedDocumentStatus(files), [files])
+  const importedDocumentStatus = selectedSnapshot?.documents
 
   useEffect(() => {
     loadPortfolio()
@@ -155,6 +166,29 @@ export function PortfolioPanel({ financeRows = [] }) {
     }
   }
 
+  const addSelectedFiles = (fileList) => {
+    const incomingFiles = Array.from(fileList ?? [])
+    if (!incomingFiles.length) return
+    setFiles((currentFiles) => {
+      const nextFiles = [...currentFiles]
+      const existingKeys = new Set(currentFiles.map(getFileSelectionKey))
+      incomingFiles.forEach((file) => {
+        const key = getFileSelectionKey(file)
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key)
+          nextFiles.push(file)
+        }
+      })
+      return nextFiles
+    })
+    setStatus('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const removeSelectedFile = (fileKey) => {
+    setFiles((currentFiles) => currentFiles.filter((file) => getFileSelectionKey(file) !== fileKey))
+  }
+
   const updateLifeContext = (key, value) => {
     const next = {
       ...lifeContext,
@@ -197,11 +231,11 @@ export function PortfolioPanel({ financeRows = [] }) {
           <input
             accept=".pdf,.xlsx"
             multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+            onChange={(event) => addSelectedFiles(event.target.files)}
             ref={fileInputRef}
             type="file"
           />
-          <span>{files.length ? `${files.length} documentos seleccionados` : 'Seleccionar PDFs/XLSX de cartera'}</span>
+          <span>{files.length ? `Añadir mas PDFs/XLSX (${files.length} seleccionados)` : 'Seleccionar PDFs/XLSX de cartera'}</span>
         </label>
         <button className="primary-button inline-primary" type="submit" disabled={isImporting}>
           {isImporting ? 'Importando...' : 'Importar cartera'}
@@ -210,6 +244,33 @@ export function PortfolioPanel({ financeRows = [] }) {
           {isLoading ? 'Cargando...' : 'Recargar local'}
         </button>
       </form>
+
+      {files.length ? (
+        <section className="portfolio-card upload-review">
+          <div className="portfolio-chart-header">
+            <h3>Documentos pendientes de importar</h3>
+            <span className={selectedDocumentStatus.missing.length ? 'warning-text' : 'success-text'}>
+              {selectedDocumentStatus.missing.length
+                ? `${selectedDocumentStatus.missing.length} documentos esperados sin detectar`
+                : 'Estructura completa detectada por nombre'}
+            </span>
+          </div>
+          <div className="selected-files">
+            {files.map((file) => (
+              <article key={getFileSelectionKey(file)}>
+                <span>{file.name}</span>
+                <button className="text-button danger" type="button" onClick={() => removeSelectedFile(getFileSelectionKey(file))}>
+                  Quitar
+                </button>
+              </article>
+            ))}
+          </div>
+          <DocumentChecklist documents={selectedDocumentStatus.expected} />
+          <p className="muted-text">
+            La comprobación previa usa el nombre del archivo; al importar, el backend valida el contenido y guarda esta foto en el mes detectado.
+          </p>
+        </section>
+      ) : null}
 
       {status ? <p className="status-message">{status}</p> : null}
       {error ? <p className="error-message">{error}</p> : null}
@@ -599,7 +660,17 @@ export function PortfolioPanel({ financeRows = [] }) {
           </section>
 
           <section className="portfolio-card">
-            <h3>Archivos importados</h3>
+            <div className="portfolio-chart-header">
+              <h3>Archivos importados</h3>
+              {importedDocumentStatus ? (
+                importedDocumentStatus.missing?.length ? (
+                  <span className="warning-text">{importedDocumentStatus.missing.length} documentos esperados pendientes</span>
+                ) : (
+                  <span className="success-text">Estructura documental completa</span>
+                )
+              ) : null}
+            </div>
+            {importedDocumentStatus ? <DocumentChecklist documents={importedDocumentStatus.expected} /> : null}
             <div className="imported-files">
               {(selectedSnapshot.files ?? []).map((file) => (
                 <article key={file.filename}>
@@ -614,6 +685,54 @@ export function PortfolioPanel({ financeRows = [] }) {
       )}
     </section>
   )
+}
+
+function DocumentChecklist({ documents }) {
+  return (
+    <div className="document-checklist">
+      {(documents ?? expectedPortfolioDocuments).map((document) => (
+        <article className={document.uploaded ? 'complete' : 'missing'} key={document.kind}>
+          <span aria-hidden="true">{document.uploaded ? 'OK' : 'Pendiente'}</span>
+          <strong>{document.label}</strong>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function buildSelectedDocumentStatus(files) {
+  const uploadedKinds = new Set(files.map((file) => inferDocumentKindFromFilename(file.name)).filter(Boolean))
+  const expected = expectedPortfolioDocuments.map((document) => ({
+    ...document,
+    uploaded: uploadedKinds.has(document.kind),
+  }))
+  return {
+    expected,
+    missing: expected.filter((document) => !document.uploaded),
+  }
+}
+
+function inferDocumentKindFromFilename(filename) {
+  const normalized = filename
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  if (normalized.endsWith('.xlsx')) {
+    if (normalized.includes('portfolio')) return 'degiro_portfolio'
+    if (normalized.includes('account')) return 'degiro_account'
+    if (normalized.includes('movimientos') || normalized.includes('myinvestor')) return 'myinvestor_movements'
+  }
+  if (!normalized.endsWith('.pdf')) return null
+  if (normalized.includes('trade') || normalized.includes('republic')) {
+    if (normalized.includes('patrimonio') || normalized.includes('net worth')) return 'trade_republic_net_worth'
+    if (normalized.includes('cuenta') || normalized.includes('account') || normalized.includes('transacciones')) return 'trade_republic_account'
+  }
+  if (normalized.includes('myinvestor') || normalized.includes('posicion') || normalized.includes('integrada')) return 'myinvestor_statement'
+  return null
+}
+
+function getFileSelectionKey(file) {
+  return `${file.name}-${file.size}-${file.lastModified}`
 }
 
 function buildPortfolioChart(positions, mode) {

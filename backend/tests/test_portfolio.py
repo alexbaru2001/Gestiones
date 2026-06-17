@@ -58,6 +58,9 @@ def test_build_snapshot_combines_positions_and_costs():
     assert rovi["cost"] == 186.75
     assert rovi["unrealized_gain"] == 1.8
     assert snapshot["summary"]["cash"] == 48.87
+    assert next(document for document in snapshot["documents"]["expected"] if document["kind"] == "degiro_portfolio")["uploaded"] is True
+    assert next(document for document in snapshot["documents"]["expected"] if document["kind"] == "degiro_account")["uploaded"] is True
+    assert "trade_republic_net_worth" in {document["kind"] for document in snapshot["documents"]["missing"]}
 
 
 def test_import_portfolio_endpoint_persists_local_snapshot(tmp_path, monkeypatch):
