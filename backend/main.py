@@ -77,6 +77,8 @@ def get_portfolio_snapshots() -> dict[str, Any]:
 async def import_portfolio(files: list[UploadFile] = File(...)) -> dict[str, Any]:
     if not files:
         raise HTTPException(status_code=400, detail="Selecciona al menos un PDF o Excel de cartera.")
+    if len(files) != 3:
+        raise HTTPException(status_code=400, detail="Selecciona los 3 archivos de foto: Trade Republic, MyInvestor y DeGiro.")
 
     uploaded_files = []
     for file in files:

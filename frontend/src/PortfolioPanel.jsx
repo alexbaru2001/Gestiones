@@ -35,11 +35,8 @@ const defaultLifeContext = {
 
 const expectedPortfolioDocuments = [
   { kind: 'trade_republic_net_worth', label: 'Trade Republic - patrimonio neto' },
-  { kind: 'trade_republic_account', label: 'Trade Republic - transacciones de cuenta' },
   { kind: 'myinvestor_statement', label: 'MyInvestor - posicion integrada' },
-  { kind: 'myinvestor_movements', label: 'MyInvestor - movimientos' },
   { kind: 'degiro_portfolio', label: 'DeGiro - cartera' },
-  { kind: 'degiro_account', label: 'DeGiro - cuenta' },
 ]
 
 const lifeContextStorageKey = 'gestiones:portfolio-life-context'
@@ -55,7 +52,7 @@ export function PortfolioPanel({ financeRows = [] }) {
   const [isImporting, setIsImporting] = useState(false)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
   const [chartMode, setChartMode] = useState('position')
-  const [selectedSnapshotMonth, setSelectedSnapshotMonth] = useState('')
+  const [selectedSnapshotKey, setSelectedSnapshotKey] = useState('')
   const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
   const [expandedPositionKey, setExpandedPositionKey] = useState('')
   const [positionAnalyses, setPositionAnalyses] = useState({})
@@ -63,8 +60,8 @@ export function PortfolioPanel({ financeRows = [] }) {
   const financeByMonth = useMemo(() => buildFinanceByMonth(financeRows), [financeRows])
   const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots, financeByMonth), [financeByMonth, snapshot, snapshots])
   const selectedSnapshot = useMemo(
-    () => snapshotOptions.find((item) => item.snapshot_month === selectedSnapshotMonth) ?? snapshot ?? snapshotOptions.at(-1) ?? null,
-    [selectedSnapshotMonth, snapshot, snapshotOptions],
+    () => snapshotOptions.find((item) => getSnapshotKey(item) === selectedSnapshotKey) ?? snapshot ?? snapshotOptions.at(-1) ?? null,
+    [selectedSnapshotKey, snapshot, snapshotOptions],
   )
   const positions = selectedSnapshot?.positions ?? []
   const brokers = selectedSnapshot?.brokers ?? []
@@ -123,7 +120,7 @@ export function PortfolioPanel({ financeRows = [] }) {
       const data = await requestJson('/api/v1/portfolio/snapshots', {}, 'No se pudo cargar el histórico de cartera')
       const loadedSnapshots = data.result ?? []
       setSnapshots(loadedSnapshots)
-      setSelectedSnapshotMonth((current) => current || loadedSnapshots.at(-1)?.snapshot_month || '')
+      setSelectedSnapshotKey((current) => current || getSnapshotKey(loadedSnapshots.at(-1)))
     } catch (err) {
       setError(err.message)
     }
@@ -132,7 +129,11 @@ export function PortfolioPanel({ financeRows = [] }) {
   const importPortfolio = async (event) => {
     event.preventDefault()
     if (!files.length) {
-      setError('Selecciona los extractos PDF/XLSX de cartera.')
+      setError('Selecciona los 3 archivos de foto: Trade Republic, MyInvestor y DeGiro.')
+      return
+    }
+    if (files.length !== 3) {
+      setError('La foto de cartera necesita exactamente 3 archivos: Trade Republic, MyInvestor y DeGiro.')
       return
     }
     setIsImporting(true)
@@ -154,8 +155,8 @@ export function PortfolioPanel({ financeRows = [] }) {
       setSnapshot(data.result)
       const loadedSnapshots = data.snapshots ?? []
       setSnapshots(loadedSnapshots)
-      setSelectedSnapshotMonth(data.result?.snapshot_month || loadedSnapshots.at(-1)?.snapshot_month || '')
-      setStatus(`${files.length} documentos importados y guardados en local`)
+      setSelectedSnapshotKey(getSnapshotKey(data.result) || getSnapshotKey(loadedSnapshots.at(-1)))
+      setStatus('Foto de cartera importada y guardada en local')
       setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (err) {
@@ -222,7 +223,7 @@ export function PortfolioPanel({ financeRows = [] }) {
       <div className="panel-header">
         <div>
           <h2>Cartera</h2>
-          <span>Importación local de brokers, posiciones y rentabilidad</span>
+          <span>Importación local de brokers, posiciones y evolución</span>
         </div>
       </div>
 
@@ -235,7 +236,7 @@ export function PortfolioPanel({ financeRows = [] }) {
             ref={fileInputRef}
             type="file"
           />
-          <span>{files.length ? `Añadir mas PDFs/XLSX (${files.length} seleccionados)` : 'Seleccionar PDFs/XLSX de cartera'}</span>
+          <span>{files.length ? `Añadir PDFs/XLSX (${files.length}/3 seleccionados)` : 'Seleccionar foto de cartera'}</span>
         </label>
         <button className="primary-button inline-primary" type="submit" disabled={isImporting}>
           {isImporting ? 'Importando...' : 'Importar cartera'}
@@ -252,7 +253,7 @@ export function PortfolioPanel({ financeRows = [] }) {
             <span className={selectedDocumentStatus.missing.length ? 'warning-text' : 'success-text'}>
               {selectedDocumentStatus.missing.length
                 ? `${selectedDocumentStatus.missing.length} documentos esperados sin detectar`
-                : 'Estructura completa detectada por nombre'}
+                : 'Foto completa detectada por nombre'}
             </span>
           </div>
           <div className="selected-files">
@@ -267,7 +268,7 @@ export function PortfolioPanel({ financeRows = [] }) {
           </div>
           <DocumentChecklist documents={selectedDocumentStatus.expected} />
           <p className="muted-text">
-            La comprobación previa usa el nombre del archivo; al importar, el backend valida el contenido y guarda esta foto en el mes detectado.
+            La comprobación previa usa el nombre del archivo; al importar, el backend valida el contenido y guarda esta foto por fecha para la evolución.
           </p>
         </section>
       ) : null}
@@ -291,11 +292,11 @@ export function PortfolioPanel({ financeRows = [] }) {
               </span>
             </div>
             <label>
-              Mes
-              <select value={selectedSnapshot.snapshot_month ?? ''} onChange={(event) => setSelectedSnapshotMonth(event.target.value)}>
+              Foto
+              <select value={getSnapshotKey(selectedSnapshot)} onChange={(event) => setSelectedSnapshotKey(event.target.value)}>
                 {snapshotOptions.map((item) => (
-                  <option key={item.snapshot_month ?? 'actual'} value={item.snapshot_month ?? ''}>
-                    {item.snapshot_month ?? 'Sin fecha'} · {formatMoney(item.summary?.finance_invested ?? item.summary?.known_cost)} invertido
+                  <option key={getSnapshotKey(item)} value={getSnapshotKey(item)}>
+                    {getSnapshotLabel(item)} · {formatMoney(item.summary?.invested)} invertido
                   </option>
                 ))}
               </select>
@@ -627,14 +628,14 @@ export function PortfolioPanel({ financeRows = [] }) {
 
           <section className="portfolio-card">
             <div className="portfolio-chart-header">
-              <h3>Evolución mensual</h3>
-              <span className="muted-text">{evolutionRows.length} snapshots locales</span>
+              <h3>Evolución por foto</h3>
+              <span className="muted-text">{evolutionRows.length} fotos locales</span>
             </div>
             {evolutionRows.length ? (
               <div className="portfolio-evolution">
                 {evolutionRows.map((row) => (
-                  <article className={row.month === selectedSnapshot.snapshot_month ? 'active' : ''} key={row.month}>
-                    <span>{row.month}</span>
+                  <article className={row.key === getSnapshotKey(selectedSnapshot) ? 'active' : ''} key={row.key}>
+                    <span>{row.label}</span>
                     <div className="portfolio-evolution-bars">
                       <div>
                         <small>Dinero</small>
@@ -723,6 +724,7 @@ function inferDocumentKindFromFilename(filename) {
     if (normalized.includes('movimientos') || normalized.includes('myinvestor')) return 'myinvestor_movements'
   }
   if (!normalized.endsWith('.pdf')) return null
+  if (normalized.includes('patrimonio') && normalized.includes('neto')) return 'trade_republic_net_worth'
   if (normalized.includes('trade') || normalized.includes('republic')) {
     if (normalized.includes('patrimonio') || normalized.includes('net worth')) return 'trade_republic_net_worth'
     if (normalized.includes('cuenta') || normalized.includes('account') || normalized.includes('transacciones')) return 'trade_republic_account'
@@ -776,22 +778,25 @@ function buildDonutBackground(items) {
 }
 
 function buildSnapshotOptions(snapshot, snapshots, financeByMonth) {
-  const byMonth = new Map()
+  const byKey = new Map()
   ;(snapshots ?? []).forEach((item) => {
-    if (item?.snapshot_month) byMonth.set(item.snapshot_month, enrichSnapshotWithFinance(item, financeByMonth))
+    const key = getSnapshotKey(item)
+    if (key) byKey.set(key, enrichSnapshotWithFinance(item, financeByMonth))
   })
-  if (snapshot?.snapshot_month) byMonth.set(snapshot.snapshot_month, enrichSnapshotWithFinance(snapshot, financeByMonth))
-  return Array.from(byMonth.values()).sort((left, right) =>
-    (left.snapshot_month ?? '').localeCompare(right.snapshot_month ?? ''),
-  )
+  const currentKey = getSnapshotKey(snapshot)
+  if (currentKey) byKey.set(currentKey, enrichSnapshotWithFinance(snapshot, financeByMonth))
+  return Array.from(byKey.values()).sort((left, right) => getSnapshotKey(left).localeCompare(getSnapshotKey(right)))
 }
 
 function buildEvolutionRows(snapshots, financeByMonth) {
   return (snapshots ?? [])
-    .filter((snapshot) => snapshot?.snapshot_month)
+    .filter((snapshot) => getSnapshotKey(snapshot))
     .map((snapshot) => {
       const enriched = enrichSnapshotWithFinance(snapshot, financeByMonth)
+      const key = getSnapshotKey(enriched)
       return {
+        key,
+        label: getSnapshotLabel(enriched),
         month: enriched.snapshot_month,
         date: enriched.snapshot_date,
         invested: Number(enriched.summary?.invested ?? 0),
@@ -800,7 +805,15 @@ function buildEvolutionRows(snapshots, financeByMonth) {
         dividends: Number(enriched.summary?.dividends ?? 0),
       }
     })
-    .sort((left, right) => left.month.localeCompare(right.month))
+    .sort((left, right) => left.key.localeCompare(right.key))
+}
+
+function getSnapshotKey(snapshot) {
+  return snapshot?.snapshot_key ?? snapshot?.snapshot_date ?? snapshot?.snapshot_month ?? ''
+}
+
+function getSnapshotLabel(snapshot) {
+  return snapshot?.snapshot_date ?? snapshot?.snapshot_month ?? 'Sin fecha'
 }
 
 function buildFinanceByMonth(rows) {

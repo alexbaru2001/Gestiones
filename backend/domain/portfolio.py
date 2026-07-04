@@ -59,11 +59,8 @@ ASSET_METADATA = {
 
 EXPECTED_DOCUMENTS = [
     {"kind": "trade_republic_net_worth", "label": "Trade Republic - patrimonio neto"},
-    {"kind": "trade_republic_account", "label": "Trade Republic - transacciones de cuenta"},
     {"kind": "myinvestor_statement", "label": "MyInvestor - posicion integrada"},
-    {"kind": "myinvestor_movements", "label": "MyInvestor - movimientos"},
     {"kind": "degiro_portfolio", "label": "DeGiro - cartera"},
-    {"kind": "degiro_account", "label": "DeGiro - cuenta"},
 ]
 
 
@@ -439,13 +436,14 @@ def build_snapshot(
     return {
         "snapshot_date": reference_date,
         "snapshot_month": reference_date[:7] if reference_date else None,
+        "snapshot_key": reference_date or "sin-fecha",
         "summary": summary,
         "positions": sorted(enriched_positions, key=lambda item: (item["broker"], item["asset_type"], item["name"])),
         "transactions": transactions,
         "brokers": summarize_brokers(enriched_positions, transactions, dividends_by_broker),
         "files": files_summary,
         "documents": build_documents_status(files_summary),
-        "warnings": build_warnings(enriched_positions),
+        "warnings": build_warnings(enriched_positions, transactions),
     }
 
 
@@ -639,7 +637,9 @@ def add_effective_dividend(
     by_broker[transaction["broker"]] += amount
 
 
-def build_warnings(positions: list[dict[str, Any]]) -> list[str]:
+def build_warnings(positions: list[dict[str, Any]], transactions: list[dict[str, Any]] | None = None) -> list[str]:
+    if not transactions:
+        return []
     unknown_cost = [position["name"] for position in positions if position["asset_type"] != "cash" and not position.get("cost")]
     if not unknown_cost:
         return []

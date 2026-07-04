@@ -20,19 +20,19 @@ class LocalPortfolioRepository:
 
     def save_uploads_and_rebuild(self, files: list[UploadedInvestmentFile]) -> dict:
         snapshot = self.enrich_with_finance_history(build_snapshot_from_files(files))
-        month_key = snapshot.get("snapshot_month") or "sin-fecha"
-        import_path = self.raw_path / month_key
+        snapshot_key = snapshot_storage_key(snapshot)
+        import_path = self.raw_path / snapshot_key
         import_path.mkdir(parents=True, exist_ok=True)
         for file in files:
             target = import_path / safe_filename(file.filename)
             target.write_bytes(file.content)
-        self.save_current_and_monthly_snapshot(snapshot)
+        self.save_current_and_snapshot(snapshot)
         return snapshot
 
     def rebuild(self) -> dict:
         files = self.load_raw_files()
         snapshot = self.enrich_with_finance_history(build_snapshot_from_files(files))
-        self.save_current_and_monthly_snapshot(snapshot)
+        self.save_current_and_snapshot(snapshot)
         return snapshot
 
     def load(self) -> dict | None:
@@ -49,12 +49,12 @@ class LocalPortfolioRepository:
             snapshot_date = snapshot.get("snapshot_date") if snapshot else None
             if snapshot and (not snapshot_date or snapshot_date <= today):
                 snapshots.append(self.enrich_with_finance_history(snapshot))
-        return sorted(snapshots, key=lambda item: item.get("snapshot_month") or "")
+        return sorted(snapshots, key=snapshot_storage_key)
 
-    def save_current_and_monthly_snapshot(self, snapshot: dict) -> None:
+    def save_current_and_snapshot(self, snapshot: dict) -> None:
         save_snapshot(self.snapshot_path, snapshot)
-        month_key = snapshot.get("snapshot_month") or "sin-fecha"
-        save_snapshot(self.snapshots_path / f"{month_key}.json", snapshot)
+        snapshot_key = snapshot_storage_key(snapshot)
+        save_snapshot(self.snapshots_path / f"{snapshot_key}.json", snapshot)
 
     def load_raw_files(self) -> list[UploadedInvestmentFile]:
         if not self.raw_path.exists():
@@ -96,6 +96,10 @@ class LocalPortfolioRepository:
 def safe_filename(filename: str) -> str:
     name = Path(filename).name
     return re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ._ -]", "_", name).strip() or "documento"
+
+
+def snapshot_storage_key(snapshot: dict) -> str:
+    return safe_filename(snapshot.get("snapshot_key") or snapshot.get("snapshot_date") or snapshot.get("snapshot_month") or "sin-fecha")
 
 
 def parse_csv_number(value: str | None) -> float:

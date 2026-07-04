@@ -59,8 +59,8 @@ def test_build_snapshot_combines_positions_and_costs():
     assert rovi["unrealized_gain"] == 1.8
     assert snapshot["summary"]["cash"] == 48.87
     assert next(document for document in snapshot["documents"]["expected"] if document["kind"] == "degiro_portfolio")["uploaded"] is True
-    assert next(document for document in snapshot["documents"]["expected"] if document["kind"] == "degiro_account")["uploaded"] is True
     assert "trade_republic_net_worth" in {document["kind"] for document in snapshot["documents"]["missing"]}
+    assert "degiro_account" not in {document["kind"] for document in snapshot["documents"]["missing"]}
 
 
 def test_import_portfolio_endpoint_persists_local_snapshot(tmp_path, monkeypatch):
@@ -74,13 +74,37 @@ def test_import_portfolio_endpoint_persists_local_snapshot(tmp_path, monkeypatch
             (
                 "files",
                 ("Portfolio.xlsx", make_degiro_portfolio_workbook(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            )
+            ),
+            (
+                "files",
+                ("Portfolio2.xlsx", make_degiro_portfolio_workbook(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
+            (
+                "files",
+                ("Portfolio3.xlsx", make_degiro_portfolio_workbook(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ),
         ],
     )
 
     assert response.status_code == 200
     assert response.json()["result"]["summary"]["positions"] == 2
     assert (tmp_path / "processed" / "portfolio_snapshot.json").exists()
+    assert (tmp_path / "snapshots" / "sin-fecha.json").exists()
+
+
+def test_portfolio_repository_saves_snapshots_by_reference_date(tmp_path):
+    repository = main.LocalPortfolioRepository(tmp_path)
+    snapshot = {
+        "snapshot_key": "2026-07-04",
+        "snapshot_date": "2026-07-04",
+        "snapshot_month": "2026-07",
+        "summary": {},
+    }
+
+    repository.save_current_and_snapshot(snapshot)
+
+    assert (tmp_path / "processed" / "portfolio_snapshot.json").exists()
+    assert (tmp_path / "snapshots" / "2026-07-04.json").exists()
 
 
 def test_portfolio_snapshot_uses_finance_invested_for_matching_month(tmp_path):
