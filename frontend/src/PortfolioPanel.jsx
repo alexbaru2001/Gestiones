@@ -17,6 +17,11 @@ function getWeight(value, total) {
   return `${Math.max(0, Math.min(100, (Number(value) / total) * 100))}%`
 }
 
+function getAxisTicks(min, max, count = 4) {
+  const range = max - min || 1
+  return Array.from({ length: count }, (_, index) => min + (range / Math.max(1, count - 1)) * index)
+}
+
 const chartModes = [
   { id: 'position', label: 'Valores' },
   { id: 'region', label: 'Continente' },
