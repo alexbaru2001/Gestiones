@@ -58,6 +58,14 @@ const typologyPeriods = [
   { value: 'all', label: 'Todo' },
 ]
 
+const expensePeriods = [
+  { value: '1', label: 'Mes actual' },
+  { value: '3', label: '3 meses' },
+  { value: '6', label: '6 meses' },
+  { value: '12', label: '12 meses' },
+  { value: 'all', label: 'Todo' },
+]
+
 const historyFields = [
   { label: 'Mes', field: 'Mes', type: 'text' },
   { label: 'Total', field: 'total', type: 'money' },
@@ -81,19 +89,20 @@ function asNumber(value) {
 function getBudget(selectedRow) {
   const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
   const availableBudget = asNumber(selectedRow['🧾 Presupuesto Disponible']) || monthBudget
-  const spent = asNumber(selectedRow['💳 Gasto del mes'])
+  const spent = Math.abs(asNumber(selectedRow['💳 Gasto del mes']))
   const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
   const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
-  const committed = Math.max(0, monthBudget - availableBudget)
-  const remaining = Math.max(0, availableBudget - spent)
-  const overrun = monthlyDebt || Math.max(0, spent - availableBudget)
-  const totalForBar = Math.max(monthBudget, committed + spent + remaining, 1)
-  const execution = availableBudget > 0 ? (spent / availableBudget) * 100 : 0
+  const debtReserve = accumulatedDebt > 0 ? Math.min(monthBudget * 0.1, accumulatedDebt) : 0
+  const usableBudget = Math.max(0, monthBudget - debtReserve)
+  const remaining = Math.max(0, usableBudget - spent)
+  const overrun = Math.max(monthlyDebt, spent - usableBudget, 0)
+  const totalForBar = Math.max(monthBudget, debtReserve + spent + remaining, 1)
+  const execution = usableBudget > 0 ? (Math.min(spent, usableBudget) / usableBudget) * 100 : 0
 
   return {
     accumulatedDebt,
     availableBudget,
-    committed,
+    debtReserve,
     execution,
     monthBudget,
     monthlyDebt,
@@ -101,6 +110,7 @@ function getBudget(selectedRow) {
     remaining,
     spent,
     totalForBar,
+    usableBudget,
   }
 }
 
@@ -204,6 +214,27 @@ function getPeriodRows(rows, period) {
   return rows.slice(-Number(period))
 }
 
+function getExpenseRowsForPeriod(monthlyRows, selectedMonth, period) {
+  const scopedRows = monthlyRows.filter((row) => !selectedMonth || String(row.Mes) <= String(selectedMonth))
+  if (period === 'all') return scopedRows
+  return scopedRows.slice(-Number(period))
+}
+
+function getExpenseCategoryRowsForPeriod(categoryRows, selectedMonth, period) {
+  const scopedRows = getExpenseRowsForPeriod(categoryRows, selectedMonth, period)
+  const totals = scopedRows.reduce((acc, row) => {
+    Object.entries(row).forEach(([key, value]) => {
+      if (key === 'Mes') return
+      acc[key] = (acc[key] ?? 0) + Math.abs(asNumber(value))
+    })
+    return acc
+  }, {})
+  return Object.entries(totals)
+    .map(([categoria, total]) => ({ categoria, total }))
+    .filter((row) => row.total > 0)
+    .sort((left, right) => right.total - left.total)
+}
+
 function getSummaryGroups(row) {
   return {
     patrimony: [
@@ -276,12 +307,16 @@ export function ResultsPanel({
   const [activeTab, setActiveTab] = useState('resumen')
   const [activeTypologyFields, setActiveTypologyFields] = useState(defaultTypologyFields)
   const [typologyPeriod, setTypologyPeriod] = useState('12')
+  const [expensePeriod, setExpensePeriod] = useState('6')
   const [typologyTooltip, setTypologyTooltip] = useState(null)
   const [savingsTooltip, setSavingsTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
   const incomeAnalysis = getIncomeAnalysis(result)
-  const expenseMax = Math.max(...expenseAnalysis.totales_categoria.map((row) => asNumber(row.total)), 1)
+  const expenseRows = getExpenseRowsForPeriod(expenseAnalysis.mensual, selectedRow?.Mes, expensePeriod)
+  const expenseCategoryRows = getExpenseCategoryRowsForPeriod(expenseAnalysis.categorias, selectedRow?.Mes, expensePeriod)
+  const expenseMax = Math.max(...expenseCategoryRows.map((row) => asNumber(row.total)), 1)
+  const expenseMonthlyMax = Math.max(...expenseRows.map((row) => Math.abs(asNumber(row.gastos))), 1)
   const savingsAnalysis = getSavingsAnalysis(result)
   const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
   const savingsPercentRows = savingsAnalysis.mensual.slice(-12)
@@ -527,11 +562,11 @@ export function ResultsPanel({
                     </p>
                   </div>
                   <div className="budget-bar" aria-label="Distribución del presupuesto mensual">
-                    {budget.committed > 0 && (
+                    {budget.debtReserve > 0 && (
                       <span
-                        className="budget-segment committed"
-                        style={{ width: getSegmentWidth(budget.committed, budget.totalForBar) }}
-                        title={`Compromisos: ${formatMoney(budget.committed)}`}
+                        className="budget-segment reserved"
+                        style={{ width: getSegmentWidth(budget.debtReserve, budget.totalForBar) }}
+                        title={`Reserva deuda: ${formatMoney(budget.debtReserve)}`}
                       />
                     )}
                     {budget.spent > 0 && (
@@ -549,10 +584,15 @@ export function ResultsPanel({
                       />
                     )}
                   </div>
+                  <div className="budget-bar-values">
+                    {budget.debtReserve > 0 ? <span>Reserva deuda {formatMoney(budget.debtReserve)}</span> : null}
+                    <span>Gastado {formatMoney(budget.spent)}</span>
+                    <span>Disponible {formatMoney(budget.remaining)}</span>
+                  </div>
                   <div className="budget-legend">
-                    <span>Compromisos</span>
+                    <span>Reserva deuda</span>
                     <span>Gasto</span>
-                    <span>Restante</span>
+                    <span>Disponible</span>
                   </div>
                 </div>
 
@@ -562,8 +602,12 @@ export function ResultsPanel({
                     <strong>{formatMoney(budget.monthBudget)}</strong>
                   </article>
                   <article>
-                    <span>Disponible</span>
-                    <strong>{formatMoney(budget.availableBudget)}</strong>
+                    <span>Disponible visual</span>
+                    <strong>{formatMoney(budget.remaining)}</strong>
+                  </article>
+                  <article>
+                    <span>Reserva deuda</span>
+                    <strong>{formatMoney(budget.debtReserve)}</strong>
                   </article>
                   <article>
                     <span>Gastado</span>
@@ -586,15 +630,42 @@ export function ResultsPanel({
             )}
 
             {activeTab === 'gastos' && (
-              expenseAnalysis.totales_categoria.length > 0 ? (
+              expenseRows.length > 0 ? (
                 <section className="expenses-layout">
                   <div className="expenses-panel">
                     <div className="table-toolbar compact-toolbar">
-                      <h3 className="table-title">Gastos por categoría</h3>
-                      <span>{expenseAnalysis.ultimo_mes?.Mes ?? selectedRow.Mes}</span>
+                      <h3 className="table-title">Gasto mes a mes</h3>
+                      <label className="period-selector">
+                        <span>Periodo</span>
+                        <select value={expensePeriod} onChange={(event) => setExpensePeriod(event.target.value)}>
+                          {expensePeriods.map((period) => (
+                            <option key={period.value} value={period.value}>
+                              {period.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="expense-month-bars">
+                      {expenseRows.map((row) => (
+                        <article key={row.Mes}>
+                          <span>{formatMonthLabel(row.Mes)}</span>
+                          <div className="expense-month-bar" title={`Gasto ${row.Mes}: ${formatMoney(row.gastos)}`}>
+                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row.gastos)) / expenseMonthlyMax) * 100)}%` }} />
+                          </div>
+                          <strong>{formatMoney(row.gastos)}</strong>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="expenses-panel">
+                    <div className="table-toolbar compact-toolbar">
+                      <h3 className="table-title">Categorias del periodo</h3>
+                      <span>{expenseRows[0]?.Mes} - {expenseRows.at(-1)?.Mes}</span>
                     </div>
                     <div className="category-list">
-                      {expenseAnalysis.totales_categoria.map((row) => (
+                      {expenseCategoryRows.map((row) => (
                         <article className="category-row" key={row.categoria}>
                           <div>
                             <strong>{row.categoria}</strong>
@@ -606,30 +677,6 @@ export function ResultsPanel({
                         </article>
                       ))}
                     </div>
-                  </div>
-
-                  <div className="table-wrap compact-table-wrap">
-                    <h3 className="table-title">Evolución mensual</h3>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Mes</th>
-                          <th>Ingresos</th>
-                          <th>Gastos</th>
-                          <th>Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {expenseAnalysis.mensual.slice(-12).map((row) => (
-                          <tr key={row.Mes}>
-                            <td>{row.Mes}</td>
-                            <td>{formatMoney(row.ingresos)}</td>
-                            <td>{formatMoney(row.gastos)}</td>
-                            <td>{formatMoney(row.balance)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
                 </section>
               ) : (

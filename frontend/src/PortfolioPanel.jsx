@@ -80,10 +80,6 @@ export function PortfolioPanel({ financeRows = [] }) {
   const brokerCost = Number(summary?.known_cost ?? 0)
   const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
   const evolutionRows = useMemo(() => buildEvolutionRows(snapshots, financeByMonth), [financeByMonth, snapshots])
-  const evolutionMax = useMemo(
-    () => Math.max(...evolutionRows.flatMap((row) => [row.invested, row.cost]), 0),
-    [evolutionRows],
-  )
   const donutBackground = useMemo(() => buildDonutBackground(chartItems), [chartItems])
   const selectedFinance = useMemo(
     () => getFinanceForSnapshotMonth(financeByMonth, selectedSnapshot?.snapshot_month) ?? getLatestFinance(financeByMonth),
@@ -322,6 +318,20 @@ export function PortfolioPanel({ financeRows = [] }) {
               <span>Dividendos netos</span>
               <strong>{formatMoney(summary?.dividends)}</strong>
             </article>
+          </section>
+
+          <section className="portfolio-card portfolio-evolution-card">
+            <div className="portfolio-chart-header">
+              <div>
+                <h3>Evolución</h3>
+                <span className="muted-text">{evolutionRows.length} fotos guardadas</span>
+              </div>
+            </div>
+            {evolutionRows.length ? (
+              <PortfolioEvolutionChart rows={evolutionRows} selectedKey={getSnapshotKey(selectedSnapshot)} />
+            ) : (
+              <p className="muted-text">Aún no hay fotos suficientes para dibujar evolución.</p>
+            )}
           </section>
 
           <section className="portfolio-card portfolio-global-card">
@@ -628,40 +638,6 @@ export function PortfolioPanel({ financeRows = [] }) {
 
           <section className="portfolio-card">
             <div className="portfolio-chart-header">
-              <h3>Evolución por foto</h3>
-              <span className="muted-text">{evolutionRows.length} fotos locales</span>
-            </div>
-            {evolutionRows.length ? (
-              <div className="portfolio-evolution">
-                {evolutionRows.map((row) => (
-                  <article className={row.key === getSnapshotKey(selectedSnapshot) ? 'active' : ''} key={row.key}>
-                    <span>{row.label}</span>
-                    <div className="portfolio-evolution-bars">
-                      <div>
-                        <small>Dinero</small>
-                        <div className="portfolio-bar portfolio-cost-bar">
-                          <span style={{ width: getWeight(row.cost, evolutionMax) }} />
-                        </div>
-                      </div>
-                      <div>
-                        <small>Valor</small>
-                        <div className="portfolio-bar">
-                          <span style={{ width: getWeight(row.invested, evolutionMax) }} />
-                        </div>
-                      </div>
-                    </div>
-                    <strong>{formatMoney(row.invested)}</strong>
-                    <small>{formatMoney(row.cost)} invertido · {formatMoney(row.gain)} P/L</small>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted-text">Aún no hay snapshots mensuales guardados.</p>
-            )}
-          </section>
-
-          <section className="portfolio-card">
-            <div className="portfolio-chart-header">
               <h3>Archivos importados</h3>
               {importedDocumentStatus ? (
                 importedDocumentStatus.missing?.length ? (
@@ -735,6 +711,40 @@ function inferDocumentKindFromFilename(filename) {
 
 function getFileSelectionKey(file) {
   return `${file.name}-${file.size}-${file.lastModified}`
+}
+
+function PortfolioEvolutionChart({ rows, selectedKey }) {
+  const visibleRows = rows.slice(-12)
+  const maxValue = Math.max(...visibleRows.flatMap((row) => [row.invested, row.cost]), 1)
+  return (
+    <div className="portfolio-evolution-chart">
+      {visibleRows.map((row) => {
+        const investedHeight = `${Math.max(4, (row.invested / maxValue) * 100)}%`
+        const costHeight = `${Math.max(4, (row.cost / maxValue) * 100)}%`
+        return (
+          <article className={row.key === selectedKey ? 'active' : ''} key={row.key}>
+            <div className="portfolio-evolution-bars-vertical">
+              <span className="cost" style={{ height: costHeight }} title={`Dinero invertido: ${formatMoney(row.cost)}`} />
+              <span className="value" style={{ height: investedHeight }} title={`Valor cartera: ${formatMoney(row.invested)}`} />
+            </div>
+            <strong>{formatMoney(row.invested)}</strong>
+            <small>{formatSnapshotShortLabel(row.label)}</small>
+          </article>
+        )
+      })}
+      <div className="portfolio-evolution-legend">
+        <span>Dinero invertido</span>
+        <span>Valor cartera</span>
+      </div>
+    </div>
+  )
+}
+
+function formatSnapshotShortLabel(value) {
+  const [year, month, day] = String(value ?? '').split('-')
+  if (year && month && day) return `${day}/${month}/${year.slice(-2)}`
+  if (year && month) return `${month}/${year.slice(-2)}`
+  return value
 }
 
 function buildPortfolioChart(positions, mode) {
