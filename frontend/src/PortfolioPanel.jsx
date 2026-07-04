@@ -52,6 +52,7 @@ export function PortfolioPanel({ financeRows = [] }) {
   const [isImporting, setIsImporting] = useState(false)
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
   const [chartMode, setChartMode] = useState('position')
+  const [portfolioEvolutionMode, setPortfolioEvolutionMode] = useState('global')
   const [selectedSnapshotKey, setSelectedSnapshotKey] = useState('')
   const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
   const [expandedPositionKey, setExpandedPositionKey] = useState('')
@@ -328,7 +329,12 @@ export function PortfolioPanel({ financeRows = [] }) {
               </div>
             </div>
             {evolutionRows.length ? (
-              <PortfolioEvolutionChart rows={evolutionRows} selectedKey={getSnapshotKey(selectedSnapshot)} />
+              <PortfolioEvolutionChart
+                mode={portfolioEvolutionMode}
+                onModeChange={setPortfolioEvolutionMode}
+                rows={evolutionRows}
+                selectedKey={getSnapshotKey(selectedSnapshot)}
+              />
             ) : (
               <p className="muted-text">Aún no hay fotos suficientes para dibujar evolución.</p>
             )}
@@ -713,31 +719,181 @@ function getFileSelectionKey(file) {
   return `${file.name}-${file.size}-${file.lastModified}`
 }
 
-function PortfolioEvolutionChart({ rows, selectedKey }) {
+function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
   const visibleRows = rows.slice(-12)
-  const maxValue = Math.max(...visibleRows.flatMap((row) => [row.invested, row.cost]), 1)
+  const lineSeries = mode === 'stocks' ? buildStockEvolutionSeries(visibleRows) : buildGlobalEvolutionSeries(visibleRows)
+  const valueMax = Math.max(...lineSeries.flatMap((serie) => serie.values), 1)
+  const chart = { width: 720, height: 260, paddingLeft: 58, paddingRight: 22, paddingTop: 24, paddingBottom: 46 }
+  const xForIndex = (index) =>
+    chart.paddingLeft + (index / Math.max(1, visibleRows.length - 1)) * (chart.width - chart.paddingLeft - chart.paddingRight)
+  const yForValue = (value) =>
+    chart.height - chart.paddingBottom - (value / valueMax) * (chart.height - chart.paddingTop - chart.paddingBottom)
+  const yTicks = getAxisTicks(0, valueMax, 4)
+  const weightRows = buildPortfolioWeightRows(visibleRows)
+
   return (
     <div className="portfolio-evolution-chart">
-      {visibleRows.map((row) => {
-        const investedHeight = `${Math.max(4, (row.invested / maxValue) * 100)}%`
-        const costHeight = `${Math.max(4, (row.cost / maxValue) * 100)}%`
-        return (
+      <div className="portfolio-chart-tabs compact-evolution-tabs" role="tablist" aria-label="Vista de evolución de cartera">
+        <button className={mode === 'global' ? 'active' : ''} type="button" onClick={() => onModeChange('global')}>
+          Global
+        </button>
+        <button className={mode === 'stocks' ? 'active' : ''} type="button" onClick={() => onModeChange('stocks')}>
+          Acciones
+        </button>
+      </div>
+
+      <div className="portfolio-line-chart-wrap">
+        <svg className="portfolio-line-chart" viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Evolución de cartera">
+          {yTicks.map((tick) => {
+            const y = yForValue(tick)
+            return (
+              <g key={tick}>
+                <line className="portfolio-line-grid" x1={chart.paddingLeft} x2={chart.width - chart.paddingRight} y1={y} y2={y} />
+                <text className="portfolio-line-axis-label" x={chart.paddingLeft - 8} y={y + 4} textAnchor="end">
+                  {formatCompactMoney(tick)}
+                </text>
+              </g>
+            )
+          })}
+          <line className="portfolio-line-axis" x1={chart.paddingLeft} x2={chart.width - chart.paddingRight} y1={chart.height - chart.paddingBottom} y2={chart.height - chart.paddingBottom} />
+          {visibleRows.map((row, index) => {
+            const x = xForIndex(index)
+            return (
+              <g key={row.key}>
+                <line className="portfolio-line-tick" x1={x} x2={x} y1={chart.height - chart.paddingBottom} y2={chart.height - chart.paddingBottom + 6} />
+                <text className="portfolio-line-axis-label" x={x} y={chart.height - 18} textAnchor="middle">
+                  {formatSnapshotShortLabel(row.label)}
+                </text>
+              </g>
+            )
+          })}
+          {lineSeries.map((serie, serieIndex) => (
+            <g key={serie.label}>
+              <polyline
+                fill="none"
+                points={serie.values.map((value, index) => `${xForIndex(index).toFixed(1)},${yForValue(value).toFixed(1)}`).join(' ')}
+                stroke={getChartColor(serieIndex)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="3"
+              />
+              {serie.values.map((value, index) => (
+                <circle
+                  className={visibleRows[index]?.key === selectedKey ? 'active' : ''}
+                  cx={xForIndex(index)}
+                  cy={yForValue(value)}
+                  fill={getChartColor(serieIndex)}
+                  key={`${serie.label}-${visibleRows[index]?.key}`}
+                  r="4"
+                >
+                  <title>{serie.label} · {visibleRows[index]?.label}: {formatMoney(value)}</title>
+                </circle>
+              ))}
+            </g>
+          ))}
+        </svg>
+        <div className="portfolio-line-legend">
+          {lineSeries.map((serie, index) => (
+            <span key={serie.label} style={{ '--legend-color': getChartColor(index) }}>
+              {serie.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="portfolio-weight-chart">
+        <div className="portfolio-chart-header">
+          <h4>Peso de cartera por foto</h4>
+          <span className="muted-text">Distribución porcentual por tipo</span>
+        </div>
+        {weightRows.map((row) => (
           <article className={row.key === selectedKey ? 'active' : ''} key={row.key}>
-            <div className="portfolio-evolution-bars-vertical">
-              <span className="cost" style={{ height: costHeight }} title={`Dinero invertido: ${formatMoney(row.cost)}`} />
-              <span className="value" style={{ height: investedHeight }} title={`Valor cartera: ${formatMoney(row.invested)}`} />
+            <span>{formatSnapshotShortLabel(row.label)}</span>
+            <div className="portfolio-weight-bar">
+              {row.segments.map((segment, index) => (
+                <i
+                  key={segment.label}
+                  style={{ background: getChartColor(index), width: `${segment.weight}%` }}
+                  title={`${segment.label}: ${formatNumber(segment.weight, '%')}`}
+                />
+              ))}
             </div>
-            <strong>{formatMoney(row.invested)}</strong>
-            <small>{formatSnapshotShortLabel(row.label)}</small>
           </article>
-        )
-      })}
-      <div className="portfolio-evolution-legend">
-        <span>Dinero invertido</span>
-        <span>Valor cartera</span>
+        ))}
+        <div className="portfolio-line-legend">
+          {buildWeightLabels(weightRows).map((label, index) => (
+            <span key={label} style={{ '--legend-color': getChartColor(index) }}>
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
+}
+
+function buildGlobalEvolutionSeries(rows) {
+  return [
+    { label: 'Dinero invertido', values: rows.map((row) => row.cost) },
+    { label: 'Valor cartera', values: rows.map((row) => row.invested) },
+  ]
+}
+
+function buildStockEvolutionSeries(rows) {
+  const latestPositions = rows.at(-1)?.positions ?? []
+  const topKeys = latestPositions
+    .filter((position) => position.asset_type === 'stock')
+    .sort((left, right) => Number(right.current_value ?? 0) - Number(left.current_value ?? 0))
+    .slice(0, 6)
+    .map((position) => getPositionSeriesKey(position))
+  return topKeys.map((key) => ({
+    label: key,
+    values: rows.map((row) =>
+      (row.positions ?? [])
+        .filter((position) => position.asset_type === 'stock' && getPositionSeriesKey(position) === key)
+        .reduce((total, position) => total + Number(position.current_value ?? 0), 0),
+    ),
+  }))
+}
+
+function buildPortfolioWeightRows(rows) {
+  return rows.map((row) => {
+    const groups = (row.positions ?? [])
+      .filter((position) => position.asset_type !== 'cash')
+      .reduce((acc, position) => {
+        const label = formatAssetType(position.asset_type)
+        acc[label] = (acc[label] ?? 0) + Number(position.current_value ?? 0)
+        return acc
+      }, {})
+    const total = Object.values(groups).reduce((sum, value) => sum + value, 0)
+    return {
+      key: row.key,
+      label: row.label,
+      segments: buildWeightLabelsFromGroups(groups).map((label) => ({
+        label,
+        weight: total ? (groups[label] / total) * 100 : 0,
+      })),
+    }
+  })
+}
+
+function buildWeightLabels(rows) {
+  return Array.from(new Set(rows.flatMap((row) => row.segments.map((segment) => segment.label))))
+}
+
+function buildWeightLabelsFromGroups(groups) {
+  const preferred = ['Acción', 'Fondo', 'Cripto']
+  const labels = Object.keys(groups)
+  return [...preferred.filter((label) => labels.includes(label)), ...labels.filter((label) => !preferred.includes(label)).sort()]
+}
+
+function getPositionSeriesKey(position) {
+  return position.ticker ?? position.name ?? position.isin ?? 'Sin nombre'
+}
+
+function formatCompactMoney(value) {
+  if (!Number.isFinite(Number(value))) return 's/d'
+  return new Intl.NumberFormat('es-ES', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value))
 }
 
 function formatSnapshotShortLabel(value) {
@@ -813,6 +969,7 @@ function buildEvolutionRows(snapshots, financeByMonth) {
         cost: Number(enriched.summary?.finance_invested ?? enriched.summary?.known_cost ?? 0),
         gain: Number(enriched.summary?.known_unrealized_gain ?? 0),
         dividends: Number(enriched.summary?.dividends ?? 0),
+        positions: enriched.positions ?? [],
       }
     })
     .sort((left, right) => left.key.localeCompare(right.key))

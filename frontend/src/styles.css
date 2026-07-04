@@ -2167,68 +2167,51 @@ th {
 
 .portfolio-evolution-chart {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
-  gap: 10px;
-  align-items: end;
+  gap: 14px;
 }
 
-.portfolio-evolution-chart article {
+.compact-evolution-tabs {
+  justify-content: start;
+}
+
+.portfolio-line-chart-wrap {
   display: grid;
+  gap: 8px;
   min-width: 0;
-  gap: 7px;
-  align-items: end;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 8px 6px;
 }
 
-.portfolio-evolution-chart article.active {
-  border-color: #cbd8cf;
+.portfolio-line-chart {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+  border: 1px solid #e1e8dd;
+  border-radius: 8px;
   background: #ffffff;
 }
 
-.portfolio-evolution-bars-vertical {
-  display: flex;
-  height: 150px;
-  align-items: end;
-  justify-content: center;
-  gap: 5px;
-  border-bottom: 1px solid #dce5dc;
+.portfolio-line-grid,
+.portfolio-line-tick {
+  stroke: #dfe7dc;
+  stroke-width: 1;
 }
 
-.portfolio-evolution-bars-vertical span {
-  display: block;
-  width: 14px;
-  border-radius: 999px 999px 0 0;
+.portfolio-line-axis {
+  stroke: #c8d4ca;
+  stroke-width: 1.2;
 }
 
-.portfolio-evolution-bars-vertical .cost {
-  background: #b85a4b;
-}
-
-.portfolio-evolution-bars-vertical .value {
-  background: #286b57;
-}
-
-.portfolio-evolution-chart strong,
-.portfolio-evolution-chart small {
-  overflow-wrap: anywhere;
-  text-align: center;
-}
-
-.portfolio-evolution-chart strong {
-  color: #17201a;
-  font-size: 13px;
-}
-
-.portfolio-evolution-chart small {
-  color: #637069;
+.portfolio-line-axis-label {
+  fill: #637069;
   font-size: 12px;
   font-weight: 700;
 }
 
-.portfolio-evolution-legend {
-  grid-column: 1 / -1;
+.portfolio-line-chart circle.active {
+  stroke: #17201a;
+  stroke-width: 2;
+}
+
+.portfolio-line-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -2237,19 +2220,58 @@ th {
   font-weight: 800;
 }
 
-.portfolio-evolution-legend span::before {
+.portfolio-line-legend span::before {
   display: inline-block;
   width: 16px;
   height: 4px;
   margin-right: 6px;
   border-radius: 999px;
-  background: #b85a4b;
+  background: var(--legend-color);
   vertical-align: middle;
   content: "";
 }
 
-.portfolio-evolution-legend span:nth-child(2)::before {
-  background: #286b57;
+.portfolio-weight-chart {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #e1e8dd;
+  padding-top: 12px;
+}
+
+.portfolio-weight-chart h4 {
+  margin: 0;
+  color: #17201a;
+  font-size: 14px;
+}
+
+.portfolio-weight-chart article {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.portfolio-weight-chart article > span {
+  color: #637069;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.portfolio-weight-chart article.active > span {
+  color: #17201a;
+}
+
+.portfolio-weight-bar {
+  display: flex;
+  min-height: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eee5;
+}
+
+.portfolio-weight-bar i {
+  display: block;
+  min-width: 2px;
 }
 
 .portfolio-summary-toggle {
