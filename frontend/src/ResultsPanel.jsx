@@ -89,15 +89,16 @@ function asNumber(value) {
 function getBudget(selectedRow) {
   const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
   const availableBudget = asNumber(selectedRow['🧾 Presupuesto Disponible']) || monthBudget
-  const spent = Math.abs(asNumber(selectedRow['💳 Gasto del mes']))
+  const spent = asNumber(selectedRow['💳 Gasto del mes'])
+  const spentMagnitude = Math.abs(spent)
   const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
   const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
   const debtReserve = accumulatedDebt > 0 ? Math.min(monthBudget * 0.1, accumulatedDebt) : 0
   const usableBudget = Math.max(0, monthBudget - debtReserve)
-  const remaining = Math.max(0, usableBudget - spent)
-  const overrun = Math.max(monthlyDebt, spent - usableBudget, 0)
-  const totalForBar = Math.max(monthBudget, debtReserve + spent + remaining, 1)
-  const execution = usableBudget > 0 ? (Math.min(spent, usableBudget) / usableBudget) * 100 : 0
+  const remaining = Math.max(0, usableBudget - spentMagnitude)
+  const overrun = Math.max(monthlyDebt, spentMagnitude - usableBudget, 0)
+  const totalForBar = Math.max(monthBudget, debtReserve + spentMagnitude + remaining, 1)
+  const execution = usableBudget > 0 ? (Math.min(spentMagnitude, usableBudget) / usableBudget) * 100 : 0
 
   return {
     accumulatedDebt,
@@ -109,6 +110,7 @@ function getBudget(selectedRow) {
     overrun,
     remaining,
     spent,
+    spentMagnitude,
     totalForBar,
     usableBudget,
   }
@@ -569,10 +571,10 @@ export function ResultsPanel({
                         title={`Reserva deuda: ${formatMoney(budget.debtReserve)}`}
                       />
                     )}
-                    {budget.spent > 0 && (
+                    {budget.spentMagnitude > 0 && (
                       <span
                         className="budget-segment spent"
-                        style={{ width: getSegmentWidth(budget.spent, budget.totalForBar) }}
+                        style={{ width: getSegmentWidth(budget.spentMagnitude, budget.totalForBar) }}
                         title={`Gasto: ${formatMoney(budget.spent)}`}
                       />
                     )}
