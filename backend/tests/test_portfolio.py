@@ -126,6 +126,47 @@ def test_portfolio_snapshot_uses_finance_invested_for_matching_month(tmp_path):
     )
 
     assert snapshot["snapshot_month"] == "2025-12"
-    assert snapshot["summary"]["known_cost"] == 186.75
+    assert snapshot["summary"]["known_cost"] == 6689.94
     assert snapshot["summary"]["finance_invested"] == 6689.94
     assert snapshot["summary"]["investment_bucket"] == -100.5
+
+
+def test_portfolio_snapshot_uses_latest_finance_month_for_newer_photo(tmp_path):
+    history_path = tmp_path / "historial.csv"
+    history_path.write_text(
+        "Mes,Inversiones,Dinero Invertido\n"
+        "2026-06,-1839.55,7586.52\n",
+        encoding="utf-8",
+    )
+    repository = main.LocalPortfolioRepository(tmp_path / "portfolio", finance_history_path=history_path)
+    repository.save_current_and_snapshot(
+        {
+            "snapshot_key": "2026-05-11",
+            "snapshot_date": "2026-05-11",
+            "snapshot_month": "2026-05",
+            "summary": {"dividends": 12.34, "fees": 1.5},
+        }
+    )
+
+    snapshot = repository.enrich_with_finance_history(
+        {
+            "snapshot_date": "2026-07-04",
+            "snapshot_month": "2026-07",
+            "summary": {
+                "invested": 8341.11,
+                "known_cost": 0,
+                "known_unrealized_gain": 0,
+                "known_unrealized_gain_pct": None,
+                "dividends": 0,
+                "fees": 0,
+            },
+        }
+    )
+
+    assert snapshot["summary"]["finance_source_month"] == "2026-06"
+    assert snapshot["summary"]["finance_invested"] == 7586.52
+    assert snapshot["summary"]["known_cost"] == 7586.52
+    assert snapshot["summary"]["known_unrealized_gain"] == 753.09
+    assert snapshot["summary"]["known_unrealized_gain_pct"] == 9.93
+    assert snapshot["summary"]["dividends"] == 12.34
+    assert snapshot["summary"]["fees"] == 1.5

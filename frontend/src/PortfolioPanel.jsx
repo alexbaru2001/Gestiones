@@ -86,7 +86,7 @@ export function PortfolioPanel({ financeRows = [] }) {
   )
   const donutBackground = useMemo(() => buildDonutBackground(chartItems), [chartItems])
   const selectedFinance = useMemo(
-    () => financeByMonth.get(selectedSnapshot?.snapshot_month) ?? getLatestFinance(financeByMonth),
+    () => getFinanceForSnapshotMonth(financeByMonth, selectedSnapshot?.snapshot_month) ?? getLatestFinance(financeByMonth),
     [financeByMonth, selectedSnapshot?.snapshot_month],
   )
   const globalAnalysis = useMemo(
@@ -311,7 +311,7 @@ export function PortfolioPanel({ financeRows = [] }) {
             <article>
               <span>Dinero invertido</span>
               <strong>{formatMoney(costTotal)}</strong>
-              <small>{financeInvested === null ? 'Coste broker detectado' : 'Según Finanzas'}</small>
+              <small>{financeInvested === null ? 'Coste broker detectado' : `Según Finanzas${summary?.finance_source_month ? ` (${summary.finance_source_month})` : ''}`}</small>
             </article>
             <article>
               <span>Rentabilidad conocida</span>
@@ -833,6 +833,8 @@ function buildFinanceByMonth(rows) {
           monthlySpend: Number(row['💳 Gasto del mes'] ?? 0),
           finance_invested: Number(row['Dinero Invertido'] ?? 0),
           investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
+          dividends: Number(row['Dividendos netos'] ?? row.Dividendos ?? row.dividendos ?? 0),
+          fees: Number(row.Comisiones ?? row['Comisiones inversión'] ?? row.comisiones ?? 0),
           availableBudget: Number(row['🧾 Presupuesto Disponible'] ?? 0),
         },
       ]),
@@ -843,14 +845,35 @@ function getLatestFinance(financeByMonth) {
   return Array.from(financeByMonth.values()).sort((left, right) => String(left.month).localeCompare(String(right.month))).at(-1) ?? null
 }
 
+function getFinanceForSnapshotMonth(financeByMonth, month) {
+  if (!month) return null
+  return (
+    financeByMonth.get(month) ??
+    Array.from(financeByMonth.values())
+      .filter((row) => row.month <= month)
+      .sort((left, right) => String(left.month).localeCompare(String(right.month)))
+      .at(-1) ??
+    null
+  )
+}
+
 function enrichSnapshotWithFinance(snapshot, financeByMonth) {
-  const finance = financeByMonth.get(snapshot?.snapshot_month)
+  const finance = getFinanceForSnapshotMonth(financeByMonth, snapshot?.snapshot_month)
   if (!finance) return snapshot
+  const invested = Number(snapshot.summary?.invested ?? 0)
+  const fees = Number(snapshot.summary?.fees || finance.fees || 0)
+  const gain = finance.finance_invested > 0 ? invested - finance.finance_invested - fees : Number(snapshot.summary?.known_unrealized_gain ?? 0)
   const summary = {
     ...(snapshot.summary ?? {}),
     finance_invested: finance.finance_invested,
+    finance_source_month: finance.month,
     investment_bucket: finance.investment_bucket,
     investment_net_worth: finance.finance_invested + finance.investment_bucket,
+    dividends: Number(snapshot.summary?.dividends || finance.dividends || 0),
+    fees,
+    known_cost: finance.finance_invested > 0 ? finance.finance_invested : Number(snapshot.summary?.known_cost ?? 0),
+    known_unrealized_gain: finance.finance_invested > 0 ? gain : Number(snapshot.summary?.known_unrealized_gain ?? 0),
+    known_unrealized_gain_pct: finance.finance_invested > 0 ? (gain / finance.finance_invested) * 100 : snapshot.summary?.known_unrealized_gain_pct,
   }
   return { ...snapshot, summary }
 }

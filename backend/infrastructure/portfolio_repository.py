@@ -71,26 +71,68 @@ class LocalPortfolioRepository:
     def enrich_with_finance_history(self, snapshot: dict) -> dict:
         month = snapshot.get("snapshot_month")
         finance_row = self.load_finance_history_row(month)
+        previous_summary = self.load_latest_previous_summary(snapshot)
         if not finance_row:
-            return snapshot
+            if not previous_summary:
+                return snapshot
+            summary = {**snapshot.get("summary", {})}
+            summary["dividends"] = summary.get("dividends") or previous_summary.get("dividends", 0.0)
+            summary["fees"] = summary.get("fees") or previous_summary.get("fees", 0.0)
+            return {**snapshot, "summary": summary}
         summary = {**snapshot.get("summary", {})}
         summary["finance_invested"] = finance_row["finance_invested"]
+        summary["finance_source_month"] = finance_row["month"]
         summary["investment_bucket"] = finance_row["investment_bucket"]
         summary["investment_net_worth"] = round(finance_row["finance_invested"] + finance_row["investment_bucket"], 2)
+        summary["dividends"] = summary.get("dividends") or finance_row["dividends"] or previous_summary.get("dividends", 0.0)
+        summary["fees"] = summary.get("fees") or finance_row["fees"] or previous_summary.get("fees", 0.0)
+        if finance_row["finance_invested"] > 0:
+            invested = summary.get("invested") or 0.0
+            fees = summary.get("fees") or 0.0
+            gain = round(invested - finance_row["finance_invested"] - fees, 2)
+            summary["known_cost"] = finance_row["finance_invested"]
+            summary["known_unrealized_gain"] = gain
+            summary["known_unrealized_gain_pct"] = round(gain / finance_row["finance_invested"] * 100.0, 2)
         return {**snapshot, "summary": summary}
 
     def load_finance_history_row(self, month: str | None) -> dict | None:
         if not month or not self.finance_history_path.exists():
             return None
+        fallback = None
         with self.finance_history_path.open("r", encoding="utf-8-sig", newline="") as file:
             for row in csv.DictReader(file):
-                if row.get("Mes") != month:
+                row_month = row.get("Mes")
+                if not row_month:
                     continue
-                return {
+                parsed = {
+                    "month": row_month,
                     "finance_invested": parse_csv_number(row.get("Dinero Invertido")),
                     "investment_bucket": parse_csv_number(row.get("Inversiones") or row.get("📈 Inversiones")),
+                    "dividends": parse_csv_number(first_present(row, ["Dividendos netos", "Dividendos", "dividendos"])),
+                    "fees": parse_csv_number(first_present(row, ["Comisiones", "Comisiones inversión", "comisiones"])),
                 }
-        return None
+                if row_month == month:
+                    return parsed
+                if row_month <= month:
+                    fallback = parsed
+        return fallback
+
+    def load_latest_previous_summary(self, snapshot: dict) -> dict:
+        if not self.snapshots_path.exists():
+            return {}
+        current_key = snapshot_storage_key(snapshot)
+        previous = []
+        for path in sorted(self.snapshots_path.glob("*.json")):
+            stored = load_snapshot(path)
+            if not stored:
+                continue
+            stored_key = snapshot_storage_key(stored)
+            if stored_key and current_key and stored_key < current_key:
+                previous.append((stored_key, stored.get("summary", {})))
+        for _key, summary in reversed(previous):
+            if summary.get("dividends") or summary.get("fees"):
+                return summary
+        return {}
 
 
 def safe_filename(filename: str) -> str:
@@ -100,6 +142,13 @@ def safe_filename(filename: str) -> str:
 
 def snapshot_storage_key(snapshot: dict) -> str:
     return safe_filename(snapshot.get("snapshot_key") or snapshot.get("snapshot_date") or snapshot.get("snapshot_month") or "sin-fecha")
+
+
+def first_present(row: dict, columns: list[str]) -> str | None:
+    for column in columns:
+        if column in row:
+            return row.get(column)
+    return None
 
 
 def parse_csv_number(value: str | None) -> float:
