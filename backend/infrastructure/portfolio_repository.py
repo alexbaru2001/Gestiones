@@ -140,22 +140,19 @@ class LocalPortfolioRepository:
         if not month or not self.finance_history_path.exists():
             return None
         fallback = None
-        accumulated_dividends = 0.0
         with self.finance_history_path.open("r", encoding="utf-8-sig", newline="") as file:
-            for row in csv.DictReader(file):
+            rows = sorted(csv.DictReader(file), key=lambda row: row.get("Mes") or "")
+            for row in rows:
                 row_month = row.get("Mes")
                 if not row_month:
                     continue
                 if row_month > month:
                     continue
-                monthly_dividends = parse_csv_number(first_present(row, ["Dividendos netos", "Dividendos", "dividendos"]))
-                accumulated_dividends = round(accumulated_dividends + monthly_dividends, 2)
                 parsed = {
                     "month": row_month,
                     "finance_invested": parse_csv_number(row.get("Dinero Invertido")),
                     "investment_bucket": parse_csv_number(row.get("Inversiones") or row.get("📈 Inversiones")),
-                    "dividends": accumulated_dividends,
-                    "monthly_dividends": monthly_dividends,
+                    "dividends": parse_csv_number(first_present(row, ["Dividendos netos", "Dividendos", "dividendos"])),
                     "fees": parse_csv_number(first_present(row, ["Comisiones", "Comisiones inversión", "comisiones"])),
                 }
                 if row_month == month:

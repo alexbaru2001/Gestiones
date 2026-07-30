@@ -177,7 +177,7 @@ def test_portfolio_snapshot_uses_latest_finance_month_for_newer_photo(tmp_path):
     history_path.write_text(
         "Mes,Inversiones,Dinero Invertido,Dividendos\n"
         "2026-05,-1000.00,7000.00,4.00\n"
-        "2026-06,-1839.55,7586.52,7.77\n",
+        "2026-06,-1839.55,7586.52,11.77\n",
         encoding="utf-8",
     )
     repository = main.LocalPortfolioRepository(tmp_path / "portfolio", finance_history_path=history_path)

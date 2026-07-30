@@ -41,6 +41,7 @@ class LegacyPipelineAdapter:
     def _to_response(self, result: dict[str, Any]) -> PipelineResult:
         historial = result.get("historial")
         resumen_df, objetivos_df = self._split_historial(historial)
+        resumen_df = self._add_dividend_history_to_summary(resumen_df, result.get("ingresos"))
         ultimo_mes = self._last_record(resumen_df)
 
         presupuesto = result.get("presupuesto")
@@ -62,6 +63,40 @@ class LegacyPipelineAdapter:
             ),
             analisis=self._build_analysis(result),
         )
+
+    def _add_dividend_history_to_summary(self, resumen: Any, ingresos: Any) -> Any:
+        required = {"fecha", "categoria", "cantidad", "etiquetas"}
+        if not isinstance(resumen, pd.DataFrame) or resumen.empty:
+            return resumen
+        if not isinstance(ingresos, pd.DataFrame) or ingresos.empty or not required.issubset(ingresos.columns):
+            return resumen
+
+        data = ingresos.copy()
+        data["fecha"] = pd.to_datetime(data["fecha"], errors="coerce")
+        data["cantidad"] = pd.to_numeric(data["cantidad"].astype(str).str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
+        data = data.dropna(subset=["fecha"])
+        if data.empty:
+            return resumen
+
+        categories = data["categoria"].map(normalize_text)
+        tags = data["etiquetas"].map(normalize_text)
+        dividends = data[(categories == "interes") & tags.str.contains("dividendos", regex=False)].copy()
+
+        output = resumen.copy()
+        month_column = "Mes" if "Mes" in output.columns else "mes" if "mes" in output.columns else None
+        if month_column is None:
+            return output
+        output_months = output[month_column].astype(str)
+
+        if dividends.empty:
+            output["Dividendos"] = 0.0
+            return output
+
+        dividends["Mes"] = dividends["fecha"].dt.to_period("M").astype(str)
+        monthly = dividends.groupby("Mes")["cantidad"].sum().sort_index()
+        accumulated = monthly.cumsum()
+        output["Dividendos"] = output_months.map(lambda month: accumulated_value_until(accumulated, month))
+        return output
 
     def _split_historial(self, historial: Any) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         if isinstance(historial, tuple) and len(historial) == 2:
@@ -206,3 +241,19 @@ class LegacyPipelineAdapter:
         if hasattr(value, "item"):
             return value.item()
         return value
+
+
+def normalize_text(value: Any) -> str:
+    import unicodedata
+
+    text = "" if value is None else str(value)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    return text.strip().lower()
+
+
+def accumulated_value_until(series: pd.Series, month: str) -> float:
+    values = series[series.index <= month]
+    if values.empty:
+        return 0.0
+    return round(float(values.iloc[-1]), 2)

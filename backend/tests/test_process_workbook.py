@@ -86,6 +86,60 @@ def _sample_workbook_with_income_history() -> BytesIO:
     return workbook
 
 
+def _sample_workbook_with_dividends() -> BytesIO:
+    workbook = BytesIO()
+
+    gastos = pd.DataFrame(
+        [
+            {
+                "Fecha": "2024-10-10",
+                "Categoria": "Alimentacion",
+                "Cuenta": "Principal",
+                "Cantidad": 100.0,
+                "Etiquetas": "",
+                "Comentario": "Compra semanal",
+            }
+        ]
+    )
+    ingresos = pd.DataFrame(
+        [
+            {
+                "Fecha": "2024-10-01",
+                "Categoria": "Salario",
+                "Cuenta": "Principal",
+                "Cantidad": 2000.0,
+                "Etiquetas": "",
+                "Comentario": "Nomina",
+            },
+            {
+                "Fecha": "2024-10-15",
+                "Categoria": "Interés",
+                "Cuenta": "Principal",
+                "Cantidad": 4.5,
+                "Etiquetas": "Dividendos",
+                "Comentario": "Primer dividendo",
+            },
+            {
+                "Fecha": "2024-11-15",
+                "Categoria": "Interés",
+                "Cuenta": "Principal",
+                "Cantidad": 7.25,
+                "Etiquetas": "Dividendos, acciones",
+                "Comentario": "Segundo dividendo",
+            },
+        ]
+    )
+    transferencias = pd.DataFrame(columns=["Fecha", "Saliente", "Entrante", "Cantidad", "Comentario"])
+
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        gastos.to_excel(writer, sheet_name="Gastos", index=False)
+        ingresos.to_excel(writer, sheet_name="Ingresos", index=False)
+        transferencias.to_excel(writer, sheet_name="Transferencias", index=False)
+
+    workbook.seek(0)
+    return workbook
+
+
 def test_process_workbook_returns_serializable_summary():
     client = TestClient(app)
     workbook = _sample_workbook()
@@ -115,6 +169,28 @@ def test_process_workbook_returns_serializable_summary():
     }
     assert data["result"]["analisis"]["gastos"]["mensual"][0]["balance"] == 1900.0
     assert data["result"]["analisis"]["ahorro"]["ultimo_mes"]["porcentaje_ahorro"] == 95.0
+
+
+def test_process_workbook_adds_accumulated_dividends_to_history():
+    client = TestClient(app)
+    workbook = _sample_workbook_with_dividends()
+
+    response = client.post(
+        "/api/v1/process",
+        files={
+            "file": (
+                "Inicio.xlsx",
+                workbook.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["result"]["historial"]["resumen"]
+    dividends_by_month = {row["Mes"]: row["Dividendos"] for row in rows}
+    assert dividends_by_month["2024-10"] == 4.5
+    assert dividends_by_month["2024-11"] == 11.75
 
 
 def test_process_workbook_rejects_invalid_objectives_json():

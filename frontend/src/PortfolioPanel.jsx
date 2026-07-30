@@ -1047,14 +1047,11 @@ function getSnapshotLabel(snapshot) {
 }
 
 function buildFinanceByMonth(rows) {
-  let accumulatedDividends = 0
   return new Map(
     (rows ?? [])
       .filter((row) => row?.Mes)
       .sort((left, right) => String(left.Mes).localeCompare(String(right.Mes)))
       .map((row) => {
-        const monthlyDividends = Number(row['Dividendos netos'] ?? row.Dividendos ?? row.dividendos ?? 0)
-        accumulatedDividends += Number.isFinite(monthlyDividends) ? monthlyDividends : 0
         return [
           row.Mes,
           {
@@ -1068,8 +1065,7 @@ function buildFinanceByMonth(rows) {
             monthlySpend: Number(row['💳 Gasto del mes'] ?? 0),
             finance_invested: Number(row['Dinero Invertido'] ?? 0),
             investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
-            dividends: accumulatedDividends,
-            monthly_dividends: monthlyDividends,
+            dividends: Number(row['Dividendos netos'] ?? row.Dividendos ?? row.dividendos ?? 0),
             fees: Number(row.Comisiones ?? row['Comisiones inversión'] ?? row.comisiones ?? 0),
             availableBudget: Number(row['🧾 Presupuesto Disponible'] ?? 0),
           },
