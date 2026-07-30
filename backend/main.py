@@ -73,6 +73,22 @@ def get_portfolio_snapshots() -> dict[str, Any]:
     return {"ok": True, "result": snapshots}
 
 
+@app.put("/api/v1/portfolio/snapshots/{snapshot_key}/date")
+def update_portfolio_snapshot_date(snapshot_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+    snapshot_date = payload.get("snapshot_date")
+    if not isinstance(snapshot_date, str) or not snapshot_date.strip():
+        raise HTTPException(status_code=400, detail="Indica una fecha válida para la foto.")
+    try:
+        snapshot = portfolio_repository.update_snapshot_date(snapshot_key, snapshot_date.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "result": snapshot, "snapshots": portfolio_repository.load_snapshots()}
+
+
 @app.post("/api/v1/portfolio/import")
 async def import_portfolio(files: list[UploadFile] = File(...)) -> dict[str, Any]:
     if not files:

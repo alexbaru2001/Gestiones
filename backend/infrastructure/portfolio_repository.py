@@ -56,6 +56,47 @@ class LocalPortfolioRepository:
         snapshot_key = snapshot_storage_key(snapshot)
         save_snapshot(self.snapshots_path / f"{snapshot_key}.json", snapshot)
 
+    def update_snapshot_date(self, snapshot_key: str, snapshot_date: str) -> dict:
+        try:
+            parsed_date = date.fromisoformat(snapshot_date)
+        except ValueError as exc:
+            raise ValueError("Indica una fecha válida con formato YYYY-MM-DD.") from exc
+        current_key = safe_filename(snapshot_key)
+        previous_path = self.snapshots_path / f"{current_key}.json"
+        if not previous_path.exists():
+            raise FileNotFoundError("No se encontró la foto seleccionada.")
+
+        new_key = parsed_date.isoformat()
+        next_path = self.snapshots_path / f"{new_key}.json"
+        if next_path.exists() and next_path != previous_path:
+            raise FileExistsError("Ya existe una foto con esa fecha.")
+
+        snapshot = load_snapshot(previous_path)
+        if not snapshot:
+            raise ValueError("La foto seleccionada no se pudo leer.")
+
+        updated_snapshot = {
+            **snapshot,
+            "snapshot_key": new_key,
+            "snapshot_date": new_key,
+            "snapshot_month": new_key[:7],
+        }
+        save_snapshot(next_path, updated_snapshot)
+        if next_path != previous_path:
+            previous_path.unlink()
+            self.rename_raw_snapshot_folder(current_key, new_key)
+
+        current_snapshot = load_snapshot(self.snapshot_path)
+        if current_snapshot and snapshot_storage_key(current_snapshot) == current_key:
+            save_snapshot(self.snapshot_path, updated_snapshot)
+        return self.enrich_with_finance_history(updated_snapshot)
+
+    def rename_raw_snapshot_folder(self, current_key: str, new_key: str) -> None:
+        previous_path = self.raw_path / current_key
+        next_path = self.raw_path / new_key
+        if previous_path.exists() and not next_path.exists():
+            previous_path.rename(next_path)
+
     def load_raw_files(self) -> list[UploadedInvestmentFile]:
         if not self.raw_path.exists():
             return []

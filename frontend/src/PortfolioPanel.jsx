@@ -59,6 +59,8 @@ export function PortfolioPanel({ financeRows = [] }) {
   const [chartMode, setChartMode] = useState('position')
   const [portfolioEvolutionMode, setPortfolioEvolutionMode] = useState('global')
   const [selectedSnapshotKey, setSelectedSnapshotKey] = useState('')
+  const [snapshotDateInput, setSnapshotDateInput] = useState('')
+  const [isUpdatingSnapshotDate, setIsUpdatingSnapshotDate] = useState(false)
   const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
   const [expandedPositionKey, setExpandedPositionKey] = useState('')
   const [positionAnalyses, setPositionAnalyses] = useState({})
@@ -102,6 +104,10 @@ export function PortfolioPanel({ financeRows = [] }) {
     loadPortfolio()
     loadSnapshots()
   }, [])
+
+  useEffect(() => {
+    setSnapshotDateInput(selectedSnapshot?.snapshot_date ?? '')
+  }, [selectedSnapshotKey, selectedSnapshot?.snapshot_date])
 
   const loadPortfolio = async () => {
     setIsLoading(true)
@@ -166,6 +172,45 @@ export function PortfolioPanel({ financeRows = [] }) {
       setStatus('')
     } finally {
       setIsImporting(false)
+    }
+  }
+
+  const updateSnapshotDate = async (event) => {
+    event.preventDefault()
+    const currentKey = getSnapshotKey(selectedSnapshot)
+    if (!currentKey) {
+      setError('Selecciona una foto antes de cambiar la fecha.')
+      return
+    }
+    if (!snapshotDateInput) {
+      setError('Indica la fecha correcta de la foto.')
+      return
+    }
+    if (snapshotDateInput === selectedSnapshot?.snapshot_date) return
+
+    setIsUpdatingSnapshotDate(true)
+    setError('')
+    setStatus('Guardando fecha de la foto...')
+    try {
+      const data = await requestJson(
+        `/api/v1/portfolio/snapshots/${encodeURIComponent(currentKey)}/date`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snapshot_date: snapshotDateInput }),
+        },
+        'No se pudo actualizar la fecha de la foto',
+      )
+      const loadedSnapshots = data.snapshots ?? []
+      setSnapshot(data.result)
+      setSnapshots(loadedSnapshots)
+      setSelectedSnapshotKey(getSnapshotKey(data.result) || getSnapshotKey(loadedSnapshots.at(-1)))
+      setStatus('Fecha de la foto actualizada')
+    } catch (err) {
+      setError(err.message)
+      setStatus('')
+    } finally {
+      setIsUpdatingSnapshotDate(false)
     }
   }
 
@@ -303,6 +348,19 @@ export function PortfolioPanel({ financeRows = [] }) {
                 ))}
               </select>
             </label>
+            <form className="snapshot-date-editor" onSubmit={updateSnapshotDate}>
+              <label>
+                Fecha
+                <input type="date" value={snapshotDateInput} onChange={(event) => setSnapshotDateInput(event.target.value)} />
+              </label>
+              <button
+                className="ghost-button"
+                type="submit"
+                disabled={isUpdatingSnapshotDate || !snapshotDateInput || snapshotDateInput === selectedSnapshot.snapshot_date}
+              >
+                {isUpdatingSnapshotDate ? 'Guardando...' : 'Guardar fecha'}
+              </button>
+            </form>
           </section>
 
           <section className="portfolio-hero">

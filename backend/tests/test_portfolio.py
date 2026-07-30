@@ -107,6 +107,47 @@ def test_portfolio_repository_saves_snapshots_by_reference_date(tmp_path):
     assert (tmp_path / "snapshots" / "2026-07-04.json").exists()
 
 
+def test_portfolio_repository_updates_snapshot_date(tmp_path):
+    repository = main.LocalPortfolioRepository(tmp_path)
+    repository.save_current_and_snapshot(
+        {
+            "snapshot_key": "2026-07-30",
+            "snapshot_date": "2026-07-30",
+            "snapshot_month": "2026-07",
+            "summary": {},
+        }
+    )
+
+    snapshot = repository.update_snapshot_date("2026-07-30", "2026-06-30")
+
+    assert snapshot["snapshot_key"] == "2026-06-30"
+    assert snapshot["snapshot_date"] == "2026-06-30"
+    assert snapshot["snapshot_month"] == "2026-06"
+    assert not (tmp_path / "snapshots" / "2026-07-30.json").exists()
+    assert (tmp_path / "snapshots" / "2026-06-30.json").exists()
+    assert repository.load()["snapshot_date"] == "2026-06-30"
+
+
+def test_portfolio_snapshot_date_endpoint_updates_snapshot(tmp_path, monkeypatch):
+    repository = main.LocalPortfolioRepository(tmp_path)
+    repository.save_current_and_snapshot(
+        {
+            "snapshot_key": "2026-07-30",
+            "snapshot_date": "2026-07-30",
+            "snapshot_month": "2026-07",
+            "summary": {},
+        }
+    )
+    monkeypatch.setattr(main, "portfolio_repository", repository)
+    client = TestClient(main.app)
+
+    response = client.put("/api/v1/portfolio/snapshots/2026-07-30/date", json={"snapshot_date": "2026-06-30"})
+
+    assert response.status_code == 200
+    assert response.json()["result"]["snapshot_date"] == "2026-06-30"
+    assert response.json()["snapshots"][0]["snapshot_month"] == "2026-06"
+
+
 def test_portfolio_snapshot_uses_finance_invested_for_matching_month(tmp_path):
     history_path = tmp_path / "historial.csv"
     history_path.write_text(
