@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { BriefcaseBusiness, ChartNoAxesCombined, PanelLeftClose, PanelLeftOpen, Server, WalletCards } from 'lucide-react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
 import { InputPanel } from './InputPanel'
@@ -42,6 +43,7 @@ export function App() {
   const [selectedObjective, setSelectedObjective] = useState('all')
   const [selectedMonth, setSelectedMonth] = useState('')
   const [activeArea, setActiveArea] = useState('finanzas')
+  const [isInputOpen, setIsInputOpen] = useState(true)
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => getHistoryRows(result), [result])
@@ -129,6 +131,7 @@ export function App() {
       setResult(data.result)
       setSelectedObjective('all')
       setSelectedMonth(data.result?.historial?.ultimo_mes?.Mes ?? '')
+      setIsInputOpen(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -247,9 +250,15 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <h1>Gestiones</h1>
-          <p>{areaSubtitle}</p>
+        <div className="brand-block">
+          <span className="brand-mark" aria-hidden="true">
+            <WalletCards size={22} strokeWidth={1.9} />
+          </span>
+          <div>
+            <span className="brand-eyebrow">Panel personal</span>
+            <h1>Gestiones</h1>
+            <p>{areaSubtitle}</p>
+          </div>
         </div>
         <div className="topbar-actions">
           <nav className="area-switch" aria-label="Área de trabajo">
@@ -258,6 +267,7 @@ export function App() {
               type="button"
               onClick={() => setActiveArea('finanzas')}
             >
+              <ChartNoAxesCombined aria-hidden="true" size={17} />
               Finanzas
             </button>
             <button
@@ -265,6 +275,7 @@ export function App() {
               type="button"
               onClick={() => setActiveArea('invertir')}
             >
+              <BriefcaseBusiness aria-hidden="true" size={17} />
               Invertir
             </button>
             <button
@@ -272,38 +283,62 @@ export function App() {
               type="button"
               onClick={() => setActiveArea('cartera')}
             >
+              <WalletCards aria-hidden="true" size={17} />
               Cartera
             </button>
           </nav>
-          <button className="ghost-button" type="button" onClick={checkHealth} disabled={isChecking}>
-            {isChecking ? 'Comprobando...' : `Backend: ${health}`}
+          {activeArea === 'finanzas' && (
+            <button
+              aria-expanded={isInputOpen}
+              className="icon-text-button"
+              onClick={() => setIsInputOpen((current) => !current)}
+              title={isInputOpen ? 'Ocultar configuración del Excel' : 'Mostrar configuración del Excel'}
+              type="button"
+            >
+              {isInputOpen ? <PanelLeftClose aria-hidden="true" size={18} /> : <PanelLeftOpen aria-hidden="true" size={18} />}
+              <span>Datos Excel</span>
+            </button>
+          )}
+          <button
+            className={`backend-status status-${health}`}
+            type="button"
+            onClick={checkHealth}
+            disabled={isChecking}
+            title="Comprobar conexión con el backend"
+          >
+            <Server aria-hidden="true" size={16} />
+            <span>{isChecking ? 'Comprobando' : health}</span>
           </button>
         </div>
       </header>
 
       {activeArea === 'finanzas' ? (
-        <section className="workspace">
-          <InputPanel
-            file={file}
-            params={params}
-            objectives={objectives}
-            isLoadingObjectives={isLoadingObjectives}
-            isSavingObjectives={isSavingObjectives}
-            isProcessing={isProcessing}
-            hasValidationErrors={hasValidationErrors}
-            validationMessages={validationMessages}
-            objectivesStatus={objectivesStatus}
-            error={error}
-            errorRef={errorRef}
-            onFileChange={setFile}
-            onParamChange={updateParam}
-            onObjectiveAdd={addObjective}
-            onObjectiveChange={updateObjective}
-            onObjectiveRemove={removeObjective}
-            onObjectivesLoad={() => loadObjectives()}
-            onObjectivesSave={saveObjectives}
-            onSubmit={processWorkbook}
-          />
+        <section className={isInputOpen ? 'workspace' : 'workspace input-collapsed'}>
+          {isInputOpen && (
+            <aside className="input-column">
+              <InputPanel
+                file={file}
+                params={params}
+                objectives={objectives}
+                isLoadingObjectives={isLoadingObjectives}
+                isSavingObjectives={isSavingObjectives}
+                isProcessing={isProcessing}
+                hasValidationErrors={hasValidationErrors}
+                validationMessages={validationMessages}
+                objectivesStatus={objectivesStatus}
+                error={error}
+                errorRef={errorRef}
+                onFileChange={setFile}
+                onParamChange={updateParam}
+                onObjectiveAdd={addObjective}
+                onObjectiveChange={updateObjective}
+                onObjectiveRemove={removeObjective}
+                onObjectivesLoad={() => loadObjectives()}
+                onObjectivesSave={saveObjectives}
+                onSubmit={processWorkbook}
+              />
+            </aside>
+          )}
 
           <ResultsPanel
             isProcessing={isProcessing}

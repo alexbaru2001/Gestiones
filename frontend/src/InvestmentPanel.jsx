@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Search } from 'lucide-react'
 import { requestJson } from './api'
 
 const metricGroups = [
@@ -103,10 +104,11 @@ export function InvestmentPanel() {
 
   return (
     <section className="panel investment-panel">
-      <div className="panel-header">
+      <div className="panel-header dashboard-header">
         <div>
+          <span className="section-kicker">Análisis de activos</span>
           <h2>Invertir</h2>
-          <span>Análisis de dividendos crecientes por ticker</span>
+          <p>Dividendos, valoración y solidez por ticker</p>
         </div>
       </div>
 
@@ -116,6 +118,7 @@ export function InvestmentPanel() {
           <input value={ticker} onChange={(event) => setTicker(event.target.value)} placeholder="KO, JNJ, ROVI.MC..." />
         </label>
         <button className="primary-button inline-primary" type="submit" disabled={isLoading}>
+          <Search aria-hidden="true" size={18} />
           {isLoading ? 'Analizando...' : 'Analizar'}
         </button>
       </form>

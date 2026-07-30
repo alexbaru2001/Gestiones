@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CalendarDays, Download, FileJson, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
 import { comparisonRows } from './resultSelectors'
 
@@ -189,6 +190,13 @@ function formatMonthLabel(value) {
   return `${month}/${year.slice(-2)}`
 }
 
+function formatMonthLong(value) {
+  const [year, month] = String(value ?? '').split('-').map(Number)
+  if (!year || !month) return value
+  const formatted = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
+  return formatted.charAt(0).toUpperCase() + formatted.slice(1)
+}
+
 function getTypologyBounds(rows, fields) {
   const values = rows.flatMap((row) => fields.map(({ field }) => asNumber(row[field])))
   return {
@@ -312,6 +320,7 @@ export function ResultsPanel({
   const [activeTypologyFields, setActiveTypologyFields] = useState(defaultTypologyFields)
   const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [expensePeriod, setExpensePeriod] = useState('6')
+  const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [typologyTooltip, setTypologyTooltip] = useState(null)
   const [savingsTooltip, setSavingsTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
@@ -324,8 +333,8 @@ export function ResultsPanel({
   const savingsAnalysis = getSavingsAnalysis(result)
   const scopedSavingsRows = savingsAnalysis.mensual.filter((row) => !selectedRow?.Mes || String(row.Mes) <= String(selectedRow.Mes))
   const selectedSavingsRow = scopedSavingsRows.at(-1) ?? savingsAnalysis.ultimo_mes
-  const savingsMax = Math.max(...scopedSavingsRows.map((row) => Math.abs(asNumber(row.balance))), 1)
-  const savingsPercentRows = scopedSavingsRows.slice(-12)
+  const savingsPercentRows = getPeriodRows(scopedSavingsRows, savingsPeriod)
+  const savingsMax = Math.max(...savingsPercentRows.map((row) => Math.abs(asNumber(row.balance))), 1)
   const savingsPercentValues = savingsPercentRows.map((row) => asNumber(row.porcentaje_ahorro))
   const savingsAverageValues = movingAverage(savingsPercentValues)
   const savingsPercentBounds = {
@@ -386,12 +395,17 @@ export function ResultsPanel({
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
-      <div className="panel-header">
-        <h2>Resultados</h2>
+      <div className="panel-header dashboard-header">
+        <div>
+          <span className="section-kicker">Vista mensual</span>
+          <h2>Finanzas</h2>
+          <p>{selectedRow ? `Lectura consolidada de ${formatMonthLong(selectedRow.Mes)}` : 'Procesa un Excel para consultar tus datos'}</p>
+        </div>
         <div className="panel-actions">
           {rows.length > 0 ? (
             <label className="month-selector">
-              <span>Mes</span>
+              <CalendarDays aria-hidden="true" size={17} />
+              <span>Periodo</span>
               <select value={selectedRow?.Mes ?? ''} onChange={(event) => onMonthChange(event.target.value)}>
                 {rows.map((row) => (
                   <option key={row.Mes} value={row.Mes}>
@@ -404,19 +418,28 @@ export function ResultsPanel({
             <span>Pendiente</span>
           )}
           {result && (
-            <div className="export-actions">
-              <button className="text-button" type="button" onClick={onExportResult}>
-                JSON
-              </button>
-              <button className="text-button" type="button" onClick={onExportHistoryCsv}>
-                Historial CSV
-              </button>
-              {objectiveRows.length > 0 && (
-                <button className="text-button" type="button" onClick={onExportObjectivesCsv}>
-                  Objetivos CSV
+            <details className="export-menu">
+              <summary>
+                <Download aria-hidden="true" size={17} />
+                Exportar
+              </summary>
+              <div className="export-actions">
+                <button className="text-button" type="button" onClick={onExportResult}>
+                  <FileJson aria-hidden="true" size={16} />
+                  Resultado JSON
                 </button>
-              )}
-            </div>
+                <button className="text-button" type="button" onClick={onExportHistoryCsv}>
+                  <Table2 aria-hidden="true" size={16} />
+                  Historial CSV
+                </button>
+                {objectiveRows.length > 0 && (
+                  <button className="text-button" type="button" onClick={onExportObjectivesCsv}>
+                    <Table2 aria-hidden="true" size={16} />
+                    Objetivos CSV
+                  </button>
+                )}
+              </div>
+            </details>
           )}
         </div>
       </div>
@@ -697,29 +720,44 @@ export function ResultsPanel({
             {activeTab === 'ahorro' && (
               savingsAnalysis.mensual.length > 0 ? (
                 <section className="savings-layout">
-                  <div className="savings-summary">
-                    <article>
+                  <div className="savings-summary executive-kpis">
+                    <article className="tone-income">
                       <span>Ingresos</span>
                       <strong>{formatMoney(selectedSavingsRow?.ingresos)}</strong>
                     </article>
-                    <article>
+                    <article className="tone-expense">
                       <span>Gastos</span>
                       <strong>{formatMoney(selectedSavingsRow?.gastos)}</strong>
                     </article>
-                    <article>
+                    <article className="tone-balance">
                       <span>Balance</span>
                       <strong>{formatMoney(selectedSavingsRow?.balance)}</strong>
                     </article>
-                    <article>
+                    <article className="tone-savings">
                       <span>Ahorro</span>
                       <strong>{asNumber(selectedSavingsRow?.porcentaje_ahorro).toFixed(1)}%</strong>
+                      <small>
+                        {asNumber(selectedSavingsRow?.gastos) === 0 && asNumber(selectedSavingsRow?.ingresos) > 0
+                          ? 'Sin gastos registrados'
+                          : 'Sobre los ingresos del mes'}
+                      </small>
                     </article>
                   </div>
 
                   <section className="trend-panel compact-trend savings-percent-panel">
                     <div className="table-toolbar compact-toolbar">
-                      <h3 className="table-title">Porcentaje de ahorro</h3>
-                      <span>Media móvil 3 meses</span>
+                      <div>
+                        <h3 className="table-title">Porcentaje de ahorro</h3>
+                        <span>Comparado con la media móvil de 3 meses</span>
+                      </div>
+                      <label className="period-selector">
+                        <span>Periodo</span>
+                        <select value={savingsPeriod} onChange={(event) => setSavingsPeriod(event.target.value)}>
+                          <option value="6">6 meses</option>
+                          <option value="12">12 meses</option>
+                          <option value="all">Todo</option>
+                        </select>
+                      </label>
                     </div>
                     <div className="savings-chart-wrap">
                       <svg
@@ -778,9 +816,11 @@ export function ResultsPanel({
                         ))}
                         {savingsCoordinates.map(({ x, y }, index) => (
                           <g key={savingsPercentRows[index]?.Mes}>
-                            <text className="chart-value-label" x={x} y={y < 42 ? y + 18 : y - 10} textAnchor="middle">
-                              {formatPercent(savingsPercentValues[index])}
-                            </text>
+                            {index === savingsCoordinates.length - 1 || savingsTooltip?.month === savingsPercentRows[index]?.Mes ? (
+                              <text className="chart-value-label" x={x} y={y < 42 ? y + 18 : y - 10} textAnchor="middle">
+                                {formatPercent(savingsPercentValues[index])}
+                              </text>
+                            ) : null}
                             <circle
                               className="chart-point"
                               cx={x}
@@ -790,6 +830,9 @@ export function ResultsPanel({
                                 setSavingsTooltip({
                                   average: savingsAverageValues[index],
                                   month: savingsPercentRows[index]?.Mes,
+                                  balance: savingsPercentRows[index]?.balance,
+                                  expenses: savingsPercentRows[index]?.gastos,
+                                  income: savingsPercentRows[index]?.ingresos,
                                   value: savingsPercentValues[index],
                                   x,
                                   y,
@@ -799,6 +842,9 @@ export function ResultsPanel({
                                 setSavingsTooltip({
                                   average: savingsAverageValues[index],
                                   month: savingsPercentRows[index]?.Mes,
+                                  balance: savingsPercentRows[index]?.balance,
+                                  expenses: savingsPercentRows[index]?.gastos,
+                                  income: savingsPercentRows[index]?.ingresos,
                                   value: savingsPercentValues[index],
                                   x,
                                   y,
@@ -821,6 +867,9 @@ export function ResultsPanel({
                         >
                           <strong>{savingsTooltip.month}</strong>
                           <span>Ahorro: {formatPercent(savingsTooltip.value)}</span>
+                          <span>Ingresos: {formatMoney(savingsTooltip.income)}</span>
+                          <span>Gastos: {formatMoney(savingsTooltip.expenses)}</span>
+                          <span>Balance: {formatMoney(savingsTooltip.balance)}</span>
                           <span>Media móvil: {formatPercent(savingsTooltip.average)}</span>
                         </div>
                       )}

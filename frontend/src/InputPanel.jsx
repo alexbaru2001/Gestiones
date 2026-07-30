@@ -1,3 +1,4 @@
+import { FileSpreadsheet, FolderOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { formatPercent } from './formatters'
 
 export function InputPanel({
@@ -24,13 +25,19 @@ export function InputPanel({
   return (
     <form className="panel" onSubmit={onSubmit}>
       <div className="panel-header">
-        <h2>Entrada</h2>
-        <span>{file ? file.name : 'Sin archivo'}</span>
+        <div>
+          <span className="section-kicker">Configuración</span>
+          <h2>Datos financieros</h2>
+        </div>
+        <span className={file ? 'file-status selected' : 'file-status'}>{file ? file.name : 'Sin archivo'}</span>
       </div>
 
       <label className="file-input">
         <input type="file" accept=".xlsx,.xlsm,.xls" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
-        <span>Seleccionar Excel</span>
+        <span>
+          <FileSpreadsheet aria-hidden="true" size={19} />
+          Seleccionar Excel
+        </span>
       </label>
 
       <div className="field-grid">
@@ -81,12 +88,15 @@ export function InputPanel({
           <h3>Objetivos</h3>
           <div className="button-row">
             <button className="text-button" type="button" onClick={onObjectivesLoad} disabled={isLoadingObjectives}>
+              <RefreshCw aria-hidden="true" size={15} />
               {isLoadingObjectives ? 'Cargando...' : 'Cargar'}
             </button>
             <button className="text-button" type="button" onClick={onObjectivesSave} disabled={isSavingObjectives || hasValidationErrors}>
+              <Save aria-hidden="true" size={15} />
               {isSavingObjectives ? 'Guardando...' : 'Guardar'}
             </button>
             <button className="text-button" type="button" onClick={onObjectiveAdd}>
+              <Plus aria-hidden="true" size={15} />
               Añadir
             </button>
           </div>
@@ -141,6 +151,7 @@ export function InputPanel({
                   />
                 </label>
                 <button className="text-button danger" type="button" onClick={() => onObjectiveRemove(objective.id)}>
+                  <Trash2 aria-hidden="true" size={15} />
                   Quitar
                 </button>
               </div>
@@ -162,6 +173,7 @@ export function InputPanel({
       </div>
 
       <button className="primary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
+        <FolderOpen aria-hidden="true" size={18} />
         {isProcessing ? 'Procesando...' : 'Procesar'}
       </button>
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
 
 function formatMoney(value) {
@@ -61,6 +62,7 @@ export function PortfolioPanel({ financeRows = [] }) {
   const [selectedSnapshotKey, setSelectedSnapshotKey] = useState('')
   const [snapshotDateInput, setSnapshotDateInput] = useState('')
   const [isUpdatingSnapshotDate, setIsUpdatingSnapshotDate] = useState(false)
+  const [isEditingSnapshotDate, setIsEditingSnapshotDate] = useState(false)
   const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
   const [expandedPositionKey, setExpandedPositionKey] = useState('')
   const [positionAnalyses, setPositionAnalyses] = useState({})
@@ -107,6 +109,7 @@ export function PortfolioPanel({ financeRows = [] }) {
 
   useEffect(() => {
     setSnapshotDateInput(selectedSnapshot?.snapshot_date ?? '')
+    setIsEditingSnapshotDate(false)
   }, [selectedSnapshotKey, selectedSnapshot?.snapshot_date])
 
   const loadPortfolio = async () => {
@@ -206,6 +209,7 @@ export function PortfolioPanel({ financeRows = [] }) {
       setSnapshots(loadedSnapshots)
       setSelectedSnapshotKey(getSnapshotKey(data.result) || getSnapshotKey(loadedSnapshots.at(-1)))
       setStatus('Fecha de la foto actualizada')
+      setIsEditingSnapshotDate(false)
     } catch (err) {
       setError(err.message)
       setStatus('')
@@ -267,10 +271,11 @@ export function PortfolioPanel({ financeRows = [] }) {
 
   return (
     <section className="panel portfolio-panel">
-      <div className="panel-header">
+      <div className="panel-header dashboard-header">
         <div>
+          <span className="section-kicker">Patrimonio invertido</span>
           <h2>Cartera</h2>
-          <span>Importación local de brokers, posiciones y evolución</span>
+          <p>Posiciones, rentabilidad y evolución de tus brokers</p>
         </div>
       </div>
 
@@ -283,12 +288,17 @@ export function PortfolioPanel({ financeRows = [] }) {
             ref={fileInputRef}
             type="file"
           />
-          <span>{files.length ? `Añadir PDFs/XLSX (${files.length}/3 seleccionados)` : 'Seleccionar foto de cartera'}</span>
+          <span>
+            <FileUp aria-hidden="true" size={19} />
+            {files.length ? `Añadir archivos (${files.length}/3)` : 'Seleccionar foto de cartera'}
+          </span>
         </label>
         <button className="primary-button inline-primary" type="submit" disabled={isImporting}>
+          <FileUp aria-hidden="true" size={18} />
           {isImporting ? 'Importando...' : 'Importar cartera'}
         </button>
         <button className="ghost-button" type="button" onClick={loadPortfolio} disabled={isLoading}>
+          <RefreshCw aria-hidden="true" size={17} />
           {isLoading ? 'Cargando...' : 'Recargar local'}
         </button>
       </form>
@@ -331,11 +341,11 @@ export function PortfolioPanel({ financeRows = [] }) {
       ) : (
         <div className="portfolio-dashboard">
           <section className="portfolio-card portfolio-snapshot-card">
-            <div>
+            <div className="snapshot-heading">
+              <span className="section-kicker">Foto activa</span>
               <h3>Snapshot seleccionado</h3>
               <span className="muted-text">
-                {selectedSnapshot.snapshot_date ?? 'Sin fecha de referencia'} · {selectedSnapshot.positions?.length ?? 0} posiciones ·{' '}
-                {selectedSnapshot.transactions?.length ?? 0} movimientos
+                {selectedSnapshot.positions?.length ?? 0} posiciones · {selectedSnapshot.transactions?.length ?? 0} movimientos
               </span>
             </div>
             <label>
@@ -348,39 +358,77 @@ export function PortfolioPanel({ financeRows = [] }) {
                 ))}
               </select>
             </label>
-            <form className="snapshot-date-editor" onSubmit={updateSnapshotDate}>
-              <label>
-                Fecha
-                <input type="date" value={snapshotDateInput} onChange={(event) => setSnapshotDateInput(event.target.value)} />
-              </label>
-              <button
-                className="ghost-button"
-                type="submit"
-                disabled={isUpdatingSnapshotDate || !snapshotDateInput || snapshotDateInput === selectedSnapshot.snapshot_date}
-              >
-                {isUpdatingSnapshotDate ? 'Guardando...' : 'Guardar fecha'}
-              </button>
-            </form>
+            {isEditingSnapshotDate ? (
+              <form className="snapshot-date-editor" onSubmit={updateSnapshotDate}>
+                <label>
+                  Fecha de referencia
+                  <input type="date" value={snapshotDateInput} onChange={(event) => setSnapshotDateInput(event.target.value)} />
+                </label>
+                <div className="snapshot-date-actions">
+                  <button
+                    aria-label="Guardar fecha"
+                    className="icon-button primary-icon-button"
+                    disabled={isUpdatingSnapshotDate || !snapshotDateInput || snapshotDateInput === selectedSnapshot.snapshot_date}
+                    title="Guardar fecha"
+                    type="submit"
+                  >
+                    <Check aria-hidden="true" size={18} />
+                  </button>
+                  <button
+                    aria-label="Cancelar edición"
+                    className="icon-button"
+                    onClick={() => {
+                      setSnapshotDateInput(selectedSnapshot.snapshot_date ?? '')
+                      setIsEditingSnapshotDate(false)
+                    }}
+                    title="Cancelar edición"
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={18} />
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="snapshot-date-display">
+                <div>
+                  <span>Fecha de referencia</span>
+                  <strong>
+                    <CalendarDays aria-hidden="true" size={17} />
+                    {formatSnapshotDate(selectedSnapshot.snapshot_date)}
+                  </strong>
+                </div>
+                <button
+                  aria-label="Editar fecha del snapshot"
+                  className="icon-button"
+                  onClick={() => setIsEditingSnapshotDate(true)}
+                  title="Editar fecha del snapshot"
+                  type="button"
+                >
+                  <Pencil aria-hidden="true" size={17} />
+                </button>
+              </div>
+            )}
           </section>
 
-          <section className="portfolio-hero">
-            <article>
+          <section className="portfolio-hero executive-kpis">
+            <article className="tone-balance">
               <span>Valor actual invertido</span>
               <strong>{formatMoney(investedTotal)}</strong>
             </article>
-            <article>
+            <article className="tone-info">
               <span>Dinero invertido</span>
               <strong>{formatMoney(costTotal)}</strong>
               <small>{financeInvested === null ? 'Coste broker detectado' : `Según Finanzas${summary?.finance_source_month ? ` (${summary.finance_source_month})` : ''}`}</small>
             </article>
-            <article>
+            <article className="tone-performance">
               <span>Rentabilidad conocida</span>
               <strong>{formatMoney(summary?.known_unrealized_gain)}</strong>
               <small>{formatNumber(summary?.known_unrealized_gain_pct, '%')}</small>
             </article>
-            <article>
-              <span>Dividendos netos</span>
+            <article className="tone-dividends">
+              <span>Dividendos acumulados</span>
               <strong>{formatMoney(summary?.dividends)}</strong>
+              <small>Hasta {formatSnapshotDate(selectedSnapshot.snapshot_date)}</small>
             </article>
           </section>
 
@@ -957,6 +1005,13 @@ function getPositionSeriesKey(position) {
 function formatCompactMoney(value) {
   if (!Number.isFinite(Number(value))) return 's/d'
   return new Intl.NumberFormat('es-ES', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value))
+}
+
+function formatSnapshotDate(value) {
+  if (!value) return 'Sin fecha'
+  const [year, month, day] = String(value).split('-').map(Number)
+  if (!year || !month || !day) return value
+  return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(year, month - 1, day))
 }
 
 function formatSnapshotShortLabel(value) {
