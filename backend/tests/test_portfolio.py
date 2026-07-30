@@ -175,8 +175,9 @@ def test_portfolio_snapshot_uses_finance_invested_for_matching_month(tmp_path):
 def test_portfolio_snapshot_uses_latest_finance_month_for_newer_photo(tmp_path):
     history_path = tmp_path / "historial.csv"
     history_path.write_text(
-        "Mes,Inversiones,Dinero Invertido\n"
-        "2026-06,-1839.55,7586.52\n",
+        "Mes,Inversiones,Dinero Invertido,Dividendos\n"
+        "2026-05,-1000.00,7000.00,4.00\n"
+        "2026-06,-1839.55,7586.52,7.77\n",
         encoding="utf-8",
     )
     repository = main.LocalPortfolioRepository(tmp_path / "portfolio", finance_history_path=history_path)
@@ -209,5 +210,5 @@ def test_portfolio_snapshot_uses_latest_finance_month_for_newer_photo(tmp_path):
     assert snapshot["summary"]["known_cost"] == 7586.52
     assert snapshot["summary"]["known_unrealized_gain"] == 753.09
     assert snapshot["summary"]["known_unrealized_gain_pct"] == 9.93
-    assert snapshot["summary"]["dividends"] == 12.34
+    assert snapshot["summary"]["dividends"] == 11.77
     assert snapshot["summary"]["fees"] == 1.5

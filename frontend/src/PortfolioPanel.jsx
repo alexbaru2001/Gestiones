@@ -1047,27 +1047,34 @@ function getSnapshotLabel(snapshot) {
 }
 
 function buildFinanceByMonth(rows) {
+  let accumulatedDividends = 0
   return new Map(
     (rows ?? [])
       .filter((row) => row?.Mes)
-      .map((row) => [
-        row.Mes,
-        {
-          month: row.Mes,
-          total: Number(row.total ?? 0),
-          savings: Number(row['💰 Ahorros'] ?? 0),
-          gifts: Number(row['🎁 Regalos'] ?? 0),
-          holidays: Number(row['💼 Vacaciones'] ?? 0),
-          emergencyFund: Number(row['Fondo de reserva cargado'] ?? 0),
-          monthlyBudget: Number(row['💸 Presupuesto Mes'] ?? 0),
-          monthlySpend: Number(row['💳 Gasto del mes'] ?? 0),
-          finance_invested: Number(row['Dinero Invertido'] ?? 0),
-          investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
-          dividends: Number(row['Dividendos netos'] ?? row.Dividendos ?? row.dividendos ?? 0),
-          fees: Number(row.Comisiones ?? row['Comisiones inversión'] ?? row.comisiones ?? 0),
-          availableBudget: Number(row['🧾 Presupuesto Disponible'] ?? 0),
-        },
-      ]),
+      .sort((left, right) => String(left.Mes).localeCompare(String(right.Mes)))
+      .map((row) => {
+        const monthlyDividends = Number(row['Dividendos netos'] ?? row.Dividendos ?? row.dividendos ?? 0)
+        accumulatedDividends += Number.isFinite(monthlyDividends) ? monthlyDividends : 0
+        return [
+          row.Mes,
+          {
+            month: row.Mes,
+            total: Number(row.total ?? 0),
+            savings: Number(row['💰 Ahorros'] ?? 0),
+            gifts: Number(row['🎁 Regalos'] ?? 0),
+            holidays: Number(row['💼 Vacaciones'] ?? 0),
+            emergencyFund: Number(row['Fondo de reserva cargado'] ?? 0),
+            monthlyBudget: Number(row['💸 Presupuesto Mes'] ?? 0),
+            monthlySpend: Number(row['💳 Gasto del mes'] ?? 0),
+            finance_invested: Number(row['Dinero Invertido'] ?? 0),
+            investment_bucket: Number(row['📈 Inversiones'] ?? row.Inversiones ?? 0),
+            dividends: accumulatedDividends,
+            monthly_dividends: monthlyDividends,
+            fees: Number(row.Comisiones ?? row['Comisiones inversión'] ?? row.comisiones ?? 0),
+            availableBudget: Number(row['🧾 Presupuesto Disponible'] ?? 0),
+          },
+        ]
+      }),
   )
 }
 
@@ -1099,7 +1106,7 @@ function enrichSnapshotWithFinance(snapshot, financeByMonth) {
     finance_source_month: finance.month,
     investment_bucket: finance.investment_bucket,
     investment_net_worth: finance.finance_invested + finance.investment_bucket,
-    dividends: Number(snapshot.summary?.dividends || finance.dividends || 0),
+    dividends: Number(finance.dividends ?? 0),
     fees,
     known_cost: finance.finance_invested > 0 ? finance.finance_invested : Number(snapshot.summary?.known_cost ?? 0),
     known_unrealized_gain: finance.finance_invested > 0 ? gain : Number(snapshot.summary?.known_unrealized_gain ?? 0),

@@ -125,7 +125,7 @@ class LocalPortfolioRepository:
         summary["finance_source_month"] = finance_row["month"]
         summary["investment_bucket"] = finance_row["investment_bucket"]
         summary["investment_net_worth"] = round(finance_row["finance_invested"] + finance_row["investment_bucket"], 2)
-        summary["dividends"] = summary.get("dividends") or finance_row["dividends"] or previous_summary.get("dividends", 0.0)
+        summary["dividends"] = finance_row["dividends"]
         summary["fees"] = summary.get("fees") or finance_row["fees"] or previous_summary.get("fees", 0.0)
         if finance_row["finance_invested"] > 0:
             invested = summary.get("invested") or 0.0
@@ -140,22 +140,27 @@ class LocalPortfolioRepository:
         if not month or not self.finance_history_path.exists():
             return None
         fallback = None
+        accumulated_dividends = 0.0
         with self.finance_history_path.open("r", encoding="utf-8-sig", newline="") as file:
             for row in csv.DictReader(file):
                 row_month = row.get("Mes")
                 if not row_month:
                     continue
+                if row_month > month:
+                    continue
+                monthly_dividends = parse_csv_number(first_present(row, ["Dividendos netos", "Dividendos", "dividendos"]))
+                accumulated_dividends = round(accumulated_dividends + monthly_dividends, 2)
                 parsed = {
                     "month": row_month,
                     "finance_invested": parse_csv_number(row.get("Dinero Invertido")),
                     "investment_bucket": parse_csv_number(row.get("Inversiones") or row.get("📈 Inversiones")),
-                    "dividends": parse_csv_number(first_present(row, ["Dividendos netos", "Dividendos", "dividendos"])),
+                    "dividends": accumulated_dividends,
+                    "monthly_dividends": monthly_dividends,
                     "fees": parse_csv_number(first_present(row, ["Comisiones", "Comisiones inversión", "comisiones"])),
                 }
                 if row_month == month:
                     return parsed
-                if row_month <= month:
-                    fallback = parsed
+                fallback = parsed
         return fallback
 
     def load_latest_previous_summary(self, snapshot: dict) -> dict:
