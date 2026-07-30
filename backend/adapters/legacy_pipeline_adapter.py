@@ -61,7 +61,7 @@ class LegacyPipelineAdapter:
                 resumen=self._dataframe_to_records(resumen_df),
                 objetivos=self._dataframe_to_records(objetivos_df),
             ),
-            analisis=self._build_analysis(result),
+            analisis=self._build_analysis(result, resumen_df),
         )
 
     def _add_dividend_history_to_summary(self, resumen: Any, ingresos: Any) -> Any:
@@ -123,13 +123,13 @@ class LegacyPipelineAdapter:
             return self._clean_record({field: getattr(value, field) for field in value.__dataclass_fields__})
         return self._clean_record(value if isinstance(value, dict) else {})
 
-    def _build_analysis(self, result: dict[str, Any]) -> dict[str, Any]:
+    def _build_analysis(self, result: dict[str, Any], resumen: pd.DataFrame | None = None) -> dict[str, Any]:
         gastos = result.get("gastos")
         ingresos = result.get("ingresos")
         analysis: dict[str, Any] = {}
         if isinstance(gastos, pd.DataFrame) and isinstance(ingresos, pd.DataFrame):
             analysis["gastos"] = self._build_expense_analysis(gastos, ingresos)
-            analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos)
+            analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos, resumen)
             analysis["ingresos"] = self._build_income_analysis(ingresos)
         return analysis
 
@@ -211,12 +211,23 @@ class LegacyPipelineAdapter:
             },
         }
 
-    def _build_savings_analysis(self, gastos: pd.DataFrame, ingresos: pd.DataFrame) -> dict[str, Any]:
+    def _build_savings_analysis(self, gastos: pd.DataFrame, ingresos: pd.DataFrame, resumen: pd.DataFrame | None = None) -> dict[str, Any]:
         from logic import resumen_mensual  # type: ignore
 
         mensual = resumen_mensual(gastos, ingresos).reset_index().rename(columns={"mes": "Mes"})
+        if "Mes" not in mensual.columns and "index" in mensual.columns:
+            mensual = mensual.rename(columns={"index": "Mes"})
         if mensual.empty:
             return {"mensual": [], "ultimo_mes": None}
+
+        if isinstance(resumen, pd.DataFrame) and not resumen.empty and {"Mes", "💳 Gasto del mes"}.issubset(resumen.columns):
+            gastos_historial = resumen[["Mes", "💳 Gasto del mes"]].copy()
+            gastos_historial["Mes"] = gastos_historial["Mes"].astype(str)
+            gastos_historial["gastos_historial"] = pd.to_numeric(gastos_historial["💳 Gasto del mes"], errors="coerce").fillna(0.0)
+            mensual = mensual.merge(gastos_historial[["Mes", "gastos_historial"]], on="Mes", how="left")
+            mensual["gastos"] = mensual["gastos_historial"].fillna(mensual["gastos"])
+            mensual = mensual.drop(columns=["gastos_historial"])
+            mensual["balance"] = mensual["ingresos"] - mensual["gastos"]
 
         mensual["porcentaje_ahorro"] = mensual.apply(
             lambda row: ((row["ingresos"] - row["gastos"]) / row["ingresos"] * 100) if row["ingresos"] else 0,

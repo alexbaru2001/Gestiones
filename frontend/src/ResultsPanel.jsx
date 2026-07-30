@@ -322,8 +322,10 @@ export function ResultsPanel({
   const expenseMax = Math.max(...expenseCategoryRows.map((row) => asNumber(row.total)), 1)
   const expenseMonthlyMax = Math.max(...expenseRows.map((row) => Math.abs(asNumber(row.gastos))), 1)
   const savingsAnalysis = getSavingsAnalysis(result)
-  const savingsMax = Math.max(...savingsAnalysis.mensual.map((row) => Math.abs(asNumber(row.balance))), 1)
-  const savingsPercentRows = savingsAnalysis.mensual.slice(-12)
+  const scopedSavingsRows = savingsAnalysis.mensual.filter((row) => !selectedRow?.Mes || String(row.Mes) <= String(selectedRow.Mes))
+  const selectedSavingsRow = scopedSavingsRows.at(-1) ?? savingsAnalysis.ultimo_mes
+  const savingsMax = Math.max(...scopedSavingsRows.map((row) => Math.abs(asNumber(row.balance))), 1)
+  const savingsPercentRows = scopedSavingsRows.slice(-12)
   const savingsPercentValues = savingsPercentRows.map((row) => asNumber(row.porcentaje_ahorro))
   const savingsAverageValues = movingAverage(savingsPercentValues)
   const savingsPercentBounds = {
@@ -698,19 +700,19 @@ export function ResultsPanel({
                   <div className="savings-summary">
                     <article>
                       <span>Ingresos</span>
-                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.ingresos)}</strong>
+                      <strong>{formatMoney(selectedSavingsRow?.ingresos)}</strong>
                     </article>
                     <article>
                       <span>Gastos</span>
-                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.gastos)}</strong>
+                      <strong>{formatMoney(selectedSavingsRow?.gastos)}</strong>
                     </article>
                     <article>
                       <span>Balance</span>
-                      <strong>{formatMoney(savingsAnalysis.ultimo_mes?.balance)}</strong>
+                      <strong>{formatMoney(selectedSavingsRow?.balance)}</strong>
                     </article>
                     <article>
                       <span>Ahorro</span>
-                      <strong>{asNumber(savingsAnalysis.ultimo_mes?.porcentaje_ahorro).toFixed(1)}%</strong>
+                      <strong>{asNumber(selectedSavingsRow?.porcentaje_ahorro).toFixed(1)}%</strong>
                     </article>
                   </div>
 
@@ -832,7 +834,7 @@ export function ResultsPanel({
                   <section className="trend-panel compact-trend">
                     <h3 className="table-title">Balance mensual</h3>
                     <div className="trend-list">
-                      {savingsAnalysis.mensual.slice(-12).map((row) => (
+                      {savingsPercentRows.map((row) => (
                         <article className="savings-row" key={row.Mes}>
                           <span className="trend-month">{row.Mes}</span>
                           <div className={asNumber(row.balance) >= 0 ? 'savings-bar positive' : 'savings-bar negative'}>
