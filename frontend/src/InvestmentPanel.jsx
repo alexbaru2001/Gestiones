@@ -309,6 +309,12 @@ function EconomicPriceChart({ rows, currency }) {
         <path className="economic-area" d={chart.areaPath} />
         <polyline className="economic-price-line" points={chart.points.join(' ')} />
         <polyline className="economic-average-line" points={chart.averagePoints.join(' ')} />
+        {tooltip ? (
+          <>
+            <line className="economic-crosshair" x1={tooltip.x} x2={tooltip.x} y1="42" y2="270" />
+            <circle className="economic-active-point" cx={tooltip.x} cy={tooltip.y} r="5.5" />
+          </>
+        ) : null}
         {chart.markers.map((marker) => (
           <g key={marker.label}>
             <line className="economic-axis-tick" x1={marker.x} x2={marker.x} y1="270" y2="276" />

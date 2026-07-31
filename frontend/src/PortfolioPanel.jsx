@@ -23,6 +23,12 @@ function getAxisTicks(min, max, count = 4) {
   return Array.from({ length: count }, (_, index) => min + (range / Math.max(1, count - 1)) * index)
 }
 
+function getAreaPathFromCoordinates(coordinates, baseline) {
+  if (!coordinates.length) return ''
+  const line = coordinates.map(({ x, y }) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  return `M ${coordinates[0].x.toFixed(1)} ${baseline.toFixed(1)} ${line} L ${coordinates.at(-1).x.toFixed(1)} ${baseline.toFixed(1)} Z`
+}
+
 const chartModes = [
   { id: 'position', label: 'Valores' },
   { id: 'region', label: 'Continente' },
@@ -855,6 +861,12 @@ function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
 
       <div className="portfolio-line-chart-wrap">
         <svg className="portfolio-line-chart" viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Evolución de cartera">
+          <defs>
+            <linearGradient id="portfolioMainArea" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#157a5c" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#157a5c" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
           {yTicks.map((tick) => {
             const y = yForValue(tick)
             return (
@@ -878,30 +890,42 @@ function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
               </g>
             )
           })}
-          {lineSeries.map((serie, serieIndex) => (
+          {lineSeries.map((serie, serieIndex) => {
+            const coordinates = serie.values.map((value, index) => ({
+              x: xForIndex(index),
+              y: yForValue(value),
+            }))
+            return (
             <g key={serie.label}>
+              {serieIndex === 0 ? (
+                <path
+                  className="portfolio-main-area"
+                  d={getAreaPathFromCoordinates(coordinates, chart.height - chart.paddingBottom)}
+                />
+              ) : null}
               <polyline
                 fill="none"
-                points={serie.values.map((value, index) => `${xForIndex(index).toFixed(1)},${yForValue(value).toFixed(1)}`).join(' ')}
+                points={coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
                 stroke={getChartColor(serieIndex)}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth="3"
+                strokeWidth={serieIndex === 0 ? '3.5' : '2.6'}
               />
               {serie.values.map((value, index) => (
                 <circle
                   className={visibleRows[index]?.key === selectedKey ? 'active' : ''}
-                  cx={xForIndex(index)}
-                  cy={yForValue(value)}
+                  cx={coordinates[index]?.x}
+                  cy={coordinates[index]?.y}
                   fill={getChartColor(serieIndex)}
                   key={`${serie.label}-${visibleRows[index]?.key}`}
-                  r="4"
+                  r={visibleRows[index]?.key === selectedKey ? '5.5' : '3.5'}
                 >
                   <title>{serie.label} · {visibleRows[index]?.label}: {formatMoney(value)}</title>
                 </circle>
               ))}
             </g>
-          ))}
+            )
+          })}
         </svg>
         <div className="portfolio-line-legend">
           {lineSeries.map((serie, index) => (

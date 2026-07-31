@@ -164,6 +164,14 @@ function getSvgPoints(values, min, max, options) {
     .join(' ')
 }
 
+function getSvgAreaPath(values, min, max, options) {
+  const coordinates = getSvgCoordinates(values, min, max, options)
+  if (!coordinates.length) return ''
+  const baseline = options.height - options.paddingBottom
+  const line = coordinates.map(({ x, y }) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  return `M ${coordinates[0].x.toFixed(1)} ${baseline.toFixed(1)} ${line} L ${coordinates.at(-1).x.toFixed(1)} ${baseline.toFixed(1)} Z`
+}
+
 function getSvgCoordinates(values, min, max, options = {}) {
   const width = options.width ?? 640
   const height = options.height ?? 220
@@ -323,6 +331,7 @@ export function ResultsPanel({
   const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [typologyTooltip, setTypologyTooltip] = useState(null)
   const [savingsTooltip, setSavingsTooltip] = useState(null)
+  const [investmentTooltip, setInvestmentTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
   const incomeAnalysis = getIncomeAnalysis(result)
@@ -363,10 +372,35 @@ export function ResultsPanel({
   )
   const savingsYAxisTicks = getAxisTicks(savingsPercentBounds.min, savingsPercentBounds.max, 5)
   const savingsXLabelStep = Math.max(1, Math.ceil(savingsPercentRows.length / 6))
-  const investmentMax = Math.max(
-    ...rows.map((row) => Math.max(Math.abs(asNumber(row['📈 Inversiones'])), Math.abs(asNumber(row['Dinero Invertido'])))),
-    1,
+  const investmentRows = rows.slice(-12)
+  const investmentChart = {
+    width: 640,
+    height: 260,
+    paddingLeft: 54,
+    paddingRight: 22,
+    paddingTop: 24,
+    paddingBottom: 42,
+  }
+  const investmentReserveValues = investmentRows.map((row) => asNumber(row['📈 Inversiones']))
+  const investmentInvestedValues = investmentRows.map((row) => asNumber(row['Dinero Invertido']))
+  const investmentBounds = {
+    max: Math.max(...investmentReserveValues, ...investmentInvestedValues, 1),
+    min: Math.min(...investmentReserveValues, ...investmentInvestedValues, 0),
+  }
+  const investmentReserveCoordinates = getSvgCoordinates(
+    investmentReserveValues,
+    investmentBounds.min,
+    investmentBounds.max,
+    investmentChart,
   )
+  const investmentInvestedCoordinates = getSvgCoordinates(
+    investmentInvestedValues,
+    investmentBounds.min,
+    investmentBounds.max,
+    investmentChart,
+  )
+  const investmentYAxisTicks = getAxisTicks(investmentBounds.min, investmentBounds.max, 5)
+  const investmentXLabelStep = Math.max(1, Math.ceil(investmentRows.length / 6))
   const reserveMax = Math.max(
     ...rows.map((row) =>
       Math.max(
@@ -767,6 +801,12 @@ export function ResultsPanel({
                         role="img"
                         aria-label="Porcentaje de ahorro mensual"
                       >
+                        <defs>
+                          <linearGradient id="savingsArea" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor="#157a5c" stopOpacity="0.22" />
+                            <stop offset="100%" stopColor="#157a5c" stopOpacity="0.01" />
+                          </linearGradient>
+                        </defs>
                         {savingsYAxisTicks.map((tick) => {
                           const y =
                             savingsChart.height -
@@ -783,7 +823,9 @@ export function ResultsPanel({
                           )
                         })}
                         <line className="chart-axis" x1="54" x2="618" y1="218" y2="218" />
-                        <line className="chart-axis" x1="54" x2="54" y1="24" y2="218" />
+                        {savingsTooltip ? (
+                          <line className="chart-crosshair" x1={savingsTooltip.x} x2={savingsTooltip.x} y1="24" y2="218" />
+                        ) : null}
                         {savingsPercentRows.map((row, index) =>
                           index % savingsXLabelStep === 0 || index === savingsPercentRows.length - 1 ? (
                             <g key={row.Mes}>
@@ -794,13 +836,17 @@ export function ResultsPanel({
                             </g>
                           ) : null,
                         )}
+                        <path
+                          className="chart-area-fill savings-area"
+                          d={getSvgAreaPath(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max, savingsChart)}
+                        />
                         <polyline
                           fill="none"
                           points={getSvgPoints(savingsPercentValues, savingsPercentBounds.min, savingsPercentBounds.max, savingsChart)}
-                          stroke="#286b57"
+                          stroke="#157a5c"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          strokeWidth="3"
+                          strokeWidth="3.4"
                         />
                         <polyline
                           className="chart-moving-line"
@@ -850,7 +896,7 @@ export function ResultsPanel({
                                   y,
                                 })
                               }
-                              r="5"
+                              r={savingsTooltip?.month === savingsPercentRows[index]?.Mes ? '5.5' : '3.8'}
                               tabIndex="0"
                             />
                           </g>
@@ -920,25 +966,119 @@ export function ResultsPanel({
                   </article>
                 </div>
 
-                <section className="trend-panel compact-trend">
-                  <h3 className="table-title">Evolución inversiones</h3>
-                  <div className="trend-list">
-                    {rows.slice(-12).map((row) => (
-                      <article className="investment-row" key={row.Mes}>
-                        <span className="trend-month">{row.Mes}</span>
-                        <div className="investment-bars">
-                          <div className="investment-bar planned">
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['📈 Inversiones'])) / investmentMax) * 100)}%` }} />
-                          </div>
-                          <div className="investment-bar invested">
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['Dinero Invertido'])) / investmentMax) * 100)}%` }} />
-                          </div>
-                        </div>
-                        <strong>{formatMoney(row['Dinero Invertido'])}</strong>
-                      </article>
-                    ))}
+                <section className="trend-panel compact-trend investor-chart-panel">
+                  <div className="table-toolbar compact-toolbar">
+                    <div>
+                      <h3 className="table-title">Evolución inversiones</h3>
+                      <span>Bolsa disponible frente a dinero invertido</span>
+                    </div>
                   </div>
-                  <div className="investment-legend">
+                  <div className="savings-chart-wrap">
+                    <svg
+                      className="savings-percent-chart investment-line-chart"
+                      onMouseLeave={() => setInvestmentTooltip(null)}
+                      viewBox="0 0 640 260"
+                      role="img"
+                      aria-label="Evolución de inversiones"
+                    >
+                      <defs>
+                        <linearGradient id="investmentArea" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#436a92" stopOpacity="0.2" />
+                          <stop offset="100%" stopColor="#436a92" stopOpacity="0.01" />
+                        </linearGradient>
+                      </defs>
+                      {investmentYAxisTicks.map((tick) => {
+                        const y =
+                          investmentChart.height -
+                          investmentChart.paddingBottom -
+                          ((tick - investmentBounds.min) / (investmentBounds.max - investmentBounds.min || 1)) *
+                            (investmentChart.height - investmentChart.paddingTop - investmentChart.paddingBottom)
+                        return (
+                          <g key={tick.toFixed(2)}>
+                            <line className="chart-grid-line" x1="54" x2="618" y1={y} y2={y} />
+                            <text className="chart-axis-label" x="44" y={y + 4} textAnchor="end">
+                              {formatMoney(tick).replace(',00', '')}
+                            </text>
+                          </g>
+                        )
+                      })}
+                      <line className="chart-axis" x1="54" x2="618" y1="218" y2="218" />
+                      {investmentTooltip ? (
+                        <line className="chart-crosshair" x1={investmentTooltip.x} x2={investmentTooltip.x} y1="24" y2="218" />
+                      ) : null}
+                      {investmentRows.map((row, index) =>
+                        index % investmentXLabelStep === 0 || index === investmentRows.length - 1 ? (
+                          <g key={row.Mes}>
+                            <line className="chart-axis-tick" x1={investmentInvestedCoordinates[index]?.x} x2={investmentInvestedCoordinates[index]?.x} y1="218" y2="224" />
+                            <text className="chart-axis-label" x={investmentInvestedCoordinates[index]?.x} y="244" textAnchor="middle">
+                              {formatMonthLabel(row.Mes)}
+                            </text>
+                          </g>
+                        ) : null,
+                      )}
+                      <path
+                        className="chart-area-fill investment-area"
+                        d={getSvgAreaPath(investmentInvestedValues, investmentBounds.min, investmentBounds.max, investmentChart)}
+                      />
+                      <polyline
+                        className="investment-reserve-line"
+                        fill="none"
+                        points={getSvgPoints(investmentReserveValues, investmentBounds.min, investmentBounds.max, investmentChart)}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <polyline
+                        className="investment-main-line"
+                        fill="none"
+                        points={getSvgPoints(investmentInvestedValues, investmentBounds.min, investmentBounds.max, investmentChart)}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {investmentInvestedCoordinates.map(({ x, y }, index) => (
+                        <circle
+                          className="chart-hit-point"
+                          cx={x}
+                          cy={y}
+                          key={investmentRows[index]?.Mes}
+                          onFocus={() =>
+                            setInvestmentTooltip({
+                              month: investmentRows[index]?.Mes,
+                              reserve: investmentReserveValues[index],
+                              invested: investmentInvestedValues[index],
+                              x,
+                              y,
+                            })
+                          }
+                          onMouseEnter={() =>
+                            setInvestmentTooltip({
+                              month: investmentRows[index]?.Mes,
+                              reserve: investmentReserveValues[index],
+                              invested: investmentInvestedValues[index],
+                              x,
+                              y,
+                            })
+                          }
+                          r="11"
+                          tabIndex="0"
+                        />
+                      ))}
+                    </svg>
+                    {investmentTooltip && (
+                      <div
+                        className="chart-tooltip investment-finance-tooltip"
+                        style={{
+                          '--tooltip-color': '#436a92',
+                          left: `${(investmentTooltip.x / investmentChart.width) * 100}%`,
+                          top: `${(investmentTooltip.y / investmentChart.height) * 100}%`,
+                        }}
+                      >
+                        <strong>{investmentTooltip.month}</strong>
+                        <span>Invertido: {formatMoney(investmentTooltip.invested)}</span>
+                        <span>Bolsa: {formatMoney(investmentTooltip.reserve)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="investment-legend investor-legend">
                     <span>Bolsa</span>
                     <span>Invertido</span>
                   </div>

@@ -24,6 +24,228 @@
   text-rendering: optimizeLegibility;
 }
 
+/* Investor chart polish */
+.savings-chart-wrap,
+.typology-chart-wrap,
+.portfolio-line-chart-wrap,
+.economic-chart-wrap {
+  isolation: isolate;
+}
+
+.savings-percent-panel,
+.investor-chart-panel,
+.typology-chart-panel,
+.price-card,
+.portfolio-evolution-chart {
+  --chart-panel-bg: #fbfcfb;
+  --chart-border: #dce5de;
+  --chart-grid: #e8eee9;
+  --chart-axis: #becdc3;
+  --chart-muted: #6b7870;
+  --chart-ink: #12231b;
+}
+
+.savings-percent-panel,
+.investor-chart-panel,
+.typology-chart-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 251, 249, 0.96)),
+    var(--chart-panel-bg);
+}
+
+.savings-chart-wrap,
+.typology-chart-wrap {
+  border: 1px solid var(--chart-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.savings-percent-chart,
+.typology-chart,
+.portfolio-line-chart,
+.economic-chart {
+  overflow: visible;
+}
+
+.chart-area-fill,
+.portfolio-main-area {
+  pointer-events: none;
+}
+
+.savings-area {
+  fill: url("#savingsArea");
+}
+
+.investment-area {
+  fill: url("#investmentArea");
+}
+
+.portfolio-main-area {
+  fill: url("#portfolioMainArea");
+}
+
+.chart-crosshair,
+.economic-crosshair {
+  stroke: #7e8b83;
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.chart-hit-point {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.chart-hit-point:focus {
+  outline: none;
+}
+
+.investment-main-line {
+  stroke: #436a92;
+  stroke-width: 3.4;
+}
+
+.investment-reserve-line {
+  stroke: #d2a53f;
+  stroke-dasharray: 7 7;
+  stroke-width: 2.4;
+}
+
+.investment-line-chart .chart-axis-label,
+.savings-percent-chart .chart-axis-label,
+.portfolio-line-axis-label,
+.economic-axis-label {
+  fill: var(--chart-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.investment-line-chart .chart-grid-line,
+.savings-percent-chart .chart-grid-line,
+.typology-chart .chart-grid-line,
+.portfolio-line-grid,
+.economic-grid-line {
+  stroke: var(--chart-grid);
+  stroke-dasharray: 2 7;
+}
+
+.investment-line-chart .chart-axis,
+.savings-percent-chart .chart-axis,
+.typology-chart .chart-axis,
+.portfolio-line-axis {
+  stroke: var(--chart-axis);
+}
+
+.savings-percent-chart .chart-point,
+.typology-chart .chart-point {
+  stroke-width: 2;
+}
+
+.savings-percent-chart .chart-average-point {
+  opacity: 0;
+}
+
+.chart-moving-line {
+  stroke-dasharray: 5 7;
+  opacity: 0.58;
+}
+
+.chart-tooltip {
+  min-width: 150px;
+  border: 1px solid #d7e2db;
+  border-top: 3px solid var(--tooltip-color);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(18, 35, 27, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.chart-tooltip strong {
+  color: var(--chart-ink);
+}
+
+.chart-tooltip span {
+  color: var(--chart-muted);
+}
+
+.investment-finance-tooltip {
+  transform: translate(12px, -58%);
+}
+
+.investor-legend span:first-child::before {
+  background: #d2a53f;
+}
+
+.investor-legend span:last-child::before {
+  background: #436a92;
+}
+
+.portfolio-line-chart {
+  padding: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 251, 250, 0.98)),
+    #ffffff;
+}
+
+.portfolio-line-chart polyline {
+  filter: drop-shadow(0 4px 7px rgba(18, 35, 27, 0.08));
+}
+
+.portfolio-line-chart circle {
+  stroke: #ffffff;
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 5px rgba(18, 35, 27, 0.12));
+}
+
+.economic-chart-wrap {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 251, 250, 0.98)),
+    #ffffff;
+}
+
+.economic-active-point {
+  fill: #286b57;
+  stroke: #ffffff;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 4px 9px rgba(40, 107, 87, 0.28));
+  pointer-events: none;
+}
+
+.economic-price-line {
+  stroke: #157a5c;
+  stroke-width: 3.6;
+}
+
+.economic-average-line {
+  stroke: #436a92;
+  stroke-dasharray: 5 7;
+  opacity: 0.76;
+}
+
+.economic-hover-point:hover {
+  fill: rgba(21, 122, 92, 0.13);
+  stroke: #157a5c;
+}
+
+@media (max-width: 620px) {
+  .savings-chart-wrap,
+  .typology-chart-wrap {
+    padding: 6px;
+  }
+
+  .chart-tooltip {
+    min-width: 136px;
+    transform: translate(-8px, -110%);
+  }
+
+  .investment-finance-tooltip,
+  .investment-tooltip {
+    transform: translate(-8px, -112%);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -4442,5 +4664,104 @@ tbody tr:hover {
   .portfolio-line-chart,
   .economic-chart-wrap {
     aspect-ratio: 1.65 / 1;
+  }
+}
+
+/* Investor chart final overrides */
+.savings-chart-wrap,
+.typology-chart-wrap {
+  border: 1px solid #dce5de;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.portfolio-line-chart,
+.economic-chart-wrap {
+  border-color: #dce5de;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(249, 251, 250, 0.98)),
+    #ffffff;
+}
+
+.chart-grid-line,
+.portfolio-line-grid,
+.economic-grid-line {
+  stroke: #e8eee9;
+  stroke-dasharray: 2 7;
+}
+
+.chart-axis,
+.portfolio-line-axis {
+  stroke: #becdc3;
+}
+
+.chart-axis-label,
+.portfolio-line-axis-label,
+.economic-axis-label {
+  fill: #6b7870;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.chart-tooltip {
+  min-width: 150px;
+  border: 1px solid #d7e2db;
+  border-top: 3px solid var(--tooltip-color);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 30px rgba(18, 35, 27, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.chart-crosshair,
+.economic-crosshair {
+  stroke: #7e8b83;
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+  opacity: 0.68;
+}
+
+.investment-main-line {
+  stroke: #436a92;
+  stroke-width: 3.4;
+}
+
+.investment-reserve-line {
+  stroke: #d2a53f;
+  stroke-dasharray: 7 7;
+  stroke-width: 2.4;
+}
+
+.chart-hit-point {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.savings-percent-chart .chart-average-point {
+  opacity: 0;
+}
+
+.economic-price-line {
+  stroke: #157a5c;
+  stroke-width: 3.6;
+}
+
+.economic-average-line {
+  stroke: #436a92;
+  stroke-dasharray: 5 7;
+  opacity: 0.76;
+}
+
+@media (max-width: 620px) {
+  .savings-chart-wrap,
+  .typology-chart-wrap {
+    padding: 6px;
+  }
+
+  .chart-tooltip,
+  .investment-finance-tooltip,
+  .investment-tooltip {
+    min-width: 136px;
+    transform: translate(-8px, -112%);
   }
 }
