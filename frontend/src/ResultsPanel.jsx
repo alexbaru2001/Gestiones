@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { CalendarDays, Download, FileJson, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
 import { comparisonRows } from './resultSelectors'
@@ -30,26 +30,22 @@ const tabs = [
   { id: 'datos', label: 'Datos' },
 ]
 
-const typologyFields = [
-  { field: '💰 Ahorros', label: 'Ahorros', color: '#286b57' },
-  { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#3f7f8f' },
-  { field: '💼 Vacaciones', label: 'Vacaciones', color: '#d2a53f' },
-  { field: '📈 Inversiones', label: 'Reserva inversión', color: '#5c6f9e' },
-  { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#6c7a72' },
-  { field: '📉 Deuda Presupuestaria acumulada', label: 'Deuda acumulada', color: '#8f4638' },
-  { field: '💳 Gasto del mes', label: 'Gasto mensual', color: '#b85a4b' },
-  { field: '🎁 Regalos', label: 'Regalos', color: '#a66a4d' },
+const typologyHeroField = { field: '💰 Ahorros', label: 'Ahorros', color: '#1f4d3d' }
+
+const typologyCompareFields = [
+  { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#2e4057' },
+  { field: '💳 Gasto del mes', label: 'Gasto del mes', color: '#7a2e2e' },
 ]
 
-const defaultTypologyFields = [
-  '💰 Ahorros',
-  '💸 Presupuesto Mes',
-  '💼 Vacaciones',
-  '📈 Inversiones',
-  'Fondo de reserva cargado',
-  '📉 Deuda Presupuestaria acumulada',
-  '💳 Gasto del mes',
+const typologySmallMultiples = [
+  { field: '💼 Vacaciones', label: 'Vacaciones', color: '#b8863b' },
+  { field: '📈 Inversiones', label: 'Reserva inversión', color: '#1f5c6b' },
+  { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#6e7a3a' },
+  { field: '📉 Deuda Presupuestaria acumulada', label: 'Deuda acumulada', color: '#b15a2e' },
+  { field: '🎁 Regalos', label: 'Regalos', color: '#8a6a2b' },
 ]
+
+const typologyFields = [typologyHeroField, ...typologyCompareFields, ...typologySmallMultiples]
 
 const typologyPeriods = [
   { value: '6', label: '6 meses' },
@@ -164,10 +160,12 @@ function getSvgPoints(values, min, max, options) {
     .join(' ')
 }
 
-function getSvgAreaPath(values, min, max, options) {
+function getSvgAreaPath(values, min, max, options = {}) {
   const coordinates = getSvgCoordinates(values, min, max, options)
   if (!coordinates.length) return ''
-  const baseline = options.height - options.paddingBottom
+  const height = options.height ?? 220
+  const paddingBottom = options.paddingBottom ?? options.padding ?? 18
+  const baseline = height - paddingBottom
   const line = coordinates.map(({ x, y }) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
   return `M ${coordinates[0].x.toFixed(1)} ${baseline.toFixed(1)} ${line} L ${coordinates.at(-1).x.toFixed(1)} ${baseline.toFixed(1)} Z`
 }
@@ -203,14 +201,6 @@ function formatMonthLong(value) {
   if (!year || !month) return value
   const formatted = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1))
   return formatted.charAt(0).toUpperCase() + formatted.slice(1)
-}
-
-function getTypologyBounds(rows, fields) {
-  const values = rows.flatMap((row) => fields.map(({ field }) => asNumber(row[field])))
-  return {
-    max: Math.max(...values, 1),
-    min: Math.min(...values, 0),
-  }
 }
 
 function predictTypology(rows, field, months = 6) {
@@ -305,6 +295,145 @@ function formatPercent(value) {
   return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
 }
 
+function TypologyMiniChart({ values, months, color, label, height = 64 }) {
+  const [tooltip, setTooltip] = useState(null)
+  const gradientId = useId()
+  const width = 240
+  const chartOptions = { width, height, padding: 10 }
+  const min = Math.min(...values, 0)
+  const max = Math.max(...values, 1)
+  const coordinates = getSvgCoordinates(values, min, max, chartOptions)
+  const areaPath = getSvgAreaPath(values, min, max, chartOptions)
+  const linePoints = getSvgPoints(values, min, max, chartOptions)
+  const last = coordinates.at(-1)
+  const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
+
+  return (
+    <div className="mini-trend" onMouseLeave={() => setTooltip(null)}>
+      <svg
+        aria-label={`${label}: de ${formatMoney(values[0])} a ${formatMoney(values.at(-1))} en ${values.length} meses, ${trend}.`}
+        className="mini-trend-svg"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            className="mini-grid-line"
+            key={fraction}
+            x1={10}
+            x2={width - 10}
+            y1={10 + (height - 20) * fraction}
+            y2={10 + (height - 20) * fraction}
+          />
+        ))}
+        <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
+        <polyline fill="none" points={linePoints} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        {coordinates.map((point, index) => (
+          <circle
+            cx={point.x}
+            cy={point.y}
+            fill="transparent"
+            key={months[index] ?? index}
+            onFocus={() => setTooltip({ month: months[index], value: values[index], x: point.x, y: point.y })}
+            onMouseEnter={() => setTooltip({ month: months[index], value: values[index], x: point.x, y: point.y })}
+            r="9"
+            tabIndex="0"
+          />
+        ))}
+        <circle cx={last.x} cy={last.y} fill={color} pointerEvents="none" r="3.6" />
+      </svg>
+      {tooltip && (
+        <div
+          className="mini-trend-tooltip"
+          style={{ left: `${(tooltip.x / width) * 100}%`, top: `${(tooltip.y / height) * 100}%` }}
+        >
+          <span>{formatMonthLabel(tooltip.month)}</span>
+          <strong>{formatMoney(tooltip.value)}</strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TypologyCompareChart({ months, seriesA, seriesB }) {
+  const [tooltip, setTooltip] = useState(null)
+  const width = 560
+  const height = 100
+  const chartOptions = { width, height, padding: 10 }
+  const combined = [...seriesA.values, ...seriesB.values]
+  const min = Math.min(...combined, 0)
+  const max = Math.max(...combined, 1)
+  const coordinatesA = getSvgCoordinates(seriesA.values, min, max, chartOptions)
+  const coordinatesB = getSvgCoordinates(seriesB.values, min, max, chartOptions)
+  const pointsA = getSvgPoints(seriesA.values, min, max, chartOptions)
+  const pointsB = getSvgPoints(seriesB.values, min, max, chartOptions)
+  const lastA = coordinatesA.at(-1)
+  const lastB = coordinatesB.at(-1)
+
+  return (
+    <div className="mini-trend compare-trend" onMouseLeave={() => setTooltip(null)}>
+      <svg
+        aria-label={`${seriesA.label} y ${seriesB.label} comparados mes a mes en el mismo eje. Último mes: ${seriesA.label} ${formatMoney(seriesA.values.at(-1))}, ${seriesB.label} ${formatMoney(seriesB.values.at(-1))}.`}
+        className="mini-trend-svg"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            className="mini-grid-line"
+            key={fraction}
+            x1={10}
+            x2={width - 10}
+            y1={10 + (height - 20) * fraction}
+            y2={10 + (height - 20) * fraction}
+          />
+        ))}
+        <polyline fill="none" points={pointsA} stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <polyline
+          fill="none"
+          points={pointsB}
+          stroke={seriesB.color}
+          strokeDasharray="6 4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+        {coordinatesA.map((point, index) => (
+          <circle
+            cx={point.x}
+            cy={point.y}
+            fill="transparent"
+            key={months[index] ?? index}
+            onFocus={() => setTooltip({ a: seriesA.values[index], b: seriesB.values[index], month: months[index], x: point.x })}
+            onMouseEnter={() => setTooltip({ a: seriesA.values[index], b: seriesB.values[index], month: months[index], x: point.x })}
+            r="10"
+            tabIndex="0"
+          />
+        ))}
+        <circle cx={lastA.x} cy={lastA.y} fill={seriesA.color} pointerEvents="none" r="3.6" />
+        <circle cx={lastB.x} cy={lastB.y} fill={seriesB.color} pointerEvents="none" r="3.6" />
+      </svg>
+      {tooltip && (
+        <div className="mini-trend-tooltip compare-tooltip" style={{ left: `${(tooltip.x / width) * 100}%` }}>
+          <span>{formatMonthLabel(tooltip.month)}</span>
+          <strong style={{ color: seriesA.color }}>
+            {seriesA.label} {formatMoney(tooltip.a)}
+          </strong>
+          <strong style={{ color: seriesB.color }}>
+            {seriesB.label} {formatMoney(tooltip.b)}
+          </strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -325,11 +454,9 @@ export function ResultsPanel({
   onExportObjectivesCsv,
 }) {
   const [activeTab, setActiveTab] = useState('resumen')
-  const [activeTypologyFields, setActiveTypologyFields] = useState(defaultTypologyFields)
   const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [expensePeriod, setExpensePeriod] = useState('6')
   const [savingsPeriod, setSavingsPeriod] = useState('12')
-  const [typologyTooltip, setTypologyTooltip] = useState(null)
   const [savingsTooltip, setSavingsTooltip] = useState(null)
   const [investmentTooltip, setInvestmentTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
@@ -412,20 +539,14 @@ export function ResultsPanel({
     1,
   )
   const typologyRows = getPeriodRows(rows, typologyPeriod)
-  const selectedTypologyFields = typologyFields.filter(({ field }) => activeTypologyFields.includes(field))
-  const typologyBounds = getTypologyBounds(typologyRows, selectedTypologyFields)
+  const typologyMonths = typologyRows.map((row) => row.Mes)
+  const typologyHeroValues = typologyRows.map((row) => asNumber(row[typologyHeroField.field]))
   const summaryGroups = selectedRow ? getSummaryGroups(selectedRow) : null
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
   const interestAmount = getCategoryTotalUntilMonth(incomeAnalysis, selectedRow?.Mes, ['interes', 'intereses'])
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
-  const toggleTypologyField = (field) => {
-    setTypologyTooltip(null)
-    setActiveTypologyFields((current) =>
-      current.includes(field) ? current.filter((item) => item !== field) : [...current, field],
-    )
-  }
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
@@ -1140,13 +1261,7 @@ export function ResultsPanel({
                     <h3 className="table-title">Evolución por tipología</h3>
                     <label className="period-selector">
                       <span>Periodo</span>
-                      <select
-                        value={typologyPeriod}
-                        onChange={(event) => {
-                          setTypologyTooltip(null)
-                          setTypologyPeriod(event.target.value)
-                        }}
-                      >
+                      <select value={typologyPeriod} onChange={(event) => setTypologyPeriod(event.target.value)}>
                         {typologyPeriods.map((period) => (
                           <option key={period.value} value={period.value}>
                             {period.label}
@@ -1155,120 +1270,68 @@ export function ResultsPanel({
                       </select>
                     </label>
                   </div>
-                  <div className="typology-controls" aria-label="Seleccionar tipologías">
-                    {typologyFields.map(({ field, label, color }) => (
-                      <label className="typology-toggle" key={field} style={{ '--legend-color': color }}>
-                        <input
-                          checked={activeTypologyFields.includes(field)}
-                          onChange={() => toggleTypologyField(field)}
-                          type="checkbox"
+                  {typologyRows.length > 0 ? (
+                    <div className="typology-board">
+                      <article className="typology-hero">
+                        <div className="typology-hero-head">
+                          <span className="typology-hero-label">{typologyHeroField.label}</span>
+                          <strong className="typology-hero-value">{formatMoney(typologyHeroValues.at(-1))}</strong>
+                          <span className="typology-hero-delta">
+                            {formatDelta(typologyHeroValues.at(-1) - typologyHeroValues[0])} en {typologyRows.length} meses
+                          </span>
+                        </div>
+                        <TypologyMiniChart
+                          color={typologyHeroField.color}
+                          height={92}
+                          label={typologyHeroField.label}
+                          months={typologyMonths}
+                          values={typologyHeroValues}
                         />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {selectedTypologyFields.length > 0 ? (
-                    <>
-                      <div className="chart-scale">
-                        <span>{formatMoney(typologyBounds.max)}</span>
-                        <span>{formatMoney(typologyBounds.min)}</span>
+                      </article>
+
+                      <article className="typology-compare">
+                        <div className="typology-compare-legend">
+                          <span>
+                            <i style={{ background: typologyCompareFields[0].color }} />
+                            {typologyCompareFields[0].label}
+                          </span>
+                          <span>
+                            <i className="dashed" style={{ borderColor: typologyCompareFields[1].color }} />
+                            {typologyCompareFields[1].label}
+                          </span>
+                        </div>
+                        <TypologyCompareChart
+                          months={typologyMonths}
+                          seriesA={{
+                            ...typologyCompareFields[0],
+                            values: typologyRows.map((row) => asNumber(row[typologyCompareFields[0].field])),
+                          }}
+                          seriesB={{
+                            ...typologyCompareFields[1],
+                            values: typologyRows.map((row) => asNumber(row[typologyCompareFields[1].field])),
+                          }}
+                        />
+                      </article>
+
+                      <div className="typology-grid">
+                        {typologySmallMultiples.map(({ field, label, color }) => {
+                          const values = typologyRows.map((row) => asNumber(row[field]))
+                          return (
+                            <article className="typology-mini" key={field}>
+                              <div className="typology-mini-head">
+                                <span>{label}</span>
+                                <strong>{formatMoney(values.at(-1))}</strong>
+                              </div>
+                              <TypologyMiniChart color={color} height={56} label={label} months={typologyMonths} values={values} />
+                            </article>
+                          )
+                        })}
                       </div>
-                      <div className="typology-chart-wrap">
-                        <svg
-                          className="typology-chart"
-                          onMouseLeave={() => setTypologyTooltip(null)}
-                          viewBox="0 0 640 220"
-                          role="img"
-                          aria-label="Evolución mensual por tipología"
-                        >
-                          <line className="chart-axis" x1="18" x2="622" y1="202" y2="202" />
-                          <line className="chart-axis" x1="18" x2="18" y1="18" y2="202" />
-                          {selectedTypologyFields.map(({ field, label, color }) => {
-                            const values = typologyRows.map((row) => asNumber(row[field]))
-                            const avgValues = movingAverage(values)
-                            const coordinates = getSvgCoordinates(values, typologyBounds.min, typologyBounds.max)
-                            return (
-                              <g key={field}>
-                                <polyline
-                                  fill="none"
-                                  points={getSvgPoints(values, typologyBounds.min, typologyBounds.max)}
-                                  stroke={color}
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="3"
-                                />
-                                <polyline
-                                  className="chart-moving-line"
-                                  fill="none"
-                                  points={getSvgPoints(avgValues, typologyBounds.min, typologyBounds.max)}
-                                  stroke={color}
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2"
-                                />
-                                {coordinates.map(({ x, y }, index) => (
-                                  <circle
-                                    className="chart-point"
-                                    cx={x}
-                                    cy={y}
-                                    fill={color}
-                                    key={`${field}-${typologyRows[index]?.Mes}`}
-                                    onFocus={() =>
-                                      setTypologyTooltip({
-                                        color,
-                                        label,
-                                        month: typologyRows[index]?.Mes,
-                                        value: values[index],
-                                        x,
-                                        y,
-                                      })
-                                    }
-                                    onMouseEnter={() =>
-                                      setTypologyTooltip({
-                                        color,
-                                        label,
-                                        month: typologyRows[index]?.Mes,
-                                        value: values[index],
-                                        x,
-                                        y,
-                                      })
-                                    }
-                                    r="5"
-                                    tabIndex="0"
-                                  />
-                                ))}
-                              </g>
-                            )
-                          })}
-                        </svg>
-                        {typologyTooltip && (
-                          <div
-                            className="chart-tooltip"
-                            style={{
-                              '--tooltip-color': typologyTooltip.color,
-                              left: `${(typologyTooltip.x / 640) * 100}%`,
-                              top: `${(typologyTooltip.y / 220) * 100}%`,
-                            }}
-                          >
-                            <strong>{typologyTooltip.label}</strong>
-                            <span>{typologyTooltip.month}</span>
-                            <span>{formatMoney(typologyTooltip.value)}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="typology-latest">
-                        {selectedTypologyFields.map(({ field, label, color }) => (
-                          <article key={field} style={{ '--legend-color': color }}>
-                            <span>{label}</span>
-                            <strong>{formatMoney(typologyRows[typologyRows.length - 1]?.[field])}</strong>
-                          </article>
-                        ))}
-                      </div>
-                    </>
+                    </div>
                   ) : (
                     <div className="empty-state compact-empty">
-                      <strong>Sin tipologías seleccionadas</strong>
-                      <span>Activa al menos una serie para ver la gráfica.</span>
+                      <strong>Sin histórico suficiente</strong>
+                      <span>Procesa al menos un mes para ver la evolución.</span>
                     </div>
                   )}
                 </div>
@@ -1276,7 +1339,7 @@ export function ResultsPanel({
                 <div className="typology-predictions">
                   <h3 className="table-title">Predicción a 6 meses</h3>
                   <div className="prediction-grid">
-                    {selectedTypologyFields.map(({ field, label, color }) => {
+                    {typologyFields.map(({ field, label, color }) => {
                       const prediction = predictTypology(typologyRows, field)
                       return (
                         <article className="prediction-card" key={field} style={{ '--prediction-color': color }}>
