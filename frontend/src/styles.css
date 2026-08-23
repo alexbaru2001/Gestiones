@@ -4808,11 +4808,10 @@ tbody tr:hover {
   min-width: 180px;
 }
 
-.typology-card-toolbar {
+.typology-toolbar-controls {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .typology-hero-label {
@@ -4854,12 +4853,6 @@ tbody tr:hover {
   color: var(--color-muted);
 }
 
-.typology-compare-legend-items {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
-}
-
 .typology-compare-legend span {
   display: inline-flex;
   align-items: center;
@@ -4886,17 +4879,6 @@ tbody tr:hover {
 .typology-mini {
   padding-top: 12px;
   border-top: 1px dashed var(--color-line-strong);
-  transition: grid-column 0.15s ease;
-}
-
-.typology-mini--expanded {
-  grid-column: 1 / -1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .typology-mini {
-    transition: none;
-  }
 }
 
 .typology-mini-head {
@@ -4942,12 +4924,6 @@ tbody tr:hover {
 .typology-expand-button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-}
-
-.typology-expand-button[aria-pressed="true"] {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
 }
 
 .mini-trend {

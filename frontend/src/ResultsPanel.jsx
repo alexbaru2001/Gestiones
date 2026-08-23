@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { CalendarDays, Download, FileJson, Maximize2, Minimize2, Table2 } from 'lucide-react'
+import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
 import { comparisonRows } from './resultSelectors'
 
@@ -30,14 +30,13 @@ const tabs = [
   { id: 'datos', label: 'Datos' },
 ]
 
-const typologyHeroField = { field: '💰 Ahorros', label: 'Ahorros', color: '#1f4d3d' }
-
 const typologyCompareFields = [
   { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#2e4057' },
   { field: '💳 Gasto del mes', label: 'Gasto del mes', color: '#7a2e2e' },
 ]
 
-const typologySmallMultiples = [
+const typologyCards = [
+  { field: '💰 Ahorros', label: 'Ahorros', color: '#1f4d3d' },
   { field: '💼 Vacaciones', label: 'Vacaciones', color: '#b8863b' },
   { field: '📈 Inversiones', label: 'Reserva inversión', color: '#1f5c6b' },
   { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#6e7a3a' },
@@ -45,7 +44,7 @@ const typologySmallMultiples = [
   { field: '🎁 Regalos', label: 'Regalos', color: '#8a6a2b' },
 ]
 
-const typologyFields = [typologyHeroField, ...typologyCompareFields, ...typologySmallMultiples]
+const typologyFields = [typologyCards[0], ...typologyCompareFields, ...typologyCards.slice(1)]
 
 const typologyPeriods = [
   { value: '6', label: '6 meses' },
@@ -391,16 +390,10 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
   )
 }
 
-function TypologyExpandButton({ active, label, onToggle }) {
+function TypologyFeatureButton({ label, onFeature }) {
   return (
-    <button
-      aria-label={active ? `Volver a la vista normal de ${label}` : `Ampliar ${label}`}
-      aria-pressed={active}
-      className="typology-expand-button"
-      onClick={onToggle}
-      type="button"
-    >
-      {active ? <Minimize2 aria-hidden="true" size={13} /> : <Maximize2 aria-hidden="true" size={13} />}
+    <button aria-label={`Mostrar ${label} en grande`} className="typology-expand-button" onClick={onFeature} type="button">
+      <Maximize2 aria-hidden="true" size={13} />
     </button>
   )
 }
@@ -519,7 +512,7 @@ export function ResultsPanel({
 }) {
   const [activeTab, setActiveTab] = useState('resumen')
   const [typologyPeriod, setTypologyPeriod] = useState('12')
-  const [expandedTypology, setExpandedTypology] = useState(null)
+  const [featuredTypology, setFeaturedTypology] = useState(typologyCards[0].field)
   const [expensePeriod, setExpensePeriod] = useState('6')
   const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [savingsTooltip, setSavingsTooltip] = useState(null)
@@ -605,12 +598,9 @@ export function ResultsPanel({
   )
   const typologyRows = getPeriodRows(rows, typologyPeriod)
   const typologyMonths = typologyRows.map((row) => row.Mes)
-  const typologyHeroValues = typologyRows.map((row) => asNumber(row[typologyHeroField.field]))
-  const toggleTypologyExpanded = (key) => setExpandedTypology((current) => (current === key ? null : key))
-  const typologyCardHeight = (key, baseHeight, expandedHeight) => {
-    if (!expandedTypology) return baseHeight
-    return expandedTypology === key ? expandedHeight : Math.round(baseHeight * 0.7)
-  }
+  const featuredCard = typologyCards.find((card) => card.field === featuredTypology) ?? typologyCards[0]
+  const featuredValues = typologyRows.map((row) => asNumber(row[featuredCard.field]))
+  const otherTypologyCards = typologyCards.filter((card) => card.field !== featuredCard.field)
   const summaryGroups = selectedRow ? getSummaryGroups(selectedRow) : null
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
@@ -1329,63 +1319,60 @@ export function ResultsPanel({
                 <div className="typology-chart-panel">
                   <div className="table-toolbar compact-toolbar">
                     <h3 className="table-title">Evolución por tipología</h3>
-                    <label className="period-selector">
-                      <span>Periodo</span>
-                      <select value={typologyPeriod} onChange={(event) => setTypologyPeriod(event.target.value)}>
-                        {typologyPeriods.map((period) => (
-                          <option key={period.value} value={period.value}>
-                            {period.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="typology-toolbar-controls">
+                      <label className="period-selector">
+                        <span>Mostrar en grande</span>
+                        <select value={featuredTypology} onChange={(event) => setFeaturedTypology(event.target.value)}>
+                          {typologyCards.map((card) => (
+                            <option key={card.field} value={card.field}>
+                              {card.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="period-selector">
+                        <span>Periodo</span>
+                        <select value={typologyPeriod} onChange={(event) => setTypologyPeriod(event.target.value)}>
+                          {typologyPeriods.map((period) => (
+                            <option key={period.value} value={period.value}>
+                              {period.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                   </div>
                   {typologyRows.length > 0 ? (
                     <div className="typology-board">
                       <article className="typology-hero">
                         <div className="typology-hero-head">
-                          <div className="typology-card-toolbar">
-                            <span className="typology-hero-label">{typologyHeroField.label}</span>
-                            <TypologyExpandButton
-                              active={expandedTypology === 'ahorros'}
-                              label={typologyHeroField.label}
-                              onToggle={() => toggleTypologyExpanded('ahorros')}
-                            />
-                          </div>
-                          <strong className="typology-hero-value">{formatMoney(typologyHeroValues.at(-1))}</strong>
+                          <span className="typology-hero-label">{featuredCard.label}</span>
+                          <strong className="typology-hero-value">{formatMoney(featuredValues.at(-1))}</strong>
                           <span className="typology-hero-delta">
-                            {formatDelta(typologyHeroValues.at(-1) - typologyHeroValues[0])} en {typologyRows.length} meses
+                            {formatDelta(featuredValues.at(-1) - featuredValues[0])} en {typologyRows.length} meses
                           </span>
                         </div>
                         <TypologyMiniChart
-                          color={typologyHeroField.color}
-                          height={typologyCardHeight('ahorros', 92, 200)}
-                          label={typologyHeroField.label}
+                          color={featuredCard.color}
+                          height={200}
+                          label={featuredCard.label}
                           months={typologyMonths}
-                          values={typologyHeroValues}
+                          values={featuredValues}
                         />
                       </article>
 
                       <article className="typology-compare">
                         <div className="typology-compare-legend">
-                          <div className="typology-compare-legend-items">
-                            <span>
-                              <i style={{ background: typologyCompareFields[0].color }} />
-                              {typologyCompareFields[0].label}
-                            </span>
-                            <span>
-                              <i className="dashed" style={{ borderColor: typologyCompareFields[1].color }} />
-                              {typologyCompareFields[1].label}
-                            </span>
-                          </div>
-                          <TypologyExpandButton
-                            active={expandedTypology === 'presupuesto-gasto'}
-                            label="Presupuesto vs gasto"
-                            onToggle={() => toggleTypologyExpanded('presupuesto-gasto')}
-                          />
+                          <span>
+                            <i style={{ background: typologyCompareFields[0].color }} />
+                            {typologyCompareFields[0].label}
+                          </span>
+                          <span>
+                            <i className="dashed" style={{ borderColor: typologyCompareFields[1].color }} />
+                            {typologyCompareFields[1].label}
+                          </span>
                         </div>
                         <TypologyCompareChart
-                          height={typologyCardHeight('presupuesto-gasto', 100, 200)}
                           months={typologyMonths}
                           seriesA={{
                             ...typologyCompareFields[0],
@@ -1399,25 +1386,18 @@ export function ResultsPanel({
                       </article>
 
                       <div className="typology-grid">
-                        {typologySmallMultiples.map(({ field, label, color }) => {
+                        {otherTypologyCards.map(({ field, label, color }) => {
                           const values = typologyRows.map((row) => asNumber(row[field]))
-                          const isExpanded = expandedTypology === field
                           return (
-                            <article className={`typology-mini${isExpanded ? ' typology-mini--expanded' : ''}`} key={field}>
+                            <article className="typology-mini" key={field}>
                               <div className="typology-mini-head">
                                 <div className="typology-mini-head-info">
                                   <span>{label}</span>
                                   <strong>{formatMoney(values.at(-1))}</strong>
                                 </div>
-                                <TypologyExpandButton active={isExpanded} label={label} onToggle={() => toggleTypologyExpanded(field)} />
+                                <TypologyFeatureButton label={label} onFeature={() => setFeaturedTypology(field)} />
                               </div>
-                              <TypologyMiniChart
-                                color={color}
-                                height={typologyCardHeight(field, 56, 190)}
-                                label={label}
-                                months={typologyMonths}
-                                values={values}
-                              />
+                              <TypologyMiniChart color={color} height={72} label={label} months={typologyMonths} values={values} />
                             </article>
                           )
                         })}
