@@ -427,10 +427,7 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
         </text>
       </svg>
       {tooltip && (
-        <div
-          className="mini-trend-tooltip"
-          style={{ left: `${(tooltip.x / width) * 100}%`, top: `${(tooltip.y / height) * 100}%` }}
-        >
+        <div className="mini-trend-tooltip" style={{ left: `${(tooltip.x / width) * 100}%` }}>
           <span>{formatMonthLabel(tooltip.month)}</span>
           <strong>{formatMoney(tooltip.value)}</strong>
         </div>
