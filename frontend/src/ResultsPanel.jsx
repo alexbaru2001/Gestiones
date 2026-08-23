@@ -62,6 +62,14 @@ const expensePeriods = [
   { value: 'all', label: 'Todo' },
 ]
 
+const expenseCategoryFields = [
+  { field: 'alimentacion', label: 'Alimentación', color: '#1f4d3d' },
+  { field: 'transporte', label: 'Transporte', color: '#2e4057' },
+  { field: 'hosteleria', label: 'Hostelería', color: '#b8863b' },
+  { field: 'entretenimiento', label: 'Entretenimiento', color: '#6b4f8a' },
+  { field: 'otros', label: 'Otros', color: '#6e7a6c' },
+]
+
 const historyFields = [
   { label: 'Mes', field: 'Mes', type: 'text' },
   { label: 'Total', field: 'total', type: 'money' },
@@ -536,6 +544,119 @@ function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
   )
 }
 
+function ExpenseCategoryChart({ categoryFields, rows }) {
+  const [containerRef, width] = useElementWidth(720)
+  const [tooltip, setTooltip] = useState(null)
+  const height = 240
+  const paddingRight = 12
+  const paddingTop = 16
+  const paddingBottom = 26
+
+  const totals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.abs(asNumber(row[field.field])), 0))
+  const max = Math.max(...totals, 1)
+  const paddingLeft = axisPaddingLeft(0, max)
+  const plotWidth = Math.max(0, width - paddingLeft - paddingRight)
+  const plotHeight = height - paddingTop - paddingBottom
+  const slot = rows.length > 0 ? plotWidth / rows.length : 0
+  const barWidth = Math.max(6, slot - 10)
+  const scaleY = (value) => height - paddingBottom - (Math.max(0, value) / max) * plotHeight
+
+  const bars = rows.map((row, index) => {
+    const slotX = paddingLeft + index * slot
+    const barX = slotX + (slot - barWidth) / 2
+    let cursor = 0
+    const segments = []
+    categoryFields.forEach((field) => {
+      const value = Math.abs(asNumber(row[field.field]))
+      if (value <= 0) return
+      const y0 = scaleY(cursor)
+      const y1 = scaleY(cursor + value)
+      segments.push({ color: field.color, height: Math.max(0, y0 - y1), label: field.label, value, y: y1 })
+      cursor += value
+    })
+    return { barX, hitWidth: slot, hitX: slotX, month: row.Mes, segments }
+  })
+
+  const averageValues = movingAverage(totals)
+  const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
+  const averagePath = smoothLinePath(averagePoints)
+  const monthStep = Math.max(1, Math.ceil(rows.length / 6))
+
+  return (
+    <div className="expense-chart" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
+      <svg
+        aria-label="Evolución mensual de gastos por categoría, con media móvil de 3 meses"
+        className="mini-trend-svg"
+        height={height}
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            className="mini-grid-line"
+            key={fraction}
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={paddingTop + plotHeight * fraction}
+            y2={paddingTop + plotHeight * fraction}
+          />
+        ))}
+        {bars.map((bar) => (
+          <g key={bar.month}>
+            {bar.segments.map((segment) => (
+              <rect fill={segment.color} height={segment.height} key={segment.label} rx="1.5" width={barWidth} x={bar.barX} y={segment.y} />
+            ))}
+          </g>
+        ))}
+        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        {averagePoints.map((point, index) => (
+          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.month ?? index} pointerEvents="none" r="2.6" />
+        ))}
+        {bars.map((bar) => (
+          <rect
+            aria-label={`${formatMonthLabel(bar.month)}: ${formatMoney(bar.segments.reduce((sum, segment) => sum + segment.value, 0))} en total`}
+            fill="transparent"
+            height={plotHeight}
+            key={`hit-${bar.month}`}
+            onFocus={() => setTooltip(bar)}
+            onMouseEnter={() => setTooltip(bar)}
+            role="img"
+            tabIndex="0"
+            width={bar.hitWidth}
+            x={bar.hitX}
+            y={paddingTop}
+          />
+        ))}
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
+          {formatMoneyCompact(max)}
+        </text>
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={height - paddingBottom}>
+          0 €
+        </text>
+        {bars.map((bar, index) =>
+          index % monthStep === 0 ? (
+            <text className="mini-axis-month" key={bar.month} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
+              {formatMonthLabel(bar.month)}
+            </text>
+          ) : null,
+        )}
+      </svg>
+      {tooltip && (
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((tooltip.barX + barWidth / 2) / width) * 100}%` }}>
+          <span>{formatMonthLabel(tooltip.month)}</span>
+          {tooltip.segments.map((segment) => (
+            <span className="expense-tooltip-row" key={segment.label}>
+              <i style={{ background: segment.color }} />
+              {segment.label} {formatMoney(segment.value)}
+            </span>
+          ))}
+          <strong>Total {formatMoney(tooltip.segments.reduce((sum, segment) => sum + segment.value, 0))}</strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -561,14 +682,33 @@ export function ResultsPanel({
   const [expensePeriod, setExpensePeriod] = useState('6')
   const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [savingsTooltip, setSavingsTooltip] = useState(null)
+  const [budgetTooltip, setBudgetTooltip] = useState(null)
   const [investmentTooltip, setInvestmentTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
   const incomeAnalysis = getIncomeAnalysis(result)
-  const expenseRows = getExpenseRowsForPeriod(expenseAnalysis.mensual, selectedRow?.Mes, expensePeriod)
   const expenseCategoryRows = getExpenseCategoryRowsForPeriod(expenseAnalysis.categorias, selectedRow?.Mes, expensePeriod)
-  const expenseMax = Math.max(...expenseCategoryRows.map((row) => asNumber(row.total)), 1)
-  const expenseMonthlyMax = Math.max(...expenseRows.map((row) => Math.abs(asNumber(row.gastos))), 1)
+  const expenseCategoryTimeline = getExpenseRowsForPeriod(expenseAnalysis.categorias, selectedRow?.Mes, expensePeriod)
+  const expensePieTotal = expenseCategoryRows.reduce((total, row) => total + asNumber(row.total), 0)
+  let expensePieCursor = 0
+  const expensePieSegments = expenseCategoryRows.map((row) => {
+    const field = expenseCategoryFields.find((item) => item.field === row.categoria)
+    const pct = expensePieTotal > 0 ? (asNumber(row.total) / expensePieTotal) * 100 : 0
+    const segment = {
+      color: field?.color ?? '#8a8a78',
+      end: expensePieCursor + pct,
+      label: field?.label ?? row.categoria,
+      pct,
+      start: expensePieCursor,
+      total: asNumber(row.total),
+    }
+    expensePieCursor += pct
+    return segment
+  })
+  const expensePieGradient =
+    expensePieSegments.length > 0
+      ? `conic-gradient(${expensePieSegments.map((segment) => `${segment.color} ${segment.start}% ${segment.end}%`).join(', ')})`
+      : null
   const savingsAnalysis = getSavingsAnalysis(result)
   const scopedSavingsRows = savingsAnalysis.mensual.filter((row) => !selectedRow?.Mes || String(row.Mes) <= String(selectedRow.Mes))
   const selectedSavingsRow = scopedSavingsRows.at(-1) ?? savingsAnalysis.ultimo_mes
@@ -850,27 +990,53 @@ export function ResultsPanel({
                         : `Quedan ${formatMoney(budget.remaining)} disponibles este mes.`}
                     </p>
                   </div>
-                  <div className="budget-bar" aria-label="Distribución del presupuesto mensual">
-                    {budget.debtReserve > 0 && (
-                      <span
-                        className="budget-segment reserved"
-                        style={{ width: getSegmentWidth(budget.debtReserve, budget.totalForBar) }}
-                        title={`Reserva deuda: ${formatMoney(budget.debtReserve)}`}
-                      />
-                    )}
-                    {budget.budgetConsumption > 0 && (
-                      <span
-                        className="budget-segment spent"
-                        style={{ width: getSegmentWidth(budget.budgetConsumption, budget.totalForBar) }}
-                        title={`Gasto: ${formatMoney(budget.spent)}`}
-                      />
-                    )}
-                    {budget.remaining > 0 && (
-                      <span
-                        className="budget-segment remaining"
-                        style={{ width: getSegmentWidth(budget.remaining, budget.totalForBar) }}
-                        title={`Restante: ${formatMoney(budget.remaining)}`}
-                      />
+                  <div className="budget-bar-wrap">
+                    <div className="budget-bar" aria-label="Distribución del presupuesto mensual">
+                      {budget.debtReserve > 0 && (
+                        <span
+                          aria-label={`Reserva deuda: ${formatMoney(budget.debtReserve)}`}
+                          className="budget-segment reserved"
+                          onBlur={() => setBudgetTooltip(null)}
+                          onFocus={() => setBudgetTooltip({ label: 'Reserva deuda', value: budget.debtReserve })}
+                          onMouseEnter={() => setBudgetTooltip({ label: 'Reserva deuda', value: budget.debtReserve })}
+                          onMouseLeave={() => setBudgetTooltip(null)}
+                          role="img"
+                          style={{ width: getSegmentWidth(budget.debtReserve, budget.totalForBar) }}
+                          tabIndex="0"
+                        />
+                      )}
+                      {budget.budgetConsumption > 0 && (
+                        <span
+                          aria-label={`Gasto: ${formatMoney(budget.spent)}`}
+                          className="budget-segment spent"
+                          onBlur={() => setBudgetTooltip(null)}
+                          onFocus={() => setBudgetTooltip({ label: 'Gasto', value: budget.spent })}
+                          onMouseEnter={() => setBudgetTooltip({ label: 'Gasto', value: budget.spent })}
+                          onMouseLeave={() => setBudgetTooltip(null)}
+                          role="img"
+                          style={{ width: getSegmentWidth(budget.budgetConsumption, budget.totalForBar) }}
+                          tabIndex="0"
+                        />
+                      )}
+                      {budget.remaining > 0 && (
+                        <span
+                          aria-label={`Restante: ${formatMoney(budget.remaining)}`}
+                          className="budget-segment remaining"
+                          onBlur={() => setBudgetTooltip(null)}
+                          onFocus={() => setBudgetTooltip({ label: 'Restante', value: budget.remaining })}
+                          onMouseEnter={() => setBudgetTooltip({ label: 'Restante', value: budget.remaining })}
+                          onMouseLeave={() => setBudgetTooltip(null)}
+                          role="img"
+                          style={{ width: getSegmentWidth(budget.remaining, budget.totalForBar) }}
+                          tabIndex="0"
+                        />
+                      )}
+                    </div>
+                    {budgetTooltip && (
+                      <div className="mini-trend-tooltip" style={{ left: '50%' }}>
+                        <span>{budgetTooltip.label}</span>
+                        <strong>{formatMoney(budgetTooltip.value)}</strong>
+                      </div>
                     )}
                   </div>
                   <div className="budget-bar-values">
@@ -887,25 +1053,30 @@ export function ResultsPanel({
                 </div>
 
                 <div className="budget-summary">
+                  <p className="budget-summary-heading">Presupuesto</p>
                   <article>
                     <span>Presupuesto mes</span>
                     <strong>{formatMoney(budget.monthBudget)}</strong>
-                  </article>
-                  <article>
-                    <span>Disponible visual</span>
-                    <strong>{formatMoney(budget.remaining)}</strong>
-                  </article>
-                  <article>
-                    <span>Reserva deuda</span>
-                    <strong>{formatMoney(budget.debtReserve)}</strong>
                   </article>
                   <article>
                     <span>Gasto neto</span>
                     <strong>{formatMoney(budget.spent)}</strong>
                   </article>
                   <article>
+                    <span>Disponible visual</span>
+                    <strong>{formatMoney(budget.remaining)}</strong>
+                  </article>
+                  <article>
                     <span>Ejecutado</span>
                     <strong>{budget.execution.toFixed(1)}%</strong>
+                    <div className="ratio-bar">
+                      <span style={{ width: `${Math.max(0, Math.min(100, budget.execution))}%` }} />
+                    </div>
+                  </article>
+                  <p className="budget-summary-heading">Deuda</p>
+                  <article>
+                    <span>Reserva deuda</span>
+                    <strong>{formatMoney(budget.debtReserve)}</strong>
                   </article>
                   <article>
                     <span>Exceso mes</span>
@@ -920,11 +1091,11 @@ export function ResultsPanel({
             )}
 
             {activeTab === 'gastos' && (
-              expenseRows.length > 0 ? (
+              expenseCategoryTimeline.length > 0 ? (
                 <section className="expenses-layout">
                   <div className="expenses-panel">
                     <div className="table-toolbar compact-toolbar">
-                      <h3 className="table-title">Gasto mes a mes</h3>
+                      <h3 className="table-title">Gastos por categoría</h3>
                       <label className="period-selector">
                         <span>Periodo</span>
                         <select value={expensePeriod} onChange={(event) => setExpensePeriod(event.target.value)}>
@@ -936,36 +1107,52 @@ export function ResultsPanel({
                         </select>
                       </label>
                     </div>
-                    <div className="expense-month-bars">
-                      {expenseRows.map((row) => (
-                        <article key={row.Mes}>
-                          <span>{formatMonthLabel(row.Mes)}</span>
-                          <div className="expense-month-bar" title={`Gasto ${row.Mes}: ${formatMoney(row.gastos)}`}>
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row.gastos)) / expenseMonthlyMax) * 100)}%` }} />
+                    {expensePieGradient ? (
+                      <div className="expense-pie-layout">
+                        <div className="expense-pie" style={{ background: expensePieGradient }}>
+                          <div className="expense-pie-hole">
+                            <strong>{formatMoney(expensePieTotal)}</strong>
+                            <span>Total del periodo</span>
                           </div>
-                          <strong>{formatMoney(row.gastos)}</strong>
-                        </article>
-                      ))}
-                    </div>
+                        </div>
+                        <ul className="expense-pie-legend">
+                          {expensePieSegments.map((segment) => (
+                            <li key={segment.label}>
+                              <span className="expense-pie-legend-label">
+                                <i style={{ background: segment.color }} />
+                                {segment.label}
+                              </span>
+                              <span className="expense-pie-legend-value">{formatMoney(segment.total)}</span>
+                              <span className="expense-pie-legend-pct">{formatPercent(segment.pct)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="empty-state compact-empty">
+                        <strong>Sin gasto en el periodo</strong>
+                        <span>Elige un periodo con gastos registrados para ver el reparto.</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="expenses-panel">
                     <div className="table-toolbar compact-toolbar">
-                      <h3 className="table-title">Categorias del periodo</h3>
-                      <span>{expenseRows[0]?.Mes} - {expenseRows.at(-1)?.Mes}</span>
+                      <h3 className="table-title">Evolución por categoría</h3>
+                      <span className="muted-text">Media móvil de 3 meses</span>
                     </div>
-                    <div className="category-list">
-                      {expenseCategoryRows.map((row) => (
-                        <article className="category-row" key={row.categoria}>
-                          <div>
-                            <strong>{row.categoria}</strong>
-                            <span>{formatMoney(row.total)}</span>
-                          </div>
-                          <div className="category-bar">
-                            <span style={{ width: `${Math.max(4, (asNumber(row.total) / expenseMax) * 100)}%` }} />
-                          </div>
-                        </article>
+                    <ExpenseCategoryChart categoryFields={expenseCategoryFields} rows={expenseCategoryTimeline} />
+                    <div className="expense-chart-legend">
+                      {expenseCategoryFields.map((field) => (
+                        <span key={field.field}>
+                          <i style={{ background: field.color }} />
+                          {field.label}
+                        </span>
                       ))}
+                      <span className="expense-avg-legend">
+                        <i />
+                        Media móvil
+                      </span>
                     </div>
                   </div>
                 </section>

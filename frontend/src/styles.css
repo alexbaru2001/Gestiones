@@ -990,15 +990,15 @@ button:disabled {
 }
 
 .budget-segment.reserved {
-  background: #6c7a72;
+  background: var(--color-gold);
 }
 
 .budget-segment.spent {
-  background: #b85a4b;
+  background: var(--color-danger);
 }
 
 .budget-segment.remaining {
-  background: #286b57;
+  background: var(--color-primary);
 }
 
 .budget-bar-values {
@@ -1025,16 +1025,16 @@ button:disabled {
   height: 9px;
   margin-right: 6px;
   border-radius: 999px;
-  background: #6c7a72;
+  background: var(--color-gold);
   content: "";
 }
 
 .budget-legend span:nth-child(2)::before {
-  background: #b85a4b;
+  background: var(--color-danger);
 }
 
 .budget-legend span:nth-child(3)::before {
-  background: #286b57;
+  background: var(--color-primary);
 }
 
 .budget-summary {
@@ -3340,7 +3340,7 @@ button:focus-visible {
 }
 
 .budget-segment.reserved {
-  background: #65736c;
+  background: var(--color-gold);
 }
 
 .budget-segment.spent {
@@ -4237,6 +4237,28 @@ body {
   border-radius: 4px;
 }
 
+.budget-bar-wrap {
+  position: relative;
+}
+
+.budget-segment:focus-visible {
+  outline: 2px solid var(--color-primary-strong);
+  outline-offset: -2px;
+}
+
+.budget-summary-heading {
+  margin: 0;
+  color: var(--color-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.budget-summary article .ratio-bar {
+  margin: 8px 0 0;
+}
+
 .file-input span,
 .primary-button,
 .ghost-button,
@@ -5002,4 +5024,144 @@ tbody tr:hover {
   .typology-hero-value {
     font-size: 28px;
   }
+}
+
+/* ---- Gastos: circular por categoría + evolución con media móvil ---- */
+.expense-pie-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  margin-top: 14px;
+}
+
+.expense-pie {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  width: 148px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 999px;
+}
+
+.expense-pie-hole {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 96px;
+  aspect-ratio: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.expense-pie-hole strong {
+  color: var(--color-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 15px;
+}
+
+.expense-pie-hole span {
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-size: 10.5px;
+}
+
+.expense-pie-legend {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.expense-pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.expense-pie-legend-label {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-ink);
+}
+
+.expense-pie-legend-label i {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.expense-pie-legend-value {
+  color: var(--color-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.expense-pie-legend-pct {
+  min-width: 42px;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.expense-chart {
+  position: relative;
+  margin-top: 12px;
+}
+
+.expense-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 12px;
+  color: var(--color-muted);
+  font-size: 11.5px;
+}
+
+.expense-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expense-chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.expense-avg-legend i {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed #1c2a22;
+}
+
+.expense-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.expense-tooltip-row i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
 }
