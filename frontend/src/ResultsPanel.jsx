@@ -281,6 +281,23 @@ function formatExpenseBucketLabel(bucket) {
   return `${formatMonthLabel(bucket.Mes)}–${formatMonthLabel(bucket.MesFin)}`
 }
 
+function bucketSingleValueRows(rows, valueField, bucketSize, maxBuckets) {
+  const chunks = []
+  let end = rows.length
+  while (end > 0 && chunks.length < maxBuckets) {
+    const start = Math.max(0, end - bucketSize)
+    chunks.unshift(rows.slice(start, end))
+    end = start
+  }
+  return chunks
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => ({
+      Mes: chunk[0].Mes,
+      MesFin: chunk.at(-1).Mes,
+      value: chunk.reduce((sum, row) => sum + asNumber(row[valueField]), 0),
+    }))
+}
+
 function getSummaryGroups(row) {
   return {
     patrimony: [
@@ -699,6 +716,104 @@ function ExpenseCategoryChart({
   )
 }
 
+function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#7a2e2e', rows }) {
+  const [containerRef, width] = useElementWidth(720)
+  const [tooltip, setTooltip] = useState(null)
+  const height = 220
+  const paddingRight = 12
+  const paddingTop = 16
+  const paddingBottom = 26
+
+  const values = rows.map((row) => asNumber(row.value))
+  const min = Math.min(...values, 0)
+  const max = Math.max(...values, 1)
+  const paddingLeft = axisPaddingLeft(min, max)
+  const plotWidth = Math.max(0, width - paddingLeft - paddingRight)
+  const plotHeight = height - paddingTop - paddingBottom
+  const slot = rows.length > 0 ? plotWidth / rows.length : 0
+  const barWidth = Math.max(6, slot - 10)
+  const scaleY = (value) => height - paddingBottom - ((value - min) / (max - min || 1)) * plotHeight
+  const zeroY = scaleY(0)
+
+  const bars = rows.map((row, index) => {
+    const slotX = paddingLeft + index * slot
+    const barX = slotX + (slot - barWidth) / 2
+    const value = asNumber(row.value)
+    const barY = value >= 0 ? scaleY(value) : zeroY
+    return { barHeight: Math.abs(scaleY(value) - zeroY), barX, barY, hitWidth: slot, hitX: slotX, key: `${row.Mes}-${row.MesFin ?? ''}`, label: getLabel(row), value }
+  })
+
+  const averageValues = movingAverage(values)
+  const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
+  const averagePath = smoothLinePath(averagePoints)
+  const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+
+  return (
+    <div className="expense-chart" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
+      <svg
+        aria-label="Cantidad ahorrada por bloques de meses anteriores, con media móvil"
+        className="mini-trend-svg"
+        height={height}
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {[0.25, 0.5, 0.75].map((fraction) => (
+          <line
+            className="mini-grid-line"
+            key={fraction}
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={paddingTop + plotHeight * fraction}
+            y2={paddingTop + plotHeight * fraction}
+          />
+        ))}
+        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        {bars.map((bar) => (
+          <rect fill={bar.value >= 0 ? color : negativeColor} height={bar.barHeight} key={bar.key} rx="1.5" width={barWidth} x={bar.barX} y={bar.barY} />
+        ))}
+        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        {averagePoints.map((point, index) => (
+          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
+        ))}
+        {bars.map((bar) => (
+          <rect
+            aria-label={`${bar.label}: ${formatMoney(bar.value)}`}
+            fill="transparent"
+            height={plotHeight}
+            key={`hit-${bar.key}`}
+            onFocus={() => setTooltip(bar)}
+            onMouseEnter={() => setTooltip(bar)}
+            role="img"
+            tabIndex="0"
+            width={bar.hitWidth}
+            x={bar.hitX}
+            y={paddingTop}
+          />
+        ))}
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
+          {formatMoneyCompact(max)}
+        </text>
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={height - paddingBottom}>
+          {formatMoneyCompact(min)}
+        </text>
+        {bars.map((bar, index) =>
+          index % labelStep === 0 ? (
+            <text className="mini-axis-month" key={bar.key} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
+              {bar.label}
+            </text>
+          ) : null,
+        )}
+      </svg>
+      {tooltip && (
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((tooltip.barX + barWidth / 2) / width) * 100}%` }}>
+          <span>{tooltip.label}</span>
+          <strong>{formatMoney(tooltip.value)}</strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ResultsPanel({
   isProcessing,
   rows,
@@ -760,6 +875,8 @@ export function ResultsPanel({
   const savingsMonths = savingsPercentRows.map((row) => row.Mes)
   const savingsPercentValues = savingsPercentRows.map((row) => asNumber(row.porcentaje_ahorro))
   const savingsAverageValues = movingAverage(savingsPercentValues)
+  const savingsBucketSize = savingsPeriod === 'all' ? Math.max(1, Math.ceil(scopedSavingsRows.length / 8)) : Number(savingsPeriod)
+  const savingsBucketedRows = bucketSingleValueRows(scopedSavingsRows, 'balance', savingsBucketSize, 8)
   const investmentRows = rows.slice(-12)
   const investmentChart = {
     width: 640,
@@ -1246,9 +1363,11 @@ export function ResultsPanel({
                       <label className="period-selector">
                         <span>Periodo</span>
                         <select value={savingsPeriod} onChange={(event) => setSavingsPeriod(event.target.value)}>
-                          <option value="6">6 meses</option>
-                          <option value="12">12 meses</option>
-                          <option value="all">Todo</option>
+                          {expensePeriods.map((period) => (
+                            <option key={period.value} value={period.value}>
+                              {period.label}
+                            </option>
+                          ))}
                         </select>
                       </label>
                     </div>
@@ -1271,6 +1390,30 @@ export function ResultsPanel({
                         seriesA={{ color: '#1f4d3d', label: 'Ahorro mensual', values: savingsPercentValues }}
                         seriesB={{ color: '#1c2a22', label: 'Media móvil', values: savingsAverageValues }}
                       />
+                    </div>
+                  </section>
+
+                  <section className="expenses-panel">
+                    <div className="table-toolbar compact-toolbar">
+                      <h3 className="table-title">Cantidad ahorrada</h3>
+                      <span className="muted-text">
+                        Bloques de {savingsBucketSize} {savingsBucketSize === 1 ? 'mes' : 'meses'}, últimos {savingsBucketedRows.length}
+                      </span>
+                    </div>
+                    <SavingsAmountChart getLabel={formatExpenseBucketLabel} rows={savingsBucketedRows} />
+                    <div className="expense-chart-legend">
+                      <span>
+                        <i style={{ background: '#1f4d3d' }} />
+                        Ahorro positivo
+                      </span>
+                      <span>
+                        <i style={{ background: '#7a2e2e' }} />
+                        Ahorro negativo
+                      </span>
+                      <span className="expense-avg-legend">
+                        <i />
+                        Media móvil
+                      </span>
                     </div>
                   </section>
                 </section>
