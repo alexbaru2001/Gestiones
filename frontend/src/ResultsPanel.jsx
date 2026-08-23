@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
 import { comparisonRows } from './resultSelectors'
@@ -303,10 +303,60 @@ function axisPaddingLeft(min, max) {
   return Math.min(70, Math.max(34, chars * 6 + 8))
 }
 
+// Mide el ancho real del contenedor: el viewBox debe coincidir con el tamaño
+// renderizado o el SVG se estira de forma desigual (eje X mucho más que el Y)
+// y la línea se ve aplastada, como una foto redimensionada sin mantener proporción.
+function useElementWidth(fallback) {
+  const ref = useRef(null)
+  const [width, setWidth] = useState(fallback)
+
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return undefined
+    const measure = (entry) => setWidth(Math.round(entry?.contentRect.width || element.getBoundingClientRect().width || fallback))
+    measure()
+    const observer = new ResizeObserver(([entry]) => measure(entry))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [fallback])
+
+  return [ref, width]
+}
+
+// Convierte los puntos en una curva suave (Catmull-Rom a Bézier) que pasa
+// exactamente por cada valor real, sin inventar datos entre meses.
+function smoothLinePath(points) {
+  if (points.length < 2) return ''
+  if (points.length === 2) {
+    return `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L ${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`
+  }
+  let path = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const p0 = points[index - 1] ?? points[index]
+    const p1 = points[index]
+    const p2 = points[index + 1]
+    const p3 = points[index + 2] ?? p2
+    const c1x = p1.x + (p2.x - p0.x) / 6
+    const c1y = p1.y + (p2.y - p0.y) / 6
+    const c2x = p2.x - (p3.x - p1.x) / 6
+    const c2y = p2.y - (p3.y - p1.y) / 6
+    path += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return path
+}
+
+function smoothAreaPath(points, baselineY) {
+  const line = smoothLinePath(points)
+  if (!line) return ''
+  const first = points[0]
+  const last = points.at(-1)
+  return `${line} L ${last.x.toFixed(1)},${baselineY.toFixed(1)} L ${first.x.toFixed(1)},${baselineY.toFixed(1)} Z`
+}
+
 function TypologyMiniChart({ values, months, color, label, height = 64 }) {
   const [tooltip, setTooltip] = useState(null)
   const gradientId = useId()
-  const width = 240
+  const [containerRef, width] = useElementWidth(240)
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 1)
   const paddingLeft = axisPaddingLeft(min, max)
@@ -315,20 +365,19 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
   const paddingBottom = 18
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinates = getSvgCoordinates(values, min, max, chartOptions)
-  const areaPath = getSvgAreaPath(values, min, max, chartOptions)
-  const linePoints = getSvgPoints(values, min, max, chartOptions)
+  const areaPath = smoothAreaPath(coordinates, height - paddingBottom)
+  const linePath = smoothLinePath(coordinates)
   const last = coordinates.at(-1)
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const plotBottom = height - paddingBottom
   const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
 
   return (
-    <div className="mini-trend" onMouseLeave={() => setTooltip(null)}>
+    <div className="mini-trend" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
       <svg
         aria-label={`${label}: de ${formatMoney(values[0])} a ${formatMoney(values.at(-1))} en ${values.length} meses, ${trend}.`}
         className="mini-trend-svg"
         height={height}
-        preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
@@ -350,7 +399,7 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
         ))}
         <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
-        <polyline fill="none" points={linePoints} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d={linePath} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         {coordinates.map((point, index) => (
           <circle
             cx={point.x}
@@ -400,7 +449,7 @@ function TypologyFeatureButton({ label, onFeature }) {
 
 function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
   const [tooltip, setTooltip] = useState(null)
-  const width = 560
+  const [containerRef, width] = useElementWidth(560)
   const combined = [...seriesA.values, ...seriesB.values]
   const min = Math.min(...combined, 0)
   const max = Math.max(...combined, 1)
@@ -411,20 +460,19 @@ function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinatesA = getSvgCoordinates(seriesA.values, min, max, chartOptions)
   const coordinatesB = getSvgCoordinates(seriesB.values, min, max, chartOptions)
-  const pointsA = getSvgPoints(seriesA.values, min, max, chartOptions)
-  const pointsB = getSvgPoints(seriesB.values, min, max, chartOptions)
+  const pathA = smoothLinePath(coordinatesA)
+  const pathB = smoothLinePath(coordinatesB)
   const lastA = coordinatesA.at(-1)
   const lastB = coordinatesB.at(-1)
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const plotBottom = height - paddingBottom
 
   return (
-    <div className="mini-trend compare-trend" onMouseLeave={() => setTooltip(null)}>
+    <div className="mini-trend compare-trend" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
       <svg
         aria-label={`${seriesA.label} y ${seriesB.label} comparados mes a mes en el mismo eje. Último mes: ${seriesA.label} ${formatMoney(seriesA.values.at(-1))}, ${seriesB.label} ${formatMoney(seriesB.values.at(-1))}.`}
         className="mini-trend-svg"
         height={height}
-        preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
@@ -439,10 +487,10 @@ function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
           />
         ))}
         <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
-        <polyline fill="none" points={pointsA} stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-        <polyline
+        <path d={pathA} fill="none" stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path
+          d={pathB}
           fill="none"
-          points={pointsB}
           stroke={seriesB.color}
           strokeDasharray="6 4"
           strokeLinecap="round"
