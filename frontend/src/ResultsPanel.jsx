@@ -58,7 +58,8 @@ const expensePeriods = [
   { value: '1', label: 'Mes actual' },
   { value: '3', label: '3 meses' },
   { value: '6', label: '6 meses' },
-  { value: '12', label: '12 meses' },
+  { value: '12', label: '1 año' },
+  { value: '36', label: '3 años' },
   { value: 'all', label: 'Todo' },
 ]
 
@@ -254,6 +255,30 @@ function getExpenseCategoryRowsForPeriod(categoryRows, selectedMonth, period) {
     .map(([categoria, total]) => ({ categoria, total }))
     .filter((row) => row.total > 0)
     .sort((left, right) => right.total - left.total)
+}
+
+function bucketExpenseCategoryRows(rows, bucketSize, maxBuckets, categoryFields) {
+  const chunks = []
+  let end = rows.length
+  while (end > 0 && chunks.length < maxBuckets) {
+    const start = Math.max(0, end - bucketSize)
+    chunks.unshift(rows.slice(start, end))
+    end = start
+  }
+  return chunks
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => {
+      const bucket = { Mes: chunk[0].Mes, MesFin: chunk.at(-1).Mes }
+      categoryFields.forEach((field) => {
+        bucket[field.field] = chunk.reduce((sum, row) => sum + Math.abs(asNumber(row[field.field])), 0)
+      })
+      return bucket
+    })
+}
+
+function formatExpenseBucketLabel(bucket) {
+  if (!bucket.MesFin || bucket.MesFin === bucket.Mes) return formatMonthLabel(bucket.Mes)
+  return `${formatMonthLabel(bucket.Mes)}–${formatMonthLabel(bucket.MesFin)}`
 }
 
 function getSummaryGroups(row) {
@@ -544,7 +569,13 @@ function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
   )
 }
 
-function ExpenseCategoryChart({ categoryFields, rows }) {
+function ExpenseCategoryChart({
+  ariaLabel = 'Evolución de gastos por categoría, con media móvil de 3 periodos',
+  categoryFields,
+  getLabel = (row) => formatMonthLabel(row.Mes),
+  maxLabels = 6,
+  rows,
+}) {
   const [containerRef, width] = useElementWidth(720)
   const [tooltip, setTooltip] = useState(null)
   const height = 240
@@ -574,23 +605,17 @@ function ExpenseCategoryChart({ categoryFields, rows }) {
       segments.push({ color: field.color, height: Math.max(0, y0 - y1), label: field.label, value, y: y1 })
       cursor += value
     })
-    return { barX, hitWidth: slot, hitX: slotX, month: row.Mes, segments }
+    return { barX, hitWidth: slot, hitX: slotX, key: `${row.Mes}-${row.MesFin ?? ''}`, label: getLabel(row), segments }
   })
 
   const averageValues = movingAverage(totals)
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
   const averagePath = smoothLinePath(averagePoints)
-  const monthStep = Math.max(1, Math.ceil(rows.length / 6))
+  const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
 
   return (
     <div className="expense-chart" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
-      <svg
-        aria-label="Evolución mensual de gastos por categoría, con media móvil de 3 meses"
-        className="mini-trend-svg"
-        height={height}
-        role="img"
-        viewBox={`0 0 ${width} ${height}`}
-      >
+      <svg aria-label={ariaLabel} className="mini-trend-svg" height={height} role="img" viewBox={`0 0 ${width} ${height}`}>
         {[0.25, 0.5, 0.75].map((fraction) => (
           <line
             className="mini-grid-line"
@@ -602,7 +627,7 @@ function ExpenseCategoryChart({ categoryFields, rows }) {
           />
         ))}
         {bars.map((bar) => (
-          <g key={bar.month}>
+          <g key={bar.key}>
             {bar.segments.map((segment) => (
               <rect fill={segment.color} height={segment.height} key={segment.label} rx="1.5" width={barWidth} x={bar.barX} y={segment.y} />
             ))}
@@ -610,14 +635,14 @@ function ExpenseCategoryChart({ categoryFields, rows }) {
         ))}
         <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         {averagePoints.map((point, index) => (
-          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.month ?? index} pointerEvents="none" r="2.6" />
+          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
         {bars.map((bar) => (
           <rect
-            aria-label={`${formatMonthLabel(bar.month)}: ${formatMoney(bar.segments.reduce((sum, segment) => sum + segment.value, 0))} en total`}
+            aria-label={`${bar.label}: ${formatMoney(bar.segments.reduce((sum, segment) => sum + segment.value, 0))} en total`}
             fill="transparent"
             height={plotHeight}
-            key={`hit-${bar.month}`}
+            key={`hit-${bar.key}`}
             onFocus={() => setTooltip(bar)}
             onMouseEnter={() => setTooltip(bar)}
             role="img"
@@ -634,16 +659,16 @@ function ExpenseCategoryChart({ categoryFields, rows }) {
           0 €
         </text>
         {bars.map((bar, index) =>
-          index % monthStep === 0 ? (
-            <text className="mini-axis-month" key={bar.month} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
-              {formatMonthLabel(bar.month)}
+          index % labelStep === 0 ? (
+            <text className="mini-axis-month" key={bar.key} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
+              {bar.label}
             </text>
           ) : null,
         )}
       </svg>
       {tooltip && (
         <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((tooltip.barX + barWidth / 2) / width) * 100}%` }}>
-          <span>{formatMonthLabel(tooltip.month)}</span>
+          <span>{tooltip.label}</span>
           {tooltip.segments.map((segment) => (
             <span className="expense-tooltip-row" key={segment.label}>
               <i style={{ background: segment.color }} />
@@ -709,6 +734,9 @@ export function ResultsPanel({
     expensePieSegments.length > 0
       ? `conic-gradient(${expensePieSegments.map((segment) => `${segment.color} ${segment.start}% ${segment.end}%`).join(', ')})`
       : null
+  const expenseFullTimeline = getExpenseRowsForPeriod(expenseAnalysis.categorias, selectedRow?.Mes, 'all')
+  const expenseBucketSize = expensePeriod === 'all' ? Math.max(1, Math.ceil(expenseFullTimeline.length / 8)) : Number(expensePeriod)
+  const expenseBucketedRows = bucketExpenseCategoryRows(expenseFullTimeline, expenseBucketSize, 8, expenseCategoryFields)
   const savingsAnalysis = getSavingsAnalysis(result)
   const scopedSavingsRows = savingsAnalysis.mensual.filter((row) => !selectedRow?.Mes || String(row.Mes) <= String(selectedRow.Mes))
   const selectedSavingsRow = scopedSavingsRows.at(-1) ?? savingsAnalysis.ultimo_mes
@@ -1142,6 +1170,34 @@ export function ResultsPanel({
                       <span className="muted-text">Media móvil de 3 meses</span>
                     </div>
                     <ExpenseCategoryChart categoryFields={expenseCategoryFields} rows={expenseCategoryTimeline} />
+                    <div className="expense-chart-legend">
+                      {expenseCategoryFields.map((field) => (
+                        <span key={field.field}>
+                          <i style={{ background: field.color }} />
+                          {field.label}
+                        </span>
+                      ))}
+                      <span className="expense-avg-legend">
+                        <i />
+                        Media móvil
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="expenses-panel">
+                    <div className="table-toolbar compact-toolbar">
+                      <h3 className="table-title">Comparativa por bloques</h3>
+                      <span className="muted-text">
+                        Bloques de {expenseBucketSize} {expenseBucketSize === 1 ? 'mes' : 'meses'}, últimos {expenseBucketedRows.length}
+                      </span>
+                    </div>
+                    <ExpenseCategoryChart
+                      ariaLabel="Gastos por categoría agrupados en bloques de meses anteriores, con media móvil"
+                      categoryFields={expenseCategoryFields}
+                      getLabel={formatExpenseBucketLabel}
+                      maxLabels={8}
+                      rows={expenseBucketedRows}
+                    />
                     <div className="expense-chart-legend">
                       {expenseCategoryFields.map((field) => (
                         <span key={field.field}>
