@@ -4805,6 +4805,14 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 180px;
+}
+
+.typology-card-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .typology-hero-label {
@@ -4837,11 +4845,19 @@ tbody tr:hover {
 
 .typology-compare-legend {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 18px;
   margin-bottom: 8px;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 12.5px;
   color: var(--color-muted);
+}
+
+.typology-compare-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
 }
 
 .typology-compare-legend span {
@@ -4870,18 +4886,68 @@ tbody tr:hover {
 .typology-mini {
   padding-top: 12px;
   border-top: 1px dashed var(--color-line-strong);
+  transition: grid-column 0.15s ease;
+}
+
+.typology-mini--expanded {
+  grid-column: 1 / -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typology-mini {
+    transition: none;
+  }
 }
 
 .typology-mini-head {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.typology-mini-head-info {
+  display: flex;
+  flex: 1 1 auto;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13px;
+  min-width: 0;
 }
 
 .typology-mini-head span {
   color: var(--color-muted);
+}
+
+.typology-expand-button {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.typology-expand-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.typology-expand-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.typology-expand-button[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
 }
 
 .mini-trend {
@@ -4890,13 +4956,41 @@ tbody tr:hover {
 
 .mini-trend-svg {
   display: block;
+  overflow: visible;
   width: 100%;
   cursor: crosshair;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mini-trend-svg {
+    transition: none;
+  }
 }
 
 .mini-grid-line {
   stroke: var(--chart-grid, var(--color-line));
   stroke-width: 1;
+}
+
+.mini-zero-line {
+  stroke: var(--color-ink);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.mini-axis-label,
+.mini-axis-month {
+  fill: var(--color-subtle);
+  font-size: 9px;
+}
+
+.mini-axis-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.mini-axis-month {
+  font-family: "Public Sans", sans-serif;
 }
 
 .mini-trend-svg circle:focus-visible {

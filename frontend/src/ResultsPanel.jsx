@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { CalendarDays, Download, FileJson, Table2 } from 'lucide-react'
+import { CalendarDays, Download, FileJson, Maximize2, Minimize2, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
 import { comparisonRows } from './resultSelectors'
 
@@ -196,6 +196,10 @@ function formatMonthLabel(value) {
   return `${month}/${year.slice(-2)}`
 }
 
+function formatMoneyCompact(value) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
+}
+
 function formatMonthLong(value) {
   const [year, month] = String(value ?? '').split('-').map(Number)
   if (!year || !month) return value
@@ -295,17 +299,28 @@ function formatPercent(value) {
   return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
 }
 
+function axisPaddingLeft(min, max) {
+  const chars = Math.max(formatMoneyCompact(min).length, formatMoneyCompact(max).length)
+  return Math.min(70, Math.max(34, chars * 6 + 8))
+}
+
 function TypologyMiniChart({ values, months, color, label, height = 64 }) {
   const [tooltip, setTooltip] = useState(null)
   const gradientId = useId()
   const width = 240
-  const chartOptions = { width, height, padding: 10 }
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 1)
+  const paddingLeft = axisPaddingLeft(min, max)
+  const paddingRight = 10
+  const paddingTop = 12
+  const paddingBottom = 18
+  const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinates = getSvgCoordinates(values, min, max, chartOptions)
   const areaPath = getSvgAreaPath(values, min, max, chartOptions)
   const linePoints = getSvgPoints(values, min, max, chartOptions)
   const last = coordinates.at(-1)
+  const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
+  const plotBottom = height - paddingBottom
   const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
 
   return (
@@ -313,6 +328,8 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
       <svg
         aria-label={`${label}: de ${formatMoney(values[0])} a ${formatMoney(values.at(-1))} en ${values.length} meses, ${trend}.`}
         className="mini-trend-svg"
+        height={height}
+        preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
@@ -326,12 +343,13 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
           <line
             className="mini-grid-line"
             key={fraction}
-            x1={10}
-            x2={width - 10}
-            y1={10 + (height - 20) * fraction}
-            y2={10 + (height - 20) * fraction}
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={paddingTop + (plotBottom - paddingTop) * fraction}
+            y2={paddingTop + (plotBottom - paddingTop) * fraction}
           />
         ))}
+        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
         <polyline fill="none" points={linePoints} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         {coordinates.map((point, index) => (
@@ -347,6 +365,18 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
           />
         ))}
         <circle cx={last.x} cy={last.y} fill={color} pointerEvents="none" r="3.6" />
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
+          {formatMoneyCompact(max)}
+        </text>
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={plotBottom}>
+          {formatMoneyCompact(min)}
+        </text>
+        <text className="mini-axis-month" textAnchor="start" x={paddingLeft} y={height - 4}>
+          {formatMonthLabel(months[0])}
+        </text>
+        <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
+          {formatMonthLabel(months.at(-1))}
+        </text>
       </svg>
       {tooltip && (
         <div
@@ -361,26 +391,47 @@ function TypologyMiniChart({ values, months, color, label, height = 64 }) {
   )
 }
 
-function TypologyCompareChart({ months, seriesA, seriesB }) {
+function TypologyExpandButton({ active, label, onToggle }) {
+  return (
+    <button
+      aria-label={active ? `Volver a la vista normal de ${label}` : `Ampliar ${label}`}
+      aria-pressed={active}
+      className="typology-expand-button"
+      onClick={onToggle}
+      type="button"
+    >
+      {active ? <Minimize2 aria-hidden="true" size={13} /> : <Maximize2 aria-hidden="true" size={13} />}
+    </button>
+  )
+}
+
+function TypologyCompareChart({ height = 100, months, seriesA, seriesB }) {
   const [tooltip, setTooltip] = useState(null)
   const width = 560
-  const height = 100
-  const chartOptions = { width, height, padding: 10 }
   const combined = [...seriesA.values, ...seriesB.values]
   const min = Math.min(...combined, 0)
   const max = Math.max(...combined, 1)
+  const paddingLeft = axisPaddingLeft(min, max)
+  const paddingRight = 10
+  const paddingTop = 12
+  const paddingBottom = 18
+  const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinatesA = getSvgCoordinates(seriesA.values, min, max, chartOptions)
   const coordinatesB = getSvgCoordinates(seriesB.values, min, max, chartOptions)
   const pointsA = getSvgPoints(seriesA.values, min, max, chartOptions)
   const pointsB = getSvgPoints(seriesB.values, min, max, chartOptions)
   const lastA = coordinatesA.at(-1)
   const lastB = coordinatesB.at(-1)
+  const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
+  const plotBottom = height - paddingBottom
 
   return (
     <div className="mini-trend compare-trend" onMouseLeave={() => setTooltip(null)}>
       <svg
         aria-label={`${seriesA.label} y ${seriesB.label} comparados mes a mes en el mismo eje. Último mes: ${seriesA.label} ${formatMoney(seriesA.values.at(-1))}, ${seriesB.label} ${formatMoney(seriesB.values.at(-1))}.`}
         className="mini-trend-svg"
+        height={height}
+        preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
@@ -388,12 +439,13 @@ function TypologyCompareChart({ months, seriesA, seriesB }) {
           <line
             className="mini-grid-line"
             key={fraction}
-            x1={10}
-            x2={width - 10}
-            y1={10 + (height - 20) * fraction}
-            y2={10 + (height - 20) * fraction}
+            x1={paddingLeft}
+            x2={width - paddingRight}
+            y1={paddingTop + (plotBottom - paddingTop) * fraction}
+            y2={paddingTop + (plotBottom - paddingTop) * fraction}
           />
         ))}
+        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         <polyline fill="none" points={pointsA} stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <polyline
           fill="none"
@@ -418,6 +470,18 @@ function TypologyCompareChart({ months, seriesA, seriesB }) {
         ))}
         <circle cx={lastA.x} cy={lastA.y} fill={seriesA.color} pointerEvents="none" r="3.6" />
         <circle cx={lastB.x} cy={lastB.y} fill={seriesB.color} pointerEvents="none" r="3.6" />
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
+          {formatMoneyCompact(max)}
+        </text>
+        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={plotBottom}>
+          {formatMoneyCompact(min)}
+        </text>
+        <text className="mini-axis-month" textAnchor="start" x={paddingLeft} y={height - 4}>
+          {formatMonthLabel(months[0])}
+        </text>
+        <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
+          {formatMonthLabel(months.at(-1))}
+        </text>
       </svg>
       {tooltip && (
         <div className="mini-trend-tooltip compare-tooltip" style={{ left: `${(tooltip.x / width) * 100}%` }}>
@@ -455,6 +519,7 @@ export function ResultsPanel({
 }) {
   const [activeTab, setActiveTab] = useState('resumen')
   const [typologyPeriod, setTypologyPeriod] = useState('12')
+  const [expandedTypology, setExpandedTypology] = useState(null)
   const [expensePeriod, setExpensePeriod] = useState('6')
   const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [savingsTooltip, setSavingsTooltip] = useState(null)
@@ -541,6 +606,11 @@ export function ResultsPanel({
   const typologyRows = getPeriodRows(rows, typologyPeriod)
   const typologyMonths = typologyRows.map((row) => row.Mes)
   const typologyHeroValues = typologyRows.map((row) => asNumber(row[typologyHeroField.field]))
+  const toggleTypologyExpanded = (key) => setExpandedTypology((current) => (current === key ? null : key))
+  const typologyCardHeight = (key, baseHeight, expandedHeight) => {
+    if (!expandedTypology) return baseHeight
+    return expandedTypology === key ? expandedHeight : Math.round(baseHeight * 0.7)
+  }
   const summaryGroups = selectedRow ? getSummaryGroups(selectedRow) : null
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
@@ -1274,7 +1344,14 @@ export function ResultsPanel({
                     <div className="typology-board">
                       <article className="typology-hero">
                         <div className="typology-hero-head">
-                          <span className="typology-hero-label">{typologyHeroField.label}</span>
+                          <div className="typology-card-toolbar">
+                            <span className="typology-hero-label">{typologyHeroField.label}</span>
+                            <TypologyExpandButton
+                              active={expandedTypology === 'ahorros'}
+                              label={typologyHeroField.label}
+                              onToggle={() => toggleTypologyExpanded('ahorros')}
+                            />
+                          </div>
                           <strong className="typology-hero-value">{formatMoney(typologyHeroValues.at(-1))}</strong>
                           <span className="typology-hero-delta">
                             {formatDelta(typologyHeroValues.at(-1) - typologyHeroValues[0])} en {typologyRows.length} meses
@@ -1282,7 +1359,7 @@ export function ResultsPanel({
                         </div>
                         <TypologyMiniChart
                           color={typologyHeroField.color}
-                          height={92}
+                          height={typologyCardHeight('ahorros', 92, 200)}
                           label={typologyHeroField.label}
                           months={typologyMonths}
                           values={typologyHeroValues}
@@ -1291,16 +1368,24 @@ export function ResultsPanel({
 
                       <article className="typology-compare">
                         <div className="typology-compare-legend">
-                          <span>
-                            <i style={{ background: typologyCompareFields[0].color }} />
-                            {typologyCompareFields[0].label}
-                          </span>
-                          <span>
-                            <i className="dashed" style={{ borderColor: typologyCompareFields[1].color }} />
-                            {typologyCompareFields[1].label}
-                          </span>
+                          <div className="typology-compare-legend-items">
+                            <span>
+                              <i style={{ background: typologyCompareFields[0].color }} />
+                              {typologyCompareFields[0].label}
+                            </span>
+                            <span>
+                              <i className="dashed" style={{ borderColor: typologyCompareFields[1].color }} />
+                              {typologyCompareFields[1].label}
+                            </span>
+                          </div>
+                          <TypologyExpandButton
+                            active={expandedTypology === 'presupuesto-gasto'}
+                            label="Presupuesto vs gasto"
+                            onToggle={() => toggleTypologyExpanded('presupuesto-gasto')}
+                          />
                         </div>
                         <TypologyCompareChart
+                          height={typologyCardHeight('presupuesto-gasto', 100, 200)}
                           months={typologyMonths}
                           seriesA={{
                             ...typologyCompareFields[0],
@@ -1316,13 +1401,23 @@ export function ResultsPanel({
                       <div className="typology-grid">
                         {typologySmallMultiples.map(({ field, label, color }) => {
                           const values = typologyRows.map((row) => asNumber(row[field]))
+                          const isExpanded = expandedTypology === field
                           return (
-                            <article className="typology-mini" key={field}>
+                            <article className={`typology-mini${isExpanded ? ' typology-mini--expanded' : ''}`} key={field}>
                               <div className="typology-mini-head">
-                                <span>{label}</span>
-                                <strong>{formatMoney(values.at(-1))}</strong>
+                                <div className="typology-mini-head-info">
+                                  <span>{label}</span>
+                                  <strong>{formatMoney(values.at(-1))}</strong>
+                                </div>
+                                <TypologyExpandButton active={isExpanded} label={label} onToggle={() => toggleTypologyExpanded(field)} />
                               </div>
-                              <TypologyMiniChart color={color} height={56} label={label} months={typologyMonths} values={values} />
+                              <TypologyMiniChart
+                                color={color}
+                                height={typologyCardHeight(field, 56, 190)}
+                                label={label}
+                                months={typologyMonths}
+                                values={values}
+                              />
                             </article>
                           )
                         })}
