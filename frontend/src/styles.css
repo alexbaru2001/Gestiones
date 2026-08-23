@@ -5151,14 +5151,14 @@ tbody tr:hover {
   border-top: 2px dashed #1c2a22;
 }
 
-.expense-tooltip-row {
+.mini-tooltip-row {
   display: flex;
   align-items: center;
   gap: 6px;
   color: rgba(255, 255, 255, 0.85);
 }
 
-.expense-tooltip-row i {
+.mini-tooltip-row i {
   display: inline-block;
   width: 8px;
   height: 8px;
