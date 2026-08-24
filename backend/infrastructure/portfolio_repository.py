@@ -126,7 +126,7 @@ class LocalPortfolioRepository:
         summary["investment_bucket"] = finance_row["investment_bucket"]
         summary["investment_net_worth"] = round(finance_row["finance_invested"] + finance_row["investment_bucket"], 2)
         summary["dividends"] = finance_row["dividends"]
-        summary["fees"] = summary.get("fees") or finance_row["fees"] or previous_summary.get("fees", 0.0)
+        summary["fees"] = finance_row["fees"]
         if finance_row["finance_invested"] > 0:
             invested = summary.get("invested") or 0.0
             fees = summary.get("fees") or 0.0

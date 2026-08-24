@@ -162,22 +162,6 @@ function movingAverage(values, windowSize = 3) {
   })
 }
 
-function getSvgPoints(values, min, max, options) {
-  return getSvgCoordinates(values, min, max, options)
-    .map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`)
-    .join(' ')
-}
-
-function getSvgAreaPath(values, min, max, options = {}) {
-  const coordinates = getSvgCoordinates(values, min, max, options)
-  if (!coordinates.length) return ''
-  const height = options.height ?? 220
-  const paddingBottom = options.paddingBottom ?? options.padding ?? 18
-  const baseline = height - paddingBottom
-  const line = coordinates.map(({ x, y }) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  return `M ${coordinates[0].x.toFixed(1)} ${baseline.toFixed(1)} ${line} L ${coordinates.at(-1).x.toFixed(1)} ${baseline.toFixed(1)} Z`
-}
-
 function getSvgCoordinates(values, min, max, options = {}) {
   const width = options.width ?? 640
   const height = options.height ?? 220
@@ -191,11 +175,6 @@ function getSvgCoordinates(values, min, max, options = {}) {
     x: paddingLeft + (index / Math.max(1, values.length - 1)) * (width - paddingLeft - paddingRight),
     y: height - paddingBottom - ((value - min) / range) * (height - paddingTop - paddingBottom),
   }))
-}
-
-function getAxisTicks(min, max, count = 5) {
-  const range = max - min || 1
-  return Array.from({ length: count }, (_, index) => min + (range / Math.max(1, count - 1)) * index)
 }
 
 function formatMonthLabel(value) {
@@ -247,7 +226,7 @@ function getExpenseCategoryRowsForPeriod(categoryRows, selectedMonth, period) {
   const totals = scopedRows.reduce((acc, row) => {
     Object.entries(row).forEach(([key, value]) => {
       if (key === 'Mes') return
-      acc[key] = (acc[key] ?? 0) + Math.abs(asNumber(value))
+      acc[key] = (acc[key] ?? 0) + asNumber(value)
     })
     return acc
   }, {})
@@ -270,7 +249,7 @@ function bucketExpenseCategoryRows(rows, bucketSize, maxBuckets, categoryFields)
     .map((chunk) => {
       const bucket = { Mes: chunk[0].Mes, MesFin: chunk.at(-1).Mes }
       categoryFields.forEach((field) => {
-        bucket[field.field] = chunk.reduce((sum, row) => sum + Math.abs(asNumber(row[field.field])), 0)
+        bucket[field.field] = chunk.reduce((sum, row) => sum + asNumber(row[field.field]), 0)
       })
       return bucket
     })
@@ -603,6 +582,32 @@ function TypologyCompareChart({
   )
 }
 
+function ExpenseCategoryLegend({ activeFields, categoryFields, onToggle }) {
+  return (
+    <div className="expense-chart-legend">
+      {categoryFields.map((field) => {
+        const active = activeFields.includes(field.field)
+        return (
+          <button
+            aria-pressed={active}
+            className={active ? 'expense-legend-toggle' : 'expense-legend-toggle inactive'}
+            key={field.field}
+            onClick={() => onToggle(field.field)}
+            type="button"
+          >
+            <i style={{ background: field.color }} />
+            {field.label}
+          </button>
+        )
+      })}
+      <span className="expense-avg-legend">
+        <i />
+        Media móvil
+      </span>
+    </div>
+  )
+}
+
 function ExpenseCategoryChart({
   ariaLabel = 'Evolución de gastos por categoría, con media móvil de 3 periodos',
   categoryFields,
@@ -617,32 +622,43 @@ function ExpenseCategoryChart({
   const paddingTop = 16
   const paddingBottom = 26
 
-  const totals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.abs(asNumber(row[field.field])), 0))
-  const max = Math.max(...totals, 1)
-  const paddingLeft = axisPaddingLeft(0, max)
+  const positiveTotals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.max(0, asNumber(row[field.field])), 0))
+  const negativeTotals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.min(0, asNumber(row[field.field])), 0))
+  const netTotals = rows.map((row) => categoryFields.reduce((sum, field) => sum + asNumber(row[field.field]), 0))
+  const max = Math.max(...positiveTotals, 1)
+  const min = Math.min(...negativeTotals, 0)
+  const paddingLeft = axisPaddingLeft(min, max)
   const plotWidth = Math.max(0, width - paddingLeft - paddingRight)
   const plotHeight = height - paddingTop - paddingBottom
   const slot = rows.length > 0 ? plotWidth / rows.length : 0
   const barWidth = Math.max(6, slot - 10)
-  const scaleY = (value) => height - paddingBottom - (Math.max(0, value) / max) * plotHeight
+  const scaleY = (value) => height - paddingBottom - ((value - min) / (max - min || 1)) * plotHeight
+  const zeroY = scaleY(0)
 
   const bars = rows.map((row, index) => {
     const slotX = paddingLeft + index * slot
     const barX = slotX + (slot - barWidth) / 2
-    let cursor = 0
+    let posCursor = 0
+    let negCursor = 0
     const segments = []
     categoryFields.forEach((field) => {
-      const value = Math.abs(asNumber(row[field.field]))
-      if (value <= 0) return
-      const y0 = scaleY(cursor)
-      const y1 = scaleY(cursor + value)
-      segments.push({ color: field.color, height: Math.max(0, y0 - y1), label: field.label, value, y: y1 })
-      cursor += value
+      const value = asNumber(row[field.field])
+      if (value > 0) {
+        const y0 = scaleY(posCursor)
+        const y1 = scaleY(posCursor + value)
+        segments.push({ color: field.color, height: Math.max(0, y0 - y1), label: field.label, value, y: y1 })
+        posCursor += value
+      } else if (value < 0) {
+        const y0 = scaleY(negCursor)
+        const y1 = scaleY(negCursor + value)
+        segments.push({ color: field.color, height: Math.max(0, y1 - y0), label: field.label, value, y: y0 })
+        negCursor += value
+      }
     })
     return { barX, hitWidth: slot, hitX: slotX, key: `${row.Mes}-${row.MesFin ?? ''}`, label: getLabel(row), segments }
   })
 
-  const averageValues = movingAverage(totals)
+  const averageValues = movingAverage(netTotals)
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
   const averagePath = smoothLinePath(averagePoints)
   const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
@@ -660,6 +676,7 @@ function ExpenseCategoryChart({
             y2={paddingTop + plotHeight * fraction}
           />
         ))}
+        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         {bars.map((bar) => (
           <g key={bar.key}>
             {bar.segments.map((segment) => (
@@ -690,7 +707,7 @@ function ExpenseCategoryChart({
           {formatMoneyCompact(max)}
         </text>
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={height - paddingBottom}>
-          0 €
+          {formatMoneyCompact(min)}
         </text>
         {bars.map((bar, index) =>
           index % labelStep === 0 ? (
@@ -837,9 +854,10 @@ export function ResultsPanel({
   const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [featuredTypology, setFeaturedTypology] = useState(typologyCards[0].field)
   const [expensePeriod, setExpensePeriod] = useState('6')
+  const [activeExpenseCategories, setActiveExpenseCategories] = useState(() => expenseCategoryFields.map((field) => field.field))
   const [savingsPeriod, setSavingsPeriod] = useState('12')
+  const [savingsAmountPeriod, setSavingsAmountPeriod] = useState('6')
   const [budgetTooltip, setBudgetTooltip] = useState(null)
-  const [investmentTooltip, setInvestmentTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
   const incomeAnalysis = getIncomeAnalysis(result)
@@ -868,6 +886,15 @@ export function ResultsPanel({
   const expenseFullTimeline = getExpenseRowsForPeriod(expenseAnalysis.categorias, selectedRow?.Mes, 'all')
   const expenseBucketSize = expensePeriod === 'all' ? Math.max(1, Math.ceil(expenseFullTimeline.length / 8)) : Number(expensePeriod)
   const expenseBucketedRows = bucketExpenseCategoryRows(expenseFullTimeline, expenseBucketSize, 8, expenseCategoryFields)
+  const toggleExpenseCategory = (field) =>
+    setActiveExpenseCategories((current) => {
+      if (current.includes(field)) {
+        const next = current.filter((item) => item !== field)
+        return next.length > 0 ? next : current
+      }
+      return [...current, field]
+    })
+  const visibleExpenseCategoryFields = expenseCategoryFields.filter((field) => activeExpenseCategories.includes(field.field))
   const savingsAnalysis = getSavingsAnalysis(result)
   const scopedSavingsRows = savingsAnalysis.mensual.filter((row) => !selectedRow?.Mes || String(row.Mes) <= String(selectedRow.Mes))
   const selectedSavingsRow = scopedSavingsRows.at(-1) ?? savingsAnalysis.ultimo_mes
@@ -875,37 +902,13 @@ export function ResultsPanel({
   const savingsMonths = savingsPercentRows.map((row) => row.Mes)
   const savingsPercentValues = savingsPercentRows.map((row) => asNumber(row.porcentaje_ahorro))
   const savingsAverageValues = movingAverage(savingsPercentValues)
-  const savingsBucketSize = savingsPeriod === 'all' ? Math.max(1, Math.ceil(scopedSavingsRows.length / 8)) : Number(savingsPeriod)
+  const savingsBucketSize =
+    savingsAmountPeriod === 'all' ? Math.max(1, Math.ceil(scopedSavingsRows.length / 8)) : Number(savingsAmountPeriod)
   const savingsBucketedRows = bucketSingleValueRows(scopedSavingsRows, 'balance', savingsBucketSize, 8)
   const investmentRows = rows.slice(-12)
-  const investmentChart = {
-    width: 640,
-    height: 260,
-    paddingLeft: 54,
-    paddingRight: 22,
-    paddingTop: 24,
-    paddingBottom: 42,
-  }
+  const investmentMonths = investmentRows.map((row) => row.Mes)
   const investmentReserveValues = investmentRows.map((row) => asNumber(row['📈 Inversiones']))
   const investmentInvestedValues = investmentRows.map((row) => asNumber(row['Dinero Invertido']))
-  const investmentBounds = {
-    max: Math.max(...investmentReserveValues, ...investmentInvestedValues, 1),
-    min: Math.min(...investmentReserveValues, ...investmentInvestedValues, 0),
-  }
-  const investmentReserveCoordinates = getSvgCoordinates(
-    investmentReserveValues,
-    investmentBounds.min,
-    investmentBounds.max,
-    investmentChart,
-  )
-  const investmentInvestedCoordinates = getSvgCoordinates(
-    investmentInvestedValues,
-    investmentBounds.min,
-    investmentBounds.max,
-    investmentChart,
-  )
-  const investmentYAxisTicks = getAxisTicks(investmentBounds.min, investmentBounds.max, 5)
-  const investmentXLabelStep = Math.max(1, Math.ceil(investmentRows.length / 6))
   const reserveMax = Math.max(
     ...rows.map((row) =>
       Math.max(
@@ -927,6 +930,8 @@ export function ResultsPanel({
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
   const interestAmount = getCategoryTotalUntilMonth(incomeAnalysis, selectedRow?.Mes, ['interes', 'intereses'])
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
+  const investmentDividends = asNumber(selectedRow?.Dividendos)
+  const investmentInterest = Math.max(0, interestAmount - investmentDividends)
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
@@ -1276,19 +1281,12 @@ export function ResultsPanel({
                       <h3 className="table-title">Evolución por categoría</h3>
                       <span className="muted-text">Media móvil de 3 meses</span>
                     </div>
-                    <ExpenseCategoryChart categoryFields={expenseCategoryFields} rows={expenseCategoryTimeline} />
-                    <div className="expense-chart-legend">
-                      {expenseCategoryFields.map((field) => (
-                        <span key={field.field}>
-                          <i style={{ background: field.color }} />
-                          {field.label}
-                        </span>
-                      ))}
-                      <span className="expense-avg-legend">
-                        <i />
-                        Media móvil
-                      </span>
-                    </div>
+                    <ExpenseCategoryChart categoryFields={visibleExpenseCategoryFields} rows={expenseCategoryTimeline} />
+                    <ExpenseCategoryLegend
+                      activeFields={activeExpenseCategories}
+                      categoryFields={expenseCategoryFields}
+                      onToggle={toggleExpenseCategory}
+                    />
                   </div>
 
                   <div className="expenses-panel">
@@ -1300,23 +1298,16 @@ export function ResultsPanel({
                     </div>
                     <ExpenseCategoryChart
                       ariaLabel="Gastos por categoría agrupados en bloques de meses anteriores, con media móvil"
-                      categoryFields={expenseCategoryFields}
+                      categoryFields={visibleExpenseCategoryFields}
                       getLabel={formatExpenseBucketLabel}
                       maxLabels={8}
                       rows={expenseBucketedRows}
                     />
-                    <div className="expense-chart-legend">
-                      {expenseCategoryFields.map((field) => (
-                        <span key={field.field}>
-                          <i style={{ background: field.color }} />
-                          {field.label}
-                        </span>
-                      ))}
-                      <span className="expense-avg-legend">
-                        <i />
-                        Media móvil
-                      </span>
-                    </div>
+                    <ExpenseCategoryLegend
+                      activeFields={activeExpenseCategories}
+                      categoryFields={expenseCategoryFields}
+                      onToggle={toggleExpenseCategory}
+                    />
                   </div>
                 </section>
               ) : (
@@ -1395,10 +1386,22 @@ export function ResultsPanel({
 
                   <section className="expenses-panel">
                     <div className="table-toolbar compact-toolbar">
-                      <h3 className="table-title">Cantidad ahorrada</h3>
-                      <span className="muted-text">
-                        Bloques de {savingsBucketSize} {savingsBucketSize === 1 ? 'mes' : 'meses'}, últimos {savingsBucketedRows.length}
-                      </span>
+                      <div>
+                        <h3 className="table-title">Cantidad ahorrada</h3>
+                        <span className="muted-text">
+                          Bloques de {savingsBucketSize} {savingsBucketSize === 1 ? 'mes' : 'meses'}, últimos {savingsBucketedRows.length}
+                        </span>
+                      </div>
+                      <label className="period-selector">
+                        <span>Periodo</span>
+                        <select value={savingsAmountPeriod} onChange={(event) => setSavingsAmountPeriod(event.target.value)}>
+                          {expensePeriods.map((period) => (
+                            <option key={period.value} value={period.value}>
+                              {period.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                     </div>
                     <SavingsAmountChart getLabel={formatExpenseBucketLabel} rows={savingsBucketedRows} />
                     <div className="expense-chart-legend">
@@ -1437,126 +1440,39 @@ export function ResultsPanel({
                     <strong>{formatMoney(selectedRow['Dinero Invertido'])}</strong>
                   </article>
                   <article>
-                    <span>Patrimonio inversión</span>
-                    <strong>{formatMoney(asNumber(selectedRow['📈 Inversiones']) + asNumber(selectedRow['Dinero Invertido']))}</strong>
+                    <span>Intereses</span>
+                    <strong>{formatMoney(investmentInterest)}</strong>
+                  </article>
+                  <article>
+                    <span>Dividendos</span>
+                    <strong>{formatMoney(investmentDividends)}</strong>
                   </article>
                 </div>
 
-                <section className="trend-panel compact-trend investor-chart-panel">
+                <section className="typology-chart-panel">
                   <div className="table-toolbar compact-toolbar">
                     <div>
                       <h3 className="table-title">Evolución inversiones</h3>
-                      <span>Bolsa disponible frente a dinero invertido</span>
+                      <span className="muted-text">Bolsa disponible frente a dinero invertido</span>
                     </div>
                   </div>
-                  <div className="savings-chart-wrap">
-                    <svg
-                      className="savings-percent-chart investment-line-chart"
-                      onMouseLeave={() => setInvestmentTooltip(null)}
-                      viewBox="0 0 640 260"
-                      role="img"
-                      aria-label="Evolución de inversiones"
-                    >
-                      <defs>
-                        <linearGradient id="investmentArea" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="#436a92" stopOpacity="0.2" />
-                          <stop offset="100%" stopColor="#436a92" stopOpacity="0.01" />
-                        </linearGradient>
-                      </defs>
-                      {investmentYAxisTicks.map((tick) => {
-                        const y =
-                          investmentChart.height -
-                          investmentChart.paddingBottom -
-                          ((tick - investmentBounds.min) / (investmentBounds.max - investmentBounds.min || 1)) *
-                            (investmentChart.height - investmentChart.paddingTop - investmentChart.paddingBottom)
-                        return (
-                          <g key={tick.toFixed(2)}>
-                            <line className="chart-grid-line" x1="54" x2="618" y1={y} y2={y} />
-                            <text className="chart-axis-label" x="44" y={y + 4} textAnchor="end">
-                              {formatMoney(tick).replace(',00', '')}
-                            </text>
-                          </g>
-                        )
-                      })}
-                      <line className="chart-axis" x1="54" x2="618" y1="218" y2="218" />
-                      {investmentTooltip ? (
-                        <line className="chart-crosshair" x1={investmentTooltip.x} x2={investmentTooltip.x} y1="24" y2="218" />
-                      ) : null}
-                      {investmentRows.map((row, index) =>
-                        index % investmentXLabelStep === 0 || index === investmentRows.length - 1 ? (
-                          <g key={row.Mes}>
-                            <line className="chart-axis-tick" x1={investmentInvestedCoordinates[index]?.x} x2={investmentInvestedCoordinates[index]?.x} y1="218" y2="224" />
-                            <text className="chart-axis-label" x={investmentInvestedCoordinates[index]?.x} y="244" textAnchor="middle">
-                              {formatMonthLabel(row.Mes)}
-                            </text>
-                          </g>
-                        ) : null,
-                      )}
-                      <path
-                        className="chart-area-fill investment-area"
-                        d={getSvgAreaPath(investmentInvestedValues, investmentBounds.min, investmentBounds.max, investmentChart)}
-                      />
-                      <polyline
-                        className="investment-reserve-line"
-                        fill="none"
-                        points={getSvgPoints(investmentReserveValues, investmentBounds.min, investmentBounds.max, investmentChart)}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      <polyline
-                        className="investment-main-line"
-                        fill="none"
-                        points={getSvgPoints(investmentInvestedValues, investmentBounds.min, investmentBounds.max, investmentChart)}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                      {investmentInvestedCoordinates.map(({ x, y }, index) => (
-                        <circle
-                          className="chart-hit-point"
-                          cx={x}
-                          cy={y}
-                          key={investmentRows[index]?.Mes}
-                          onFocus={() =>
-                            setInvestmentTooltip({
-                              month: investmentRows[index]?.Mes,
-                              reserve: investmentReserveValues[index],
-                              invested: investmentInvestedValues[index],
-                              x,
-                              y,
-                            })
-                          }
-                          onMouseEnter={() =>
-                            setInvestmentTooltip({
-                              month: investmentRows[index]?.Mes,
-                              reserve: investmentReserveValues[index],
-                              invested: investmentInvestedValues[index],
-                              x,
-                              y,
-                            })
-                          }
-                          r="11"
-                          tabIndex="0"
-                        />
-                      ))}
-                    </svg>
-                    {investmentTooltip && (
-                      <div
-                        className="chart-tooltip investment-finance-tooltip"
-                        style={{
-                          '--tooltip-color': '#436a92',
-                          left: `${(investmentTooltip.x / investmentChart.width) * 100}%`,
-                          top: `${(investmentTooltip.y / investmentChart.height) * 100}%`,
-                        }}
-                      >
-                        <strong>{investmentTooltip.month}</strong>
-                        <span>Invertido: {formatMoney(investmentTooltip.invested)}</span>
-                        <span>Bolsa: {formatMoney(investmentTooltip.reserve)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="investment-legend investor-legend">
-                    <span>Bolsa</span>
-                    <span>Invertido</span>
+                  <div className="typology-compare">
+                    <div className="typology-compare-legend">
+                      <span>
+                        <i style={{ background: '#1f5c6b' }} />
+                        Bolsa
+                      </span>
+                      <span>
+                        <i className="dashed" style={{ borderColor: '#1f4d3d' }} />
+                        Invertido
+                      </span>
+                    </div>
+                    <TypologyCompareChart
+                      height={200}
+                      months={investmentMonths}
+                      seriesA={{ color: '#1f5c6b', label: 'Bolsa', values: investmentReserveValues }}
+                      seriesB={{ color: '#1f4d3d', label: 'Invertido', values: investmentInvestedValues }}
+                    />
                   </div>
                 </section>
               </section>
