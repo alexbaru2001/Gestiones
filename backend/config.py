@@ -10,6 +10,10 @@ DEFAULT_FINANCE_HISTORY_PATH = Path(__file__).resolve().parents[1] / "Personal_f
 DEFAULT_FINANCE_CHECKPOINT_PATH = (
     Path(__file__).resolve().parents[1] / "Personal_finanzas" / "Data" / "finance_checkpoint.json"
 )
+DEFAULT_GASTOS_HISTORY_PATH = Path(__file__).resolve().parents[1] / "Personal_finanzas" / "Data" / "gastos_historico.csv"
+DEFAULT_INGRESOS_HISTORY_PATH = (
+    Path(__file__).resolve().parents[1] / "Personal_finanzas" / "Data" / "ingresos_historico.csv"
+)
 DEFAULT_INVESTMENT_KNOWLEDGE_PATH = DEFAULT_INVESTMENTS_PATH / "knowledge"
 
 
@@ -45,6 +49,20 @@ def get_finance_checkpoint_path() -> Path:
     configured_path = os.getenv("GESTIONES_FINANCE_CHECKPOINT_PATH", "")
     if not configured_path.strip():
         return DEFAULT_FINANCE_CHECKPOINT_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_gastos_history_path() -> Path:
+    configured_path = os.getenv("GESTIONES_GASTOS_HISTORY_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_GASTOS_HISTORY_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_ingresos_history_path() -> Path:
+    configured_path = os.getenv("GESTIONES_INGRESOS_HISTORY_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_INGRESOS_HISTORY_PATH
     return Path(configured_path).expanduser()
 
 

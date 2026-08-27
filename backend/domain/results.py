@@ -41,6 +41,10 @@ class PipelineResult:
     historial: HistoryResult
     analisis: dict[str, Any] | None = None
     checkpoint: dict[str, Any] | None = None
+    # Gastos/Ingresos de este tramo ya clasificados (con "Mes"), para que quien persista el
+    # histórico pueda guardar el detalle de los meses nuevos. No forma parte de to_dict(): es
+    # información interna para la persistencia, no para el frontend.
+    transacciones: dict[str, list[dict[str, Any]]] | None = None
 
     def to_dict(self) -> dict:
         data = {

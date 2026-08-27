@@ -13,7 +13,12 @@ class ProcessFinanceWorkbookUseCase:
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
         checkpoint: dict | None = None,
+        historical_transactions: dict | None = None,
     ) -> PipelineResult:
         return self._port.run_pipeline_from_bytes(
-            excel_bytes=excel_bytes, params=params, objetivos=objetivos or [], checkpoint=checkpoint
+            excel_bytes=excel_bytes,
+            params=params,
+            objetivos=objetivos or [],
+            checkpoint=checkpoint,
+            historical_transactions=historical_transactions,
         )

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import backend.main as backend_main
 from backend.infrastructure.finance_checkpoint_repository import JsonFinanceCheckpointRepository
 from backend.infrastructure.finance_history_repository import CsvFinanceHistoryRepository
+from backend.infrastructure.transaction_history_repository import CsvTransactionHistoryRepository
 from backend.main import app
 
 
@@ -87,6 +88,10 @@ def test_split_commit_matches_one_shot_processing(tmp_path, monkeypatch):
     one_shot_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "one_shot_checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", one_shot_repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", one_shot_checkpoint_repo)
+    one_shot_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "one_shot_historial_gastos.csv", ingresos_path=tmp_path / "one_shot_historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", one_shot_txn_repo)
 
     workbook = _workbook(FULL_GASTOS, FULL_INGRESOS)
     response = client.post(
@@ -103,6 +108,10 @@ def test_split_commit_matches_one_shot_processing(tmp_path, monkeypatch):
     split_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "split_checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", split_repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", split_checkpoint_repo)
+    split_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "split_historial_gastos.csv", ingresos_path=tmp_path / "split_historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", split_txn_repo)
 
     chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
     response1 = client.post(
@@ -136,6 +145,10 @@ def test_historico_repeated_commit_skips_existing_months_without_error(tmp_path,
     checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    txn_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_txn_repo)
 
     chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
     response1 = client.post(
@@ -173,6 +186,10 @@ def test_historico_bootstraps_checkpoint_from_preexisting_history(tmp_path, monk
     checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    txn_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_txn_repo)
 
     # Histórico "preexistente": guardado directamente, como si viniera del flujo antiguo (sin checkpoint).
     workbook = _workbook(FULL_GASTOS, FULL_INGRESOS)
@@ -208,6 +225,10 @@ def test_historico_merges_without_overwriting_existing_rows(tmp_path, monkeypatc
     checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    txn_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_txn_repo)
 
     chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
     client.post(
@@ -232,6 +253,10 @@ def test_visualizar_mode_never_persists(tmp_path, monkeypatch):
     checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    txn_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_txn_repo)
 
     workbook = _workbook(FULL_GASTOS, FULL_INGRESOS)
     response = client.post(
@@ -267,6 +292,10 @@ def test_objetivo_saldo_continues_across_split_commit(tmp_path, monkeypatch):
     one_shot_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "one_shot_checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", one_shot_repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", one_shot_checkpoint_repo)
+    one_shot_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "one_shot_historial_gastos.csv", ingresos_path=tmp_path / "one_shot_historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", one_shot_txn_repo)
 
     workbook = _workbook(FULL_GASTOS, FULL_INGRESOS)
     response = client.post(
@@ -283,6 +312,10 @@ def test_objetivo_saldo_continues_across_split_commit(tmp_path, monkeypatch):
     split_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "split_checkpoint.json")
     monkeypatch.setattr(backend_main, "finance_history_repository", split_repo)
     monkeypatch.setattr(backend_main, "finance_checkpoint_repository", split_checkpoint_repo)
+    split_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "split_historial_gastos.csv", ingresos_path=tmp_path / "split_historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", split_txn_repo)
 
     chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
     response1 = client.post(
@@ -305,3 +338,106 @@ def test_objetivo_saldo_continues_across_split_commit(tmp_path, monkeypatch):
     split_enero = [row for row in split_objetivos if row["Mes"] == "2025-01"][0]
 
     assert round(split_enero["saldo_fin_mes"], 2) == round(one_shot_enero["saldo_fin_mes"], 2)
+
+
+def test_recalculado_desde_cero_flag_reflects_whether_checkpoint_was_used(tmp_path, monkeypatch):
+    client = TestClient(app)
+    repo = CsvFinanceHistoryRepository(tmp_path / "historial.csv")
+    checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
+    monkeypatch.setattr(backend_main, "finance_history_repository", repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    txn_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_txn_repo)
+
+    chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
+    response1 = client.post(
+        f"/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response1.status_code == 200
+    assert response1.json()["recalculado_desde_cero"] is False
+
+    # fecha_inicio no avanza respecto al checkpoint (2024-12): se recalcula desde cero, y el flag debe avisarlo.
+    response_repeat = client.post(
+        f"/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "visualizar"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response_repeat.status_code == 200
+    assert response_repeat.json()["recalculado_desde_cero"] is True
+
+    # fecha_inicio avanza más allá del checkpoint: se usa la continuidad con normalidad.
+    chunk2 = _workbook(CHUNK2_GASTOS, CHUNK2_INGRESOS)
+    response2 = client.post(
+        f"/api/v1/process?fecha_inicio=2025-01-01",
+        data={"modo": "visualizar"},
+        files={"file": ("Inicio.xlsx", chunk2.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response2.status_code == 200
+    assert response2.json()["recalculado_desde_cero"] is False
+
+
+def test_analisis_desglose_incluye_todo_el_historico_no_solo_el_ultimo_tramo(tmp_path, monkeypatch):
+    """Bug real reportado: tras subir solo el tramo más reciente, "Intereses" (y cualquier desglose
+    por categoría) salía calculado solo con ese tramo, sin los meses ya guardados de antes. El
+    detalle de transacciones debe persistirse también, para que estos desgloses usen todo el
+    histórico igual que si se hubiera procesado de una sola vez."""
+    client = TestClient(app)
+
+    # --- referencia: todo de una vez ---
+    one_shot_repo = CsvFinanceHistoryRepository(tmp_path / "one_shot_historial.csv")
+    one_shot_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "one_shot_checkpoint.json")
+    one_shot_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "one_shot_gastos.csv", ingresos_path=tmp_path / "one_shot_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "finance_history_repository", one_shot_repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", one_shot_checkpoint_repo)
+    monkeypatch.setattr(backend_main, "transaction_history_repository", one_shot_txn_repo)
+
+    workbook = _workbook(FULL_GASTOS, FULL_INGRESOS)
+    one_shot_response = client.post(
+        f"/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "visualizar"},
+        files={"file": ("Inicio.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    ).json()
+    one_shot_analisis = one_shot_response["result"]["analisis"]
+    one_shot_interes_total = sum(
+        row.get("Interes", 0) for row in one_shot_analisis["ingresos"]["categorias"]
+    )
+    one_shot_dividendo_pagos = len(one_shot_analisis["dividendos_pagos"])
+
+    # --- en dos tramos: el segundo solo sube su propio Excel (enero-febrero), como hace el usuario real ---
+    split_repo = CsvFinanceHistoryRepository(tmp_path / "split_historial.csv")
+    split_checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "split_checkpoint.json")
+    split_txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "split_gastos.csv", ingresos_path=tmp_path / "split_ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "finance_history_repository", split_repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", split_checkpoint_repo)
+    monkeypatch.setattr(backend_main, "transaction_history_repository", split_txn_repo)
+
+    chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
+    client.post(
+        f"/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+
+    # El segundo tramo sube SOLO enero-febrero (nunca repite 2024-10/11/12), tal como hace el usuario
+    # real con su Excel incremental.
+    chunk2 = _workbook(CHUNK2_GASTOS, CHUNK2_INGRESOS)
+    response2 = client.post(
+        f"/api/v1/process?fecha_inicio=2025-01-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk2.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response2.status_code == 200
+    split_analisis = response2.json()["result"]["analisis"]
+    split_interes_total = sum(row.get("Interes", 0) for row in split_analisis["ingresos"]["categorias"])
+    split_dividendo_pagos = len(split_analisis["dividendos_pagos"])
+
+    assert round(split_interes_total, 2) == round(one_shot_interes_total, 2)
+    assert split_dividendo_pagos == one_shot_dividendo_pagos

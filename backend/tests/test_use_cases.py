@@ -10,6 +10,7 @@ class FakeFinancePort:
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
         checkpoint: dict | None = None,
+        historical_transactions: dict | None = None,
     ):
         return PipelineResult(
             params=params.to_dict(),

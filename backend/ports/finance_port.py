@@ -10,5 +10,6 @@ class FinanceProcessingPort(Protocol):
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
         checkpoint: dict | None = None,
+        historical_transactions: dict | None = None,
     ) -> PipelineResult:
         ...

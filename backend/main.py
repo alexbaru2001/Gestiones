@@ -16,12 +16,14 @@ from backend.infrastructure.objectives_repository import (
     parse_objectives_json,
 )
 from backend.infrastructure.portfolio_repository import LocalPortfolioRepository
+from backend.infrastructure.transaction_history_repository import CsvTransactionHistoryRepository
 
 app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
 portfolio_repository = LocalPortfolioRepository()
 finance_history_repository = CsvFinanceHistoryRepository()
 finance_checkpoint_repository = JsonFinanceCheckpointRepository()
+transaction_history_repository = CsvTransactionHistoryRepository()
 
 app.add_middleware(
     CORSMiddleware,
@@ -142,12 +144,18 @@ async def process_workbook(
     checkpoint_as_of = checkpoint.get("as_of_month") if checkpoint else None
     fecha_inicio_month = fecha_inicio[:7]
 
-    if checkpoint_as_of and fecha_inicio_month <= checkpoint_as_of:
+    recalculado_desde_cero = bool(checkpoint_as_of and fecha_inicio_month <= checkpoint_as_of)
+    if recalculado_desde_cero:
         # Repetir o solapar el tramo ya cerrado no necesita continuar los acumuladores desde el
         # checkpoint: se recalcula igual que si nunca hubiera existido. El paso de guardado más abajo
         # ya se encarga de no duplicar los meses que ya estén en el histórico (o de sincronizar el
         # checkpoint si el Excel completo coincide con lo ya guardado, sin escribir nada nuevo).
         checkpoint = None
+
+    historical_transactions = {
+        "gastos": transaction_history_repository.load_gastos(),
+        "ingresos": transaction_history_repository.load_ingresos(),
+    }
 
     use_case = build_process_finance_workbook_use_case()
     try:
@@ -156,6 +164,7 @@ async def process_workbook(
             params=config,
             objetivos=objetivos,
             checkpoint=checkpoint,
+            historical_transactions=historical_transactions,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -179,6 +188,17 @@ async def process_workbook(
         # la primera vez que se usa este flujo con un histórico que ya existía de antes).
         if result.checkpoint:
             finance_checkpoint_repository.save(result.checkpoint)
+        # Guardamos también el detalle de gastos/ingresos de los meses nuevos, para que los
+        # desgloses por categoría (Intereses, Gastos por tipo, Dividendos por empresa...) puedan
+        # calcularse sobre todo el histórico y no solo sobre el Excel de este tramo.
+        meses_nuevos_set = set(meses_nuevos)
+        transacciones = result.transacciones or {}
+        transaction_history_repository.append_gastos(
+            [row for row in transacciones.get("gastos", []) if row.get("Mes") in meses_nuevos_set]
+        )
+        transaction_history_repository.append_ingresos(
+            [row for row in transacciones.get("ingresos", []) if row.get("Mes") in meses_nuevos_set]
+        )
 
     return {
         "ok": True,
@@ -186,6 +206,7 @@ async def process_workbook(
         "modo": modo,
         "meses_nuevos": meses_nuevos,
         "meses_ya_guardados": meses_ya_guardados,
+        "recalculado_desde_cero": recalculado_desde_cero,
     }
 
 

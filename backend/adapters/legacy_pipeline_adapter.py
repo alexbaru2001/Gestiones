@@ -22,6 +22,7 @@ class LegacyPipelineAdapter:
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
         checkpoint: dict[str, Any] | None = None,
+        historical_transactions: dict[str, list[dict[str, Any]]] | None = None,
     ) -> PipelineResult:
         legacy_path_str = str(self._legacy_path)
         if legacy_path_str not in sys.path:
@@ -39,7 +40,7 @@ class LegacyPipelineAdapter:
             output_path=None,
             checkpoint=checkpoint,
         )
-        return self._to_response(result, checkpoint or {})
+        return self._to_response(result, checkpoint or {}, historical_transactions or {})
 
     def _apply_objetivo_checkpoint(self, objetivos: list[dict], checkpoint: dict[str, Any]) -> list[dict]:
         """Sustituye el saldo_inicial de cada objetivo todavía abierto por el saldo con el que cerró
@@ -55,9 +56,14 @@ class LegacyPipelineAdapter:
             actualizados.append(objetivo)
         return actualizados
 
-    def _to_response(self, result: dict[str, Any], checkpoint: dict[str, Any]) -> PipelineResult:
+    def _to_response(
+        self, result: dict[str, Any], checkpoint: dict[str, Any], historical_transactions: dict[str, list[dict[str, Any]]]
+    ) -> PipelineResult:
         historial = result.get("historial")
         resumen_df, objetivos_df = self._split_historial(historial)
+        # Dividendos/Comisiones acumulados usan solo las filas de ESTE tramo: ya son continuos por su
+        # propio checkpoint (dividendos_acumulado/comisiones_acumulado), y sumarles además el histórico
+        # completo los duplicaría.
         resumen_df = self._add_dividend_history_to_summary(
             resumen_df, result.get("ingresos"), float(checkpoint.get("dividendos_acumulado", 0.0))
         )
@@ -68,6 +74,15 @@ class LegacyPipelineAdapter:
 
         presupuesto = result.get("presupuesto")
         cuentas = getattr(presupuesto, "accounts", {}) or {}
+
+        # Los desgloses (categorías de gasto/ingreso, dividendos por empresa...) sí necesitan el
+        # histórico completo: a diferencia del resumen mensual, no tienen un acumulador propio, así
+        # que se recalculan cada vez a partir de las filas de detalle (histórico guardado + este tramo).
+        analysis_result = {
+            **result,
+            "gastos": self._merge_transaction_rows(result.get("gastos"), historical_transactions.get("gastos")),
+            "ingresos": self._merge_transaction_rows(result.get("ingresos"), historical_transactions.get("ingresos")),
+        }
 
         return PipelineResult(
             params=self._params_to_dict(result.get("params")),
@@ -83,9 +98,47 @@ class LegacyPipelineAdapter:
                 resumen=self._dataframe_to_records(resumen_df),
                 objetivos=self._dataframe_to_records(objetivos_df),
             ),
-            analisis=self._build_analysis(result, resumen_df),
+            analisis=self._build_analysis(analysis_result, resumen_df),
             checkpoint=self._derive_checkpoint(result, resumen_df, objetivos_df),
+            transacciones={
+                "gastos": self._transactions_for_persistence(result.get("gastos")),
+                "ingresos": self._transactions_for_persistence(result.get("ingresos")),
+            },
         )
+
+    def _merge_transaction_rows(self, current_df: Any, historical_rows: list[dict[str, Any]] | None) -> Any:
+        """Combina las filas de este tramo con el histórico ya guardado, sin duplicar: para un mes
+        presente en ambos (p.ej. al resincronizar), gana la versión de este tramo."""
+        if not historical_rows:
+            return current_df
+        historical_df = pd.DataFrame(historical_rows)
+        if historical_df.empty or "fecha" not in historical_df.columns:
+            return current_df
+        historical_df["fecha"] = pd.to_datetime(historical_df["fecha"], errors="coerce")
+        historical_df = historical_df.dropna(subset=["fecha"])
+        # Lo que viene del CSV persistido llega como texto (incluida "cantidad"): sin convertirlo a
+        # numérico aquí, concatenar con las filas de este tramo (ya numéricas) deja la columna con
+        # tipos mixtos, y groupby/sum aguas abajo concatena los números como si fueran texto.
+        if "cantidad" in historical_df.columns:
+            historical_df["cantidad"] = pd.to_numeric(historical_df["cantidad"], errors="coerce").fillna(0.0)
+        if not isinstance(current_df, pd.DataFrame) or current_df.empty:
+            return historical_df.drop(columns=["Mes"], errors="ignore")
+        current_months = set(pd.to_datetime(current_df["fecha"], errors="coerce").dt.to_period("M").astype(str))
+        historical_df["_mes"] = historical_df["fecha"].dt.to_period("M").astype(str)
+        historical_only = historical_df[~historical_df["_mes"].isin(current_months)].drop(columns=["_mes", "Mes"], errors="ignore")
+        if historical_only.empty:
+            return current_df
+        return pd.concat([historical_only, current_df], ignore_index=True)
+
+    def _transactions_for_persistence(self, df: Any) -> list[dict[str, Any]]:
+        if not isinstance(df, pd.DataFrame) or df.empty or "fecha" not in df.columns:
+            return []
+        output = df.copy()
+        output["fecha"] = pd.to_datetime(output["fecha"], errors="coerce")
+        output = output.dropna(subset=["fecha"])
+        output["Mes"] = output["fecha"].dt.to_period("M").astype(str)
+        output["fecha"] = output["fecha"].dt.strftime("%Y-%m-%d")
+        return self._dataframe_to_records(output)
 
     def _derive_checkpoint(self, result: dict[str, Any], resumen_df: Any, objetivos_df: Any = None) -> dict[str, Any] | None:
         """Calcula el estado de cierre (saldos, acumulados) del último mes procesado, para que un

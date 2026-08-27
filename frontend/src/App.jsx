@@ -21,6 +21,11 @@ import {
 import { ResultsPanel } from './ResultsPanel'
 import { validateFinanceInput } from './validation'
 
+function nextMonthStart(yyyyMm) {
+  const [year, month] = yyyyMm.split('-').map(Number)
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10)
+}
+
 const initialParams = {
   fecha_inicio: '2024-10-01',
   porcentaje_gasto: 0.3,
@@ -78,6 +83,18 @@ export function App() {
       .then((data) => setCheckpoint(data.result ?? null))
       .catch(() => {})
   }, [])
+
+  // Cuando hay un checkpoint guardado, la fecha de inicio debe apuntar siempre al mes siguiente:
+  // si se deja en una fecha anterior o igual, el backend deja de usar el checkpoint (para permitir
+  // reprocesar/resincronizar) y el resultado se calcula desde cero, lo que da cifras muy distintas
+  // si el Excel subido ya no trae el histórico completo.
+  useEffect(() => {
+    if (!checkpoint?.as_of_month) return
+    setParams((current) => {
+      if (current.fecha_inicio.slice(0, 7) > checkpoint.as_of_month) return current
+      return { ...current, fecha_inicio: nextMonthStart(checkpoint.as_of_month) }
+    })
+  }, [checkpoint])
 
   useEffect(() => {
     if (error) errorRef.current?.focus()
@@ -141,20 +158,24 @@ export function App() {
       setSelectedObjective('all')
       setSelectedMonth(data.result?.historial?.ultimo_mes?.Mes ?? '')
       setIsInputOpen(false)
+      const recalculadoDesdeCero = Boolean(data.recalculado_desde_cero)
+      const aviso = recalculadoDesdeCero
+        ? ' Se ha recalculado todo desde cero (sin continuar el histórico guardado) porque la fecha de inicio no es posterior a él: si el Excel subido no trae el histórico completo, las cifras acumuladas saldrán incompletas.'
+        : ''
       if (modo === 'historico') {
         setCheckpoint(data.result?.checkpoint ?? null)
         const nuevos = data.meses_nuevos ?? []
         const yaGuardados = data.meses_ya_guardados ?? []
         const hasta = data.result?.checkpoint?.as_of_month ?? data.result?.historial?.ultimo_mes?.Mes ?? ''
         if (nuevos.length > 0) {
-          setProcessStatus(`Añadidos ${nuevos.length} ${nuevos.length === 1 ? 'mes nuevo' : 'meses nuevos'} (${nuevos.join(', ')}). Histórico hasta ${hasta}.`)
+          setProcessStatus(`Añadidos ${nuevos.length} ${nuevos.length === 1 ? 'mes nuevo' : 'meses nuevos'} (${nuevos.join(', ')}). Histórico hasta ${hasta}.${aviso}`)
         } else if (yaGuardados.length > 0) {
-          setProcessStatus(`Esos meses ya estaban guardados, no se ha duplicado nada. Histórico sincronizado hasta ${hasta}.`)
+          setProcessStatus(`Esos meses ya estaban guardados, no se ha duplicado nada. Histórico sincronizado hasta ${hasta}.${aviso}`)
         } else {
-          setProcessStatus(`Añadido al histórico hasta ${hasta}.`)
+          setProcessStatus(`Añadido al histórico hasta ${hasta}.${aviso}`)
         }
       } else {
-        setProcessStatus('Vista previa (no se ha guardado en el histórico).')
+        setProcessStatus(`Vista previa (no se ha guardado en el histórico).${aviso}`)
       }
     } catch (err) {
       setError(err.message)
