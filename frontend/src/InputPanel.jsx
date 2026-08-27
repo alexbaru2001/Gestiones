@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Eye, FileSpreadsheet, History, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { formatPercent } from './formatters'
 
@@ -8,6 +9,7 @@ export function InputPanel({
   isLoadingObjectives,
   isSavingObjectives,
   isProcessing,
+  isDeletingHistorico,
   hasValidationErrors,
   validationMessages,
   objectivesStatus,
@@ -24,7 +26,10 @@ export function InputPanel({
   onObjectivesSave,
   onVisualize,
   onAddToHistory,
+  onDeleteHistorico,
 }) {
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+
   return (
     <form className="panel" onSubmit={onVisualize}>
       <div className="panel-header">
@@ -40,6 +45,37 @@ export function InputPanel({
           ? `Histórico guardado hasta ${checkpoint.as_of_month}. La fecha de inicio debe ser posterior.`
           : 'Todavía no hay histórico guardado: la primera vez que añadas al histórico se registra desde la fecha de inicio.'}
       </p>
+
+      {isConfirmingDelete ? (
+        <div className="delete-historico-confirm" role="alert">
+          <p>
+            Esto borra <strong>todo</strong> el histórico guardado (resumen mensual, checkpoint y el detalle de
+            gastos/ingresos). No se puede deshacer. Tendrás que volver a subir el Excel completo desde el principio.
+          </p>
+          <div className="process-actions">
+            <button className="secondary-button" type="button" onClick={() => setIsConfirmingDelete(false)}>
+              Cancelar
+            </button>
+            <button
+              className="danger-button"
+              type="button"
+              disabled={isDeletingHistorico}
+              onClick={() => {
+                setIsConfirmingDelete(false)
+                onDeleteHistorico()
+              }}
+            >
+              <Trash2 aria-hidden="true" size={16} />
+              {isDeletingHistorico ? 'Borrando...' : 'Sí, borrar todo'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="text-button danger" type="button" onClick={() => setIsConfirmingDelete(true)}>
+          <Trash2 aria-hidden="true" size={15} />
+          Borrar histórico completo
+        </button>
+      )}
 
       <label className="file-input">
         <input type="file" accept=".xlsx,.xlsm,.xls" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />

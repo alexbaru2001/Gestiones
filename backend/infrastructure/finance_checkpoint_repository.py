@@ -22,3 +22,6 @@ class JsonFinanceCheckpointRepository:
     def save(self, checkpoint: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(checkpoint, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+
+    def delete(self) -> None:
+        self.path.unlink(missing_ok=True)

@@ -5722,3 +5722,37 @@ tbody tr:hover {
   margin: -6px 0 0;
   font-size: 12px;
 }
+
+.delete-historico-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-danger);
+  border-radius: 10px;
+  background: rgba(122, 46, 46, 0.08);
+  font-size: 12.5px;
+  color: var(--color-ink);
+}
+
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--color-danger);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.danger-button:hover {
+  filter: brightness(1.08);
+}
+
+.danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

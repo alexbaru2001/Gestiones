@@ -213,3 +213,13 @@ async def process_workbook(
 @app.get("/api/v1/process/checkpoint")
 def get_finance_checkpoint() -> dict[str, Any]:
     return {"ok": True, "result": finance_checkpoint_repository.load()}
+
+
+@app.delete("/api/v1/process/historico")
+def delete_historico() -> dict[str, Any]:
+    """Borra por completo el histórico guardado (resumen mensual, checkpoint y detalle de
+    gastos/ingresos), para volver a empezar desde cero subiendo el Excel completo de nuevo."""
+    finance_history_repository.delete()
+    finance_checkpoint_repository.delete()
+    transaction_history_repository.delete()
+    return {"ok": True}

@@ -1,0 +1,220 @@
+Mes,fecha,categoria,cuenta,cantidad,etiquetas,comentario,tipo_logico
+2025-12,2025-12-28,Transporte,Ahorro,68,,Londres,Reembolso Transporte
+2025-12,2025-12-28,Otros,Principal,21.95,,Regalo de mama,Reembolso Otros
+2025-12,2025-12-28,Otros,Principal,92,,Regalos primo Alberto,Reembolso Otros
+2025-12,2025-12-28,Otros,Principal,36.8,Regalos,Regalo Jaume,Reembolso Otros
+2025-12,2025-12-27,Hosteleria,Principal,76.8,,Cena Navidad alkk,Reembolso Hosteleria
+2025-12,2025-12-22,Salario,Ahorro,3182.88,Salario,,Ingreso Real
+2025-12,2025-12-22,Salario,Cobee,306.58,Cobee,,Ingreso Real
+2025-12,2025-12-15,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-12,2025-12-13,Hosteleria,Principal,4.66,Mallorca,,Reembolso Hosteleria
+2025-12,2025-12-13,Hosteleria,Principal,10.5,,,Reembolso Hosteleria
+2025-12,2025-12-13,Otros,Principal,36.8,Chat Gpt,,Reembolso Otros
+2025-12,2025-12-12,Hosteleria,Principal,37.8,,,Reembolso Hosteleria
+2025-12,2025-12-12,Transporte,Ahorro,208.75,Viaje trabajo,,Reembolso Transporte
+2025-12,2025-12-12,Hosteleria,Ahorro,267.5,Viaje trabajo,,Reembolso Hosteleria
+2025-12,2025-12-08,Transporte,Principal,98.94,Mallorca,,Reembolso Transporte
+2025-12,2025-12-03,Interes,My Investor,15.51,Interes,,Rendimiento Financiero
+2025-12,2025-12-01,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-11,2025-11-25,Salario,Cobee,306.58,Cobee,,Ingreso Real
+2025-11,2025-11-25,Salario,Ahorro,2367.99,Salario,,Ingreso Real
+2025-11,2025-11-24,Otros,Principal,127,,,Reembolso Otros
+2025-11,2025-11-22,Hosteleria,Principal,4.25,,,Reembolso Hosteleria
+2025-11,2025-11-21,Hosteleria,Principal,6,,,Reembolso Hosteleria
+2025-11,2025-11-17,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-11,2025-11-07,Hosteleria,Principal,19.5,,,Reembolso Hosteleria
+2025-11,2025-11-06,Interes,My Investor,14.52,Interes,,Rendimiento Financiero
+2025-11,2025-11-05,Interes,Ahorro,201.72,Interes,Remuneración ,Rendimiento Financiero
+2025-10,2025-10-28,Salario,Cobee,306.58,Cobee,,Ingreso Real
+2025-10,2025-10-28,Salario,Ahorro,1199.69,Salario,,Ingreso Real
+2025-10,2025-10-27,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-10,2025-10-24,Hosteleria,Principal,58.6,,,Reembolso Hosteleria
+2025-10,2025-10-13,Otros,Principal,18.4,Chat Gpt,,Reembolso Otros
+2025-10,2025-10-13,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-10,2025-10-11,Hosteleria,Principal,9.9,,,Reembolso Hosteleria
+2025-10,2025-10-08,Interes,My Investor,12.97,Interes,,Rendimiento Financiero
+2025-10,2025-10-08,Hosteleria,Principal,7.45,,,Reembolso Hosteleria
+2025-10,2025-10-06,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-10,2025-10-03,Hosteleria,Principal,23.85,,,Reembolso Hosteleria
+2025-10,2025-10-03,Entretenimiento,Principal,19,,,Reembolso Entretenimiento
+2025-09,2025-09-30,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-09,2025-09-28,Hosteleria,Principal,4.65,,,Reembolso Hosteleria
+2025-09,2025-09-26,Hosteleria,Principal,1.5,,,Reembolso Hosteleria
+2025-09,2025-09-26,Hosteleria,Principal,4,,,Reembolso Hosteleria
+2025-09,2025-09-25,Salario,Cobee,296.58,Cobee,,Ingreso Real
+2025-09,2025-09-25,Interes,My Investor,20.25,Interes,,Rendimiento Financiero
+2025-09,2025-09-25,Salario,Ahorro,1993.68,Salario,,Ingreso Real
+2025-09,2025-09-24,Transporte,Ahorro,16.7,Vacaciones,,Vacaciones
+2025-09,2025-09-21,Otros,Principal,30,Regalos,,Reembolso Otros
+2025-09,2025-09-19,Hosteleria,Principal,14,,,Reembolso Hosteleria
+2025-09,2025-09-17,Hosteleria,My Investor,33,,,Reembolso Hosteleria
+2025-09,2025-09-14,Hosteleria,Principal,2,,,Reembolso Hosteleria
+2025-09,2025-09-03,Interes,My Investor,9.17,Interes,,Rendimiento Financiero
+2025-09,2025-09-01,Salario,Metálico,50,Abuelos,,Vacaciones
+2025-09,2025-09-01,Hosteleria,Principal,61.2,,,Reembolso Hosteleria
+2025-09,2025-09-01,Entretenimiento,Principal,33.2,,,Reembolso Entretenimiento
+2025-08,2025-08-31,Hosteleria,Principal,17,,,Reembolso Hosteleria
+2025-08,2025-08-30,Hosteleria,Principal,11.9,,,Reembolso Hosteleria
+2025-08,2025-08-28,Transporte,Ahorro,20,,,Reembolso Transporte
+2025-08,2025-08-28,Hosteleria,Ahorro,51.15,,,Reembolso Hosteleria
+2025-08,2025-08-27,Salario,Cobee,348.69,Cobee,,Ingreso Real
+2025-08,2025-08-27,Salario,Ahorro,1133.02,Salario,,Ingreso Real
+2025-08,2025-08-26,Otros,Ahorro,22.85,,,Reembolso Otros
+2025-08,2025-08-24,Hosteleria,Principal,4.75,Vacaciones,Regalo luis ,Vacaciones
+2025-08,2025-08-21,Hosteleria,Principal,142.5,Vacaciones,Deudas Andrea,Vacaciones
+2025-08,2025-08-07,Salario,Metálico,50,Mi regalo,Regalo de los tíos,Regalos
+2025-08,2025-08-06,Hosteleria,Principal,180.17,Vacaciones,,Vacaciones
+2025-08,2025-08-05,Interes,My Investor,7.52,Interes,,Rendimiento Financiero
+2025-07,2025-07-31,Transporte,Principal,32.7,,,Reembolso Transporte
+2025-07,2025-07-31,Otros,Principal,50,Regalos,Regalo Papa,Reembolso Otros
+2025-07,2025-07-31,Salario,Metálico,50,Abuelos,,Vacaciones
+2025-07,2025-07-31,Hosteleria,Principal,63.5,Vacaciones,,Vacaciones
+2025-07,2025-07-30,Interes,My Investor,0.36,Interes,,Rendimiento Financiero
+2025-07,2025-07-28,Salario,Cobee,355.34,Cobee,,Ingreso Real
+2025-07,2025-07-28,Otros,Principal,70,,,Reembolso Otros
+2025-07,2025-07-28,Salario,Ahorro,2715.29,Salario,,Ingreso Real
+2025-07,2025-07-21,Hosteleria,Principal,15.01,,,Reembolso Hosteleria
+2025-07,2025-07-21,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-07,2025-07-20,Salario,Metálico,50,Mi regalo,,Regalos
+2025-07,2025-07-18,Hosteleria,Principal,21.9,,,Reembolso Hosteleria
+2025-07,2025-07-15,Salario,Ahorro,316.88,Salario,Dietas ,Ingreso Real
+2025-07,2025-07-14,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-07,2025-07-13,Transporte,Principal,4.76,,,Reembolso Transporte
+2025-07,2025-07-08,Salario,Metálico,50,Mi regalo,,Regalos
+2025-07,2025-07-07,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-07,2025-07-07,Hosteleria,Principal,41.23,,,Reembolso Hosteleria
+2025-07,2025-07-03,Interes,My Investor,4.9,Interes,,Rendimiento Financiero
+2025-07,2025-07-02,Otros,Principal,45,Regalos,Regalo Papa,Reembolso Otros
+2025-06,2025-06-30,Interes,My Investor,16.2,Interes,,Rendimiento Financiero
+2025-06,2025-06-30,Interes,My Investor,2.16,Interes,,Rendimiento Financiero
+2025-06,2025-06-30,Transporte,Principal,9.1,,,Reembolso Transporte
+2025-06,2025-06-30,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-06,2025-06-26,Interes,My Investor,0.76,Interes,,Rendimiento Financiero
+2025-06,2025-06-25,Salario,Cobee,228,Cobee,,Ingreso Real
+2025-06,2025-06-25,Salario,My Investor,300,Mi regalo,Mi cumpleee,Regalos
+2025-06,2025-06-25,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-06,2025-06-25,Salario,Ahorro,1237.48,Salario,,Ingreso Real
+2025-06,2025-06-21,Otros,Principal,21,Regalos,,Reembolso Otros
+2025-06,2025-06-19,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-06,2025-06-14,Hosteleria,Principal,17.25,,,Reembolso Hosteleria
+2025-06,2025-06-14,Transporte,Principal,27,,,Reembolso Transporte
+2025-06,2025-06-11,Transporte,Amex,95.15,,,Reembolso Transporte
+2025-06,2025-06-11,Hosteleria,Principal,12.95,,,Reembolso Hosteleria
+2025-06,2025-06-09,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-06,2025-06-08,Hosteleria,Principal,34.9,,,Reembolso Hosteleria
+2025-06,2025-06-06,Interes,My Investor,16,Interes,,Rendimiento Financiero
+2025-06,2025-06-04,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-06,2025-06-01,Interes,Revolut,0.15,Interes,,Rendimiento Financiero
+2025-05,2025-05-31,Interes,My Investor,4.91,Interes,,Rendimiento Financiero
+2025-05,2025-05-27,Salario,Cobee,228,Cobee,,Ingreso Real
+2025-05,2025-05-27,Salario,Ahorro,1234.41,Salario,,Ingreso Real
+2025-05,2025-05-26,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-05,2025-05-25,Salario,Principal,50,Clases,,Ingreso Real
+2025-05,2025-05-19,Salario,Principal,40,Clases,,Ingreso Real
+2025-05,2025-05-18,Hosteleria,Principal,32.5,,,Reembolso Hosteleria
+2025-05,2025-05-18,Otros,Ahorro,3,,Error de papa transferencia ,Reembolso Otros
+2025-05,2025-05-17,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-05,2025-05-15,Salario,Principal,20,Clases,,Ingreso Real
+2025-05,2025-05-14,Entretenimiento,Principal,28,,Apuesta,Reembolso Entretenimiento
+2025-05,2025-05-13,Salario,Metálico,50,Abuelos,,Vacaciones
+2025-05,2025-05-11,Hosteleria,Principal,43.2,,,Reembolso Hosteleria
+2025-05,2025-05-06,Interes,Ahorro,178.05,Interes,Remuneración ,Rendimiento Financiero
+2025-04,2025-04-30,Interes,My Investor,5.18,Interes,,Rendimiento Financiero
+2025-04,2025-04-26,Salario,Cobee,234,Cobee,,Ingreso Real
+2025-04,2025-04-25,Salario,Ahorro,1226.54,Salario,,Ingreso Real
+2025-04,2025-04-11,Hosteleria,Principal,16.3,,,Reembolso Hosteleria
+2025-04,2025-04-10,Salario,Ahorro,772.05,Salario,Dietas ,Ingreso Real
+2025-04,2025-04-09,Hosteleria,Principal,10,,,Reembolso Hosteleria
+2025-03,2025-03-31,Interes,My Investor,2.28,Interes,,Rendimiento Financiero
+2025-03,2025-03-26,Salario,Cobee,78.9,Cobee,Transporte,Ingreso Real
+2025-03,2025-03-26,Salario,Cobee,220,Cobee,Hosteleria,Ingreso Real
+2025-03,2025-03-26,Salario,Ahorro,1948.56,Salario,,Ingreso Real
+2025-03,2025-03-25,Interes,Ahorro,159.93,Interes,Dinero desconocido ,Rendimiento Financiero
+2025-03,2025-03-24,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-03,2025-03-14,Hosteleria,Principal,6,,,Reembolso Hosteleria
+2025-03,2025-03-10,Salario,Metálico,10,Abuelos,,Vacaciones
+2025-03,2025-03-10,Salario,Principal,40,Clases,,Ingreso Real
+2025-03,2025-03-10,Hosteleria,Principal,57.9,Viaje trabajo,,Reembolso Hosteleria
+2025-03,2025-03-03,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-03,2025-03-02,Salario,Metálico,5,Regalos,Fin de deuda de Marcos ,Ingreso Real
+2025-02,2025-02-28,Hosteleria,Principal,41.31,,,Reembolso Hosteleria
+2025-02,2025-02-28,Salario,Cobee,248,Cobee,,Ingreso Real
+2025-02,2025-02-28,Interes,My Investor,1.62,Interes,,Rendimiento Financiero
+2025-02,2025-02-25,Salario,Ahorro,1209.17,Salario,,Ingreso Real
+2025-02,2025-02-25,Salario,Principal,0.05,Salario,,Ingreso Real
+2025-02,2025-02-24,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-02,2025-02-23,Salario,Principal,40,Clases,,Ingreso Real
+2025-02,2025-02-22,Salario,Principal,60,Clases,,Ingreso Real
+2025-02,2025-02-18,Salario,Principal,30,Clases,,Ingreso Real
+2025-02,2025-02-17,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-02,2025-02-15,Hosteleria,Principal,26,,Bizum,Reembolso Hosteleria
+2025-02,2025-02-11,Hosteleria,Principal,37.4,,Bizum,Reembolso Hosteleria
+2025-02,2025-02-10,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-02,2025-02-07,Hosteleria,Principal,3,,Bizum,Reembolso Hosteleria
+2025-02,2025-02-03,Salario,Metálico,20,Abuelos,,Vacaciones
+2025-01,2025-01-31,Hosteleria,Principal,9,,Pizza,Reembolso Hosteleria
+2025-01,2025-01-31,Hosteleria,Principal,11.5,,Bizum,Reembolso Hosteleria
+2025-01,2025-01-31,Interes,My Investor,0.34,Interes,,Rendimiento Financiero
+2025-01,2025-01-31,Hosteleria,Principal,11,,Bizum,Reembolso Hosteleria
+2025-01,2025-01-29,Salario,Cobee,230.8,Cobee,Cobee,Ingreso Real
+2025-01,2025-01-28,Salario,Ahorro,1221.51,Salario,Salario,Ingreso Real
+2025-01,2025-01-28,Salario,Metálico,330,Abuelos,Dinero encontrado ,Vacaciones
+2025-01,2025-01-27,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2025-01,2025-01-23,Hosteleria,Principal,9,,Cena patinaje,Reembolso Hosteleria
+2025-01,2025-01-20,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2025-01,2025-01-19,Hosteleria,Principal,6.5,,Bizum,Reembolso Hosteleria
+2025-01,2025-01-17,Hosteleria,Principal,20.45,,Bizum,Reembolso Hosteleria
+2025-01,2025-01-13,Hosteleria,Principal,26.95,,Bizums comida,Reembolso Hosteleria
+2025-01,2025-01-13,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2025-01,2025-01-05,Hosteleria,Principal,19.9,,Bizum tapeo,Reembolso Hosteleria
+2025-01,2025-01-03,Hosteleria,Principal,8.66,,Pizza Madrid valencia,Reembolso Hosteleria
+2025-01,2025-01-01,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2024-12,2024-12-31,Interes,My Investor,0.29,Interes,,Rendimiento Financiero
+2024-12,2024-12-30,Otros,Principal,15.54,,Regalo Sergi (Rober),Reembolso Otros
+2024-12,2024-12-29,Hosteleria,Principal,2.8,,Desayuno jamil,Reembolso Hosteleria
+2024-12,2024-12-26,Otros,Principal,15.54,,Regalo Sergi,Reembolso Otros
+2024-12,2024-12-24,Salario,Metálico,10,Abuelos,Abuelos ,Vacaciones
+2024-12,2024-12-24,Salario,Cobee,220,Cobee,Cobee,Ingreso Real
+2024-12,2024-12-24,Salario,Ahorro,2701.28,Salario,Salario,Ingreso Real
+2024-12,2024-12-22,Hosteleria,Principal,10,,100mon,Reembolso Hosteleria
+2024-12,2024-12-20,Hosteleria,Principal,6.4,,Tapeo,Reembolso Hosteleria
+2024-12,2024-12-20,Hosteleria,Principal,16.5,,Tapeo,Reembolso Hosteleria
+2024-12,2024-12-16,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2024-12,2024-12-09,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2024-12,2024-12-02,Salario,Metálico,10,Abuelos,,Vacaciones
+2024-11,2024-11-30,Interes,My Investor,0.08,Interes,Interés revolut,Rendimiento Financiero
+2024-11,2024-11-27,Salario,Cobee,220,Cobee,Cobee,Ingreso Real
+2024-11,2024-11-27,Salario,Principal,1479.06,Salario,Salario,Ingreso Real
+2024-11,2024-11-25,Salario,Metálico,10,Abuelos,Abuelos ,Vacaciones
+2024-11,2024-11-23,Hosteleria,Principal,12.5,,Champions burger bizum Andrea,Reembolso Hosteleria
+2024-11,2024-11-23,Hosteleria,Principal,13.35,,Deudas cena y Vips con Andrea,Reembolso Hosteleria
+2024-11,2024-11-22,Interes,My Investor,0.17,Interes,Beneficios ,Rendimiento Financiero
+2024-11,2024-11-18,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2024-11,2024-11-11,Salario,Metálico,10,Abuelos,Dinero abuelos ,Vacaciones
+2024-11,2024-11-10,Hosteleria,Principal,10.5,,"Burger, donut Andrea",Reembolso Hosteleria
+2024-11,2024-11-09,Hosteleria,Principal,31.85,,Bizum kevap,Reembolso Hosteleria
+2024-11,2024-11-08,Hosteleria,Principal,8.7,,Bizum tapeo,Reembolso Hosteleria
+2024-11,2024-11-04,Interes,Ahorro,100,Interes,Recompensa ,Rendimiento Financiero
+2024-11,2024-11-04,Salario,Metálico,10,Abuelos,,Vacaciones
+2024-11,2024-11-04,Interes,My Investor,0.05,Interes,Beneficios anteriores ,Rendimiento Financiero
+2024-11,2024-11-03,Hosteleria,Principal,5.15,,Bizum don oso,Reembolso Hosteleria
+2024-11,2024-11-03,Hosteleria,Principal,2.5,,Bizum Churros,Reembolso Hosteleria
+2024-10,2024-10-31,Transporte,Principal,8.3,,Bizum coche,Reembolso Transporte
+2024-10,2024-10-31,Transporte,Principal,8.3,,Bizum coche,Reembolso Transporte
+2024-10,2024-10-31,Salario,Metálico,0.2,Salario,Moneda extraviada,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,1.03,Salario,Otra caja,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,0.56,Salario,Enanas,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,1.52,Salario,Pequeñas,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,2,Salario,Medianas,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,2,Salario,Monedas grandes ,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,4,Salario,Monedas medianas ,Ingreso Real
+2024-10,2024-10-29,Salario,Metálico,7,Salario,Monedas grandes ,Ingreso Real
+2024-10,2024-10-29,Salario,Principal,1699.06,Salario,Salario,Ingreso Real
+2024-10,2024-10-27,Hosteleria,Principal,4,,,Reembolso Hosteleria
+2024-10,2024-10-26,Hosteleria,Principal,18,,Cervezas graduacion,Reembolso Hosteleria
+2024-10,2024-10-20,Hosteleria,Principal,12.7,,Bizum,Reembolso Hosteleria
+2024-10,2024-10-20,Hosteleria,Principal,2,,Bizum,Reembolso Hosteleria
+2024-10,2024-10-18,Hosteleria,Principal,10.73,,Bizum,Reembolso Hosteleria
+2024-10,2024-10-17,Hosteleria,Principal,36.25,,Bizum viaje malagon,Reembolso Hosteleria
+2024-10,2024-10-12,Entretenimiento,Principal,7,,Bizum cine,Reembolso Entretenimiento
+2024-10,2024-10-10,Alimentacion,Principal,17.99,,Comida malagon,Reembolso Alimentacion

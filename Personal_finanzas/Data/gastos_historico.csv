@@ -1,0 +1,563 @@
+Mes,fecha,categoria,cuenta,cantidad,etiquetas,comentario,tipo_logico
+2025-12,2025-12-31,Entretenimiento,Principal,45,,Nochevieja,Entretenimiento
+2025-12,2025-12-31,Hosteleria,Principal,20.6,,Tardevieja,Hosteleria
+2025-12,2025-12-31,Otros,Ahorro,144.81,Domiciliación,,Otros
+2025-12,2025-12-28,Transporte,Revolut,33.97,,Londres,Transporte
+2025-12,2025-12-28,Entretenimiento,Principal,56.7,,"Cine, avatar",Entretenimiento
+2025-12,2025-12-28,Otros,Principal,23.65,Regalos,Regalo amigo invisible Papa,Otros
+2025-12,2025-12-28,Otros,Principal,49.94,Regalos,Regalo Papa,Otros
+2025-12,2025-12-27,Hosteleria,Trade Republic,30.5,,Escalada con Marcos,Hosteleria
+2025-12,2025-12-27,Hosteleria,Amex,100.8,,Cena navidad,Hosteleria
+2025-12,2025-12-27,Hosteleria,Principal,2.75,,Tardebuena,Hosteleria
+2025-12,2025-12-26,Otros,Amex,91.48,,Regalos primos,Otros
+2025-12,2025-12-26,Otros,Amex,91.72,,Vale de regalo amazon,Otros
+2025-12,2025-12-26,Otros,Principal,49.99,Regalos,Regalo navidad mama,Otros
+2025-12,2025-12-23,Transporte,Amex,6.84,,Londres,Transporte
+2025-12,2025-12-22,Otros,Revolut,12,,Souvenirs londres,Otros
+2025-12,2025-12-22,Transporte,Amex,10.49,,Londres,Transporte
+2025-12,2025-12-22,Otros,Degiro,5.75,Comision,,Otros
+2025-12,2025-12-21,Otros,Revolut,46,Regalos,,Otros
+2025-12,2025-12-21,Transporte,Amex,6.58,,Londres,Transporte
+2025-12,2025-12-20,Hosteleria,Revolut,135.49,,Invitar familia,Hosteleria
+2025-12,2025-12-20,Transporte,Amex,10.12,,Londres,Transporte
+2025-12,2025-12-18,Hosteleria,Principal,23.3,,,Hosteleria
+2025-12,2025-12-17,Otros,Amex,33.99,Regalos,Regalo Andrea ,Otros
+2025-12,2025-12-17,Otros,Amex,10,Peluqueria,,Otros
+2025-12,2025-12-15,Otros,Degiro,2,Comision,,Otros
+2025-12,2025-12-14,Otros,Amex,23,Chat Gpt,,Otros
+2025-12,2025-12-13,Transporte,Cobee,10,,,Transporte
+2025-12,2025-12-13,Hosteleria,Cobee,14,,,Hosteleria
+2025-12,2025-12-12,Hosteleria,Amex,48.7,,,Hosteleria
+2025-12,2025-12-12,Hosteleria,Cobee,6,,,Hosteleria
+2025-12,2025-12-12,Otros,Ahorro,27.1,Domiciliación,,Otros
+2025-12,2025-12-11,Otros,Amex,19.04,,Visado ETA,Otros
+2025-12,2025-12-10,Hosteleria,Cobee,3.5,,,Hosteleria
+2025-12,2025-12-10,Otros,Amex,8.29,,Compra a Andrea,Otros
+2025-12,2025-12-08,Hosteleria,Principal,35,,Cena navidad,Hosteleria
+2025-12,2025-12-08,Transporte,Principal,17.59,Mallorca,,Transporte
+2025-12,2025-12-08,Otros,Principal,10,Regalos,,Otros
+2025-12,2025-12-07,Hosteleria,Amex,6,Mallorca,,Hosteleria
+2025-12,2025-12-07,Alimentacion,Principal,28.48,Mallorca,,Alimentacion
+2025-12,2025-12-06,Alimentacion,Amex,37.19,Mallorca,,Alimentacion
+2025-12,2025-12-05,Alimentacion,Amex,69.5,Mallorca,,Alimentacion
+2025-12,2025-12-05,Transporte,Principal,125.79,Mallorca,,Transporte
+2025-12,2025-12-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-12,2025-12-01,Otros,Ahorro,10,Domiciliación,,Otros
+2025-11,2025-11-30,Entretenimiento,Principal,9.9,,Comida cine,Entretenimiento
+2025-11,2025-11-29,Hosteleria,Principal,16.6,,,Hosteleria
+2025-11,2025-11-29,Otros,Amex,76.06,,Camisas,Otros
+2025-11,2025-11-29,Otros,Amex,86,,Levis,Otros
+2025-11,2025-11-27,Hosteleria,Principal,20.4,,Furbo,Hosteleria
+2025-11,2025-11-23,Otros,Degiro,1.98,Comision,,Otros
+2025-11,2025-11-23,Hosteleria,Principal,3.1,,,Hosteleria
+2025-11,2025-11-23,Otros,Amex,34.9,Mi regalo,,Regalos
+2025-11,2025-11-23,Otros,Amex,27.21,,Last of us,Otros
+2025-11,2025-11-22,Alimentacion,Principal,3.19,,,Alimentacion
+2025-11,2025-11-22,Hosteleria,Cobee,6.5,,,Hosteleria
+2025-11,2025-11-21,Hosteleria,Principal,31,,,Hosteleria
+2025-11,2025-11-21,Hosteleria,Cobee,8,,,Hosteleria
+2025-11,2025-11-20,Hosteleria,Cobee,17,,,Hosteleria
+2025-11,2025-11-18,Otros,Amex,126.9,,Tocadiscos,Otros
+2025-11,2025-11-16,Transporte,Principal,15,,Boda Luis,Transporte
+2025-11,2025-11-15,Otros,Metálico,150,,Boda Luis,Otros
+2025-11,2025-11-15,Otros,Principal,5,,Donacion ,Otros
+2025-11,2025-11-14,Hosteleria,Amex,4,,,Hosteleria
+2025-11,2025-11-14,Otros,Amex,23,Chat Gpt,,Otros
+2025-11,2025-11-14,Entretenimiento,Principal,16,,Boda Luis,Entretenimiento
+2025-11,2025-11-13,Otros,Principal,0.75,,Boda Luis,Otros
+2025-11,2025-11-13,Alimentacion,Principal,1.99,,,Alimentacion
+2025-11,2025-11-12,Otros,Amex,190,Regalos,Hamman,Otros
+2025-11,2025-11-12,Transporte,Cobee,10,,,Transporte
+2025-11,2025-11-12,Entretenimiento,Principal,28.2,,Boda Luis,Entretenimiento
+2025-11,2025-11-10,Otros,Amex,10,Peluqueria,,Otros
+2025-11,2025-11-09,Transporte,Principal,32.63,,,Transporte
+2025-11,2025-11-09,Hosteleria,Principal,29,,,Hosteleria
+2025-11,2025-11-09,Entretenimiento,Principal,22,,Cuevas del aguila,Entretenimiento
+2025-11,2025-11-08,Hosteleria,Cobee,57.2,,,Hosteleria
+2025-11,2025-11-07,Otros,Amex,12,,Legos,Otros
+2025-11,2025-11-07,Hosteleria,Cobee,32.4,,,Hosteleria
+2025-11,2025-11-07,Hosteleria,Cobee,6,,,Hosteleria
+2025-11,2025-11-06,Hosteleria,Principal,21.67,Viaje trabajo,,Hosteleria
+2025-11,2025-11-06,Transporte,Principal,58.8,Viaje trabajo,,Transporte
+2025-11,2025-11-06,Transporte,Amex,23,Viaje trabajo,,Transporte
+2025-11,2025-11-05,Hosteleria,Principal,9,Viaje trabajo,,Hosteleria
+2025-11,2025-11-05,Transporte,Principal,23,Viaje trabajo,,Transporte
+2025-11,2025-11-05,Hosteleria,Cobee,10.95,Viaje trabajo,,Hosteleria
+2025-11,2025-11-04,Hosteleria,Cobee,10.95,Viaje trabajo,,Hosteleria
+2025-11,2025-11-03,Transporte,Amex,23,Viaje trabajo,,Transporte
+2025-11,2025-11-03,Hosteleria,Cobee,14.4,Viaje trabajo,,Hosteleria
+2025-11,2025-11-03,Hosteleria,Cobee,10.95,Viaje trabajo,,Hosteleria
+2025-11,2025-11-02,Transporte,Amex,58.35,Viaje trabajo,,Transporte
+2025-11,2025-11-02,Transporte,Amex,22.6,Viaje trabajo,,Transporte
+2025-11,2025-11-01,Transporte,Amex,35.27,,,Transporte
+2025-11,2025-11-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-11,2025-11-01,Hosteleria,Cobee,11,,,Hosteleria
+2025-10,2025-10-31,Transporte,Principal,15,,,Transporte
+2025-10,2025-10-31,Otros,Principal,30,,Pasaporte,Otros
+2025-10,2025-10-30,Hosteleria,Cobee,17.95,,,Hosteleria
+2025-10,2025-10-29,Entretenimiento,Amex,16.9,,Disfraz Halloween ,Entretenimiento
+2025-10,2025-10-28,Otros,Amex,30.25,,Subscripción Amex ,Otros
+2025-10,2025-10-26,Otros,Metálico,30,,Boda Rosa ,Otros
+2025-10,2025-10-26,Otros,Principal,120,,Boda Rosa,Otros
+2025-10,2025-10-26,Hosteleria,Cobee,8.7,,,Hosteleria
+2025-10,2025-10-26,Hosteleria,Principal,2.9,,,Hosteleria
+2025-10,2025-10-24,Hosteleria,Cobee,81.9,,,Hosteleria
+2025-10,2025-10-24,Hosteleria,Cobee,8,,100mon,Hosteleria
+2025-10,2025-10-23,Hosteleria,Cobee,3.5,,,Hosteleria
+2025-10,2025-10-21,Transporte,Metálico,2,,,Transporte
+2025-10,2025-10-19,Hosteleria,Principal,9.42,,,Hosteleria
+2025-10,2025-10-18,Otros,Amex,26.12,Regalos,,Otros
+2025-10,2025-10-17,Hosteleria,Principal,3.5,,,Hosteleria
+2025-10,2025-10-17,Hosteleria,Cobee,13,,,Hosteleria
+2025-10,2025-10-15,Hosteleria,Cobee,14.99,,,Hosteleria
+2025-10,2025-10-14,Otros,Amex,23,Chat Gpt,,Otros
+2025-10,2025-10-11,Hosteleria,Cobee,13.8,,,Hosteleria
+2025-10,2025-10-10,Hosteleria,Cobee,6,,,Hosteleria
+2025-10,2025-10-07,Transporte,Cobee,10,,,Transporte
+2025-10,2025-10-04,Alimentacion,Cobee,2,,,Alimentacion
+2025-10,2025-10-04,Hosteleria,Principal,9.75,,,Hosteleria
+2025-10,2025-10-04,Transporte,Principal,1.42,,,Transporte
+2025-10,2025-10-03,Hosteleria,Cobee,44.7,Kebab,,Hosteleria
+2025-10,2025-10-03,Hosteleria,Cobee,4.5,,,Hosteleria
+2025-10,2025-10-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-10,2025-10-01,Hosteleria,Principal,3,,,Hosteleria
+2025-09,2025-09-30,Otros,Amex,190,,Curso invertir ,Otros
+2025-09,2025-09-30,Otros,Principal,19.99,,,Otros
+2025-09,2025-09-28,Hosteleria,Cobee,8.15,,Desayuno,Hosteleria
+2025-09,2025-09-28,Hosteleria,Principal,9.15,,Cumpleaños alex,Hosteleria
+2025-09,2025-09-26,Transporte,Amex,39.95,,,Transporte
+2025-09,2025-09-26,Hosteleria,Cobee,9.5,,,Hosteleria
+2025-09,2025-09-26,Transporte,Principal,11.44,,,Transporte
+2025-09,2025-09-24,Otros,Amex,10,Peluqueria,,Otros
+2025-09,2025-09-20,Hosteleria,Cobee,37.3,,,Hosteleria
+2025-09,2025-09-19,Hosteleria,Ahorro,3.8,,,Hosteleria
+2025-09,2025-09-19,Otros,Amex,45.08,Regalos,,Otros
+2025-09,2025-09-19,Hosteleria,Principal,15,,Octoberfest,Hosteleria
+2025-09,2025-09-19,Otros,Principal,3.25,,Furbo,Otros
+2025-09,2025-09-17,Hosteleria,Cobee,6,,,Hosteleria
+2025-09,2025-09-16,Hosteleria,Cobee,32.47,,Papa Johns,Hosteleria
+2025-09,2025-09-16,Hosteleria,Cobee,0.9,Churros,,Hosteleria
+2025-09,2025-09-14,Hosteleria,Cobee,11.47,,,Hosteleria
+2025-09,2025-09-14,Hosteleria,Cobee,5.5,,,Hosteleria
+2025-09,2025-09-14,Hosteleria,Cobee,7,,,Hosteleria
+2025-09,2025-09-14,Alimentacion,Cobee,1,,,Alimentacion
+2025-09,2025-09-13,Hosteleria,Principal,9.14,,,Hosteleria
+2025-09,2025-09-13,Otros,Principal,4.95,,Farmacia ,Otros
+2025-09,2025-09-12,Transporte,My Investor,561.48,,Seguro del coche,Transporte
+2025-09,2025-09-11,Hosteleria,Principal,6,,,Hosteleria
+2025-09,2025-09-09,Otros,Principal,4.5,,Cuadro de Marcos,Otros
+2025-09,2025-09-07,Hosteleria,Principal,1.6,,,Hosteleria
+2025-09,2025-09-06,Hosteleria,Cobee,1.7,,,Hosteleria
+2025-09,2025-09-06,Hosteleria,Amex,11.07,,,Hosteleria
+2025-09,2025-09-05,Transporte,Cobee,10,,,Transporte
+2025-09,2025-09-05,Alimentacion,Cobee,1,,Pan,Alimentacion
+2025-09,2025-09-05,Otros,Amex,12.95,,Bro,Otros
+2025-09,2025-09-04,Hosteleria,Cobee,31.85,,,Hosteleria
+2025-09,2025-09-03,Transporte,Principal,41.65,,,Transporte
+2025-09,2025-09-03,Otros,Amex,110,,Dentista,Otros
+2025-09,2025-09-02,Otros,Principal,6,,Abono plantas,Otros
+2025-09,2025-09-01,Hosteleria,Cobee,61.29,,,Hosteleria
+2025-09,2025-09-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-09,2025-09-01,Entretenimiento,Principal,33.2,,,Entretenimiento
+2025-08,2025-08-31,Hosteleria,Cobee,17,,,Hosteleria
+2025-08,2025-08-30,Hosteleria,Principal,23.79,,,Hosteleria
+2025-08,2025-08-29,Entretenimiento,Principal,5.4,,Palomitas,Entretenimiento
+2025-08,2025-08-28,Otros,Ahorro,70,,"Oposicion, este gasto no existe como tal, pero es el calculo entre domiciliaciones y pago de papa",Otros
+2025-08,2025-08-28,Entretenimiento,Principal,27.4,,Cine en familia,Entretenimiento
+2025-08,2025-08-28,Hosteleria,Cobee,9.35,,,Hosteleria
+2025-08,2025-08-28,Alimentacion,Amex,13.18,,Compra día ,Alimentacion
+2025-08,2025-08-28,Transporte,Amex,20,,Reparación rueda,Transporte
+2025-08,2025-08-27,Alimentacion,Principal,17.11,,Bombona de butano ,Alimentacion
+2025-08,2025-08-27,Hosteleria,Amex,4.51,,,Hosteleria
+2025-08,2025-08-25,Otros,Amex,22.85,,Pintura papá y mamá ,Otros
+2025-08,2025-08-25,Alimentacion,Principal,16.21,,Comida papá y mama,Alimentacion
+2025-08,2025-08-24,Transporte,Principal,24.54,,,Transporte
+2025-08,2025-08-18,Transporte,Principal,36.59,Vacaciones,,Transporte
+2025-08,2025-08-15,Hosteleria,Principal,64,Vacaciones,Invitación barbacoa,Hosteleria
+2025-08,2025-08-12,Hosteleria,Revolut,328.8,Vacaciones,,Hosteleria
+2025-08,2025-08-11,Transporte,Revolut,40,Vacaciones,,Transporte
+2025-08,2025-08-08,Entretenimiento,Amex,25,Vacaciones,Crucero,Entretenimiento
+2025-08,2025-08-08,Transporte,Principal,41.06,Vacaciones,,Transporte
+2025-08,2025-08-06,Hosteleria,Cobee,1.7,,Café papá,Hosteleria
+2025-08,2025-08-05,Hosteleria,Cobee,33.8,Vacaciones,,Hosteleria
+2025-08,2025-08-03,Transporte,Principal,39.1,Vacaciones,,Transporte
+2025-08,2025-08-03,Hosteleria,Amex,18.2,Vacaciones,,Hosteleria
+2025-08,2025-08-02,Hosteleria,Cobee,66.6,Vacaciones,,Hosteleria
+2025-08,2025-08-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-08,2025-08-01,Hosteleria,Cobee,48.2,Vacaciones,,Hosteleria
+2025-08,2025-08-01,Transporte,Principal,38.97,Vacaciones,,Transporte
+2025-08,2025-08-01,Hosteleria,Cobee,46.32,Vacaciones,,Hosteleria
+2025-07,2025-07-31,Otros,Principal,0.8,,Medicina espalda,Otros
+2025-07,2025-07-30,Hosteleria,Principal,0.32,,Botella de agua,Hosteleria
+2025-07,2025-07-30,Hosteleria,Cobee,1,,,Hosteleria
+2025-07,2025-07-30,Hosteleria,Cobee,10.5,Vacaciones,,Hosteleria
+2025-07,2025-07-30,Hosteleria,Cobee,10.5,,,Hosteleria
+2025-07,2025-07-29,Transporte,Principal,66.29,,"Tasa de circulación del coche, se han descontado las convers",Transporte
+2025-07,2025-07-28,Hosteleria,Cobee,1.5,Vacaciones,Botella de agua día de mi cumple,Hosteleria
+2025-07,2025-07-28,Transporte,Cobee,10,Vacaciones,Abono transporte cumple,Transporte
+2025-07,2025-07-28,Transporte,Cobee,9.41,Vacaciones,Bus Badajoz,Transporte
+2025-07,2025-07-28,Hosteleria,Principal,70,Mi regalo,Cumpleaños Andrea,Regalos
+2025-07,2025-07-28,Otros,Principal,70.55,,Oposiciones,Otros
+2025-07,2025-07-27,Entretenimiento,Metálico,7,Vacaciones,Palas,Entretenimiento
+2025-07,2025-07-27,Transporte,Principal,32.91,Vacaciones,,Transporte
+2025-07,2025-07-26,Hosteleria,Amex,64.03,Vacaciones,,Hosteleria
+2025-07,2025-07-25,Hosteleria,Cobee,40,Vacaciones,,Hosteleria
+2025-07,2025-07-23,Hosteleria,Principal,13.7,Vacaciones,,Hosteleria
+2025-07,2025-07-23,Hosteleria,Principal,13.7,,Pizzas cumple Javi,Hosteleria
+2025-07,2025-07-22,Otros,Amex,12,Peluqueria,,Otros
+2025-07,2025-07-22,Hosteleria,Amex,70.5,Vacaciones,Macro,Hosteleria
+2025-07,2025-07-22,Hosteleria,Principal,5.52,,Cerveza master,Hosteleria
+2025-07,2025-07-22,Transporte,Principal,56.33,Vacaciones,Gasolina,Transporte
+2025-07,2025-07-22,Transporte,Principal,35.31,,Paralelo,Transporte
+2025-07,2025-07-21,Otros,Cobee,0.9,,Papel de regalo ,Otros
+2025-07,2025-07-21,Hosteleria,Cobee,34.02,,Cumpleaños Miguel Pablo y yo,Hosteleria
+2025-07,2025-07-21,Otros,Metálico,30,,Fisio,Otros
+2025-07,2025-07-20,Hosteleria,Cobee,5.2,,Cerveza con Álvaro ,Hosteleria
+2025-07,2025-07-20,Otros,Principal,6.95,,Funda móvil ,Otros
+2025-07,2025-07-19,Hosteleria,Principal,14.8,,,Hosteleria
+2025-07,2025-07-19,Transporte,Principal,4,,Gasolina ,Transporte
+2025-07,2025-07-18,Hosteleria,Cobee,31.85,,,Hosteleria
+2025-07,2025-07-16,Hosteleria,Cobee,5.73,Vacaciones,,Hosteleria
+2025-07,2025-07-16,Hosteleria,Cobee,5.74,,,Hosteleria
+2025-07,2025-07-16,Hosteleria,Principal,3.8,Vacaciones,,Hosteleria
+2025-07,2025-07-16,Hosteleria,Principal,3.8,,,Hosteleria
+2025-07,2025-07-13,Entretenimiento,Principal,19,,Cine papá y mamá ,Entretenimiento
+2025-07,2025-07-12,Alimentacion,Cobee,1,,Pan,Alimentacion
+2025-07,2025-07-10,Entretenimiento,Principal,88,Vacaciones,,Entretenimiento
+2025-07,2025-07-08,Hosteleria,Principal,12.9,,,Hosteleria
+2025-07,2025-07-07,Transporte,Principal,263.87,,Revisión coche ,Transporte
+2025-07,2025-07-06,Hosteleria,Cobee,21,,,Hosteleria
+2025-07,2025-07-06,Hosteleria,Cobee,51.55,,,Hosteleria
+2025-07,2025-07-05,Otros,Amex,15,Mi regalo,Juego ,Regalos
+2025-07,2025-07-05,Hosteleria,Principal,32.32,,,Hosteleria
+2025-07,2025-07-04,Hosteleria,Cobee,1.5,,Palace,Hosteleria
+2025-07,2025-07-03,Transporte,Cobee,32.7,,Metro andres,Transporte
+2025-07,2025-07-02,Transporte,Principal,9.7,,Parking kpmg ,Transporte
+2025-07,2025-07-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-06,2025-06-30,Transporte,Cobee,9.1,,,Transporte
+2025-06,2025-06-30,Hosteleria,Cobee,3.85,,,Hosteleria
+2025-06,2025-06-30,Entretenimiento,Principal,16.19,Vacaciones,Viaje Torrevieja,Entretenimiento
+2025-06,2025-06-29,Entretenimiento,Ahorro,66.15,Vacaciones,Viaje Torrevieja,Entretenimiento
+2025-06,2025-06-26,Hosteleria,Principal,13.6,,Manolitos,Hosteleria
+2025-06,2025-06-25,Hosteleria,Cobee,64.9,,Cena cumpleaños,Hosteleria
+2025-06,2025-06-23,Hosteleria,Cobee,6,,,Hosteleria
+2025-06,2025-06-23,Transporte,Cobee,8,,,Transporte
+2025-06,2025-06-22,Hosteleria,Cobee,41.8,,,Hosteleria
+2025-06,2025-06-22,Alimentacion,Principal,7.5,,Nachos,Alimentacion
+2025-06,2025-06-21,Alimentacion,Cobee,6.23,,,Alimentacion
+2025-06,2025-06-20,Hosteleria,Cobee,12,,,Hosteleria
+2025-06,2025-06-20,Hosteleria,Principal,8.8,Kebab,,Hosteleria
+2025-06,2025-06-20,Hosteleria,Principal,11,,,Hosteleria
+2025-06,2025-06-18,Hosteleria,Principal,16.9,,,Hosteleria
+2025-06,2025-06-14,Hosteleria,Cobee,23.75,,,Hosteleria
+2025-06,2025-06-14,Hosteleria,Cobee,1.54,,,Hosteleria
+2025-06,2025-06-14,Entretenimiento,Principal,7.9,,Cine,Entretenimiento
+2025-06,2025-06-13,Entretenimiento,Principal,11.2,,Palomitas,Entretenimiento
+2025-06,2025-06-12,Hosteleria,Cobee,6.55,Viaje trabajo,,Hosteleria
+2025-06,2025-06-12,Hosteleria,Cobee,8.19,Viaje trabajo,,Hosteleria
+2025-06,2025-06-12,Transporte,Principal,10.9,,Peaje Jaume ,Transporte
+2025-06,2025-06-11,Hosteleria,Cobee,51.8,Viaje trabajo,,Hosteleria
+2025-06,2025-06-11,Hosteleria,Cobee,8.19,Viaje trabajo,,Hosteleria
+2025-06,2025-06-10,Hosteleria,Cobee,8.4,Viaje trabajo,,Hosteleria
+2025-06,2025-06-10,Otros,Principal,176.46,Regalos,Regalo Papa,Otros
+2025-06,2025-06-10,Hosteleria,Principal,13.7,Viaje trabajo,,Hosteleria
+2025-06,2025-06-09,Transporte,Amex,99.39,,,Transporte
+2025-06,2025-06-09,Transporte,Amex,141.04,,,Transporte
+2025-06,2025-06-09,Hosteleria,Cobee,3.3,Viaje trabajo,Rosquilletas,Hosteleria
+2025-06,2025-06-08,Otros,Principal,43,Regalos,Camisetas retro ,Otros
+2025-06,2025-06-07,Transporte,Principal,46.55,,Gasolina ,Transporte
+2025-06,2025-06-07,Transporte,Principal,3,,Lavar el coche ,Transporte
+2025-06,2025-06-06,Hosteleria,Cobee,52.85,,,Hosteleria
+2025-06,2025-06-04,Transporte,Cobee,41.66,,"Viaje a málaga, boda Luis",Transporte
+2025-06,2025-06-03,Hosteleria,Principal,8,,Casa Jaume,Hosteleria
+2025-06,2025-06-01,Otros,Cobee,76.58,Ingles,,Otros
+2025-06,2025-06-01,Transporte,Ahorro,216,,,Transporte
+2025-05,2025-05-31,Hosteleria,Cobee,14.47,,,Hosteleria
+2025-05,2025-05-30,Hosteleria,Principal,12.7,,,Hosteleria
+2025-05,2025-05-30,Otros,Principal,10,Peluqueria,,Otros
+2025-05,2025-05-26,Transporte,Cobee,8,,,Transporte
+2025-05,2025-05-24,Hosteleria,Cobee,3.6,,Palace,Hosteleria
+2025-05,2025-05-24,Transporte,Principal,5,,,Transporte
+2025-05,2025-05-23,Otros,Amex,75,,Converse mamá,Otros
+2025-05,2025-05-23,Otros,Amex,45,,Regalo mama,Otros
+2025-05,2025-05-23,Hosteleria,Principal,9.55,,,Hosteleria
+2025-05,2025-05-22,Hosteleria,Cobee,17,,,Hosteleria
+2025-05,2025-05-17,Hosteleria,Cobee,49.96,,,Hosteleria
+2025-05,2025-05-16,Otros,Amex,14.99,,Liquido lentillas ,Otros
+2025-05,2025-05-16,Hosteleria,Cobee,8,,,Hosteleria
+2025-05,2025-05-15,Transporte,Principal,20,,Retrovisores ,Transporte
+2025-05,2025-05-15,Otros,Principal,12.6,Regalos,Regalo Álvaro,Otros
+2025-05,2025-05-15,Hosteleria,Cobee,1.4,,,Hosteleria
+2025-05,2025-05-15,Hosteleria,Cobee,10.95,,,Hosteleria
+2025-05,2025-05-14,Otros,Principal,5,Regalos,Regalo Daniel kpmg,Otros
+2025-05,2025-05-14,Entretenimiento,Principal,5,,Apuesta,Entretenimiento
+2025-05,2025-05-13,Transporte,Amex,47.95,,,Transporte
+2025-05,2025-05-11,Hosteleria,Principal,3.25,,,Hosteleria
+2025-05,2025-05-10,Hosteleria,Metálico,44.5,Kebab,,Hosteleria
+2025-05,2025-05-10,Entretenimiento,Principal,20,,Camiseta de España ,Entretenimiento
+2025-05,2025-05-10,Entretenimiento,Principal,94,,Concierto bad Bunny 2,Entretenimiento
+2025-05,2025-05-10,Otros,Ahorro,9.95,,,Otros
+2025-05,2025-05-09,Hosteleria,Cobee,14.55,,,Hosteleria
+2025-05,2025-05-09,Entretenimiento,Principal,96,,Concierto bad Bunny 1,Entretenimiento
+2025-04,2025-04-30,Hosteleria,Principal,16.45,,Indio,Hosteleria
+2025-04,2025-04-30,Hosteleria,Principal,20,,Italiano ,Hosteleria
+2025-04,2025-04-30,Hosteleria,Cobee,14.4,,,Hosteleria
+2025-04,2025-04-27,Alimentacion,Cobee,2,,,Alimentacion
+2025-04,2025-04-26,Hosteleria,Principal,9,,Casa Javi,Hosteleria
+2025-04,2025-04-25,Hosteleria,Ahorro,10,,,Hosteleria
+2025-04,2025-04-25,Otros,Principal,10,Regalos,Regalo Pablo Marquesi,Otros
+2025-04,2025-04-24,Hosteleria,Ahorro,24.74,,,Hosteleria
+2025-04,2025-04-24,Hosteleria,Cobee,10,,,Hosteleria
+2025-04,2025-04-22,Transporte,Cobee,8,,,Transporte
+2025-04,2025-04-20,Transporte,Principal,17.85,,Aparcamiento ,Transporte
+2025-04,2025-04-20,Hosteleria,Cobee,43,,,Hosteleria
+2025-04,2025-04-19,Hosteleria,Cobee,23.75,,,Hosteleria
+2025-04,2025-04-15,Hosteleria,Cobee,15.6,,"Desayuno en familia, invitación migas",Hosteleria
+2025-04,2025-04-14,Entretenimiento,Principal,199,Vacaciones,"Viaje con los de la uni, la parte de Andrea y mia",Entretenimiento
+2025-04,2025-04-11,Hosteleria,Cobee,34.3,,,Hosteleria
+2025-04,2025-04-10,Hosteleria,Cobee,12,,Cerveza con los del máster,Hosteleria
+2025-04,2025-04-09,Hosteleria,Cobee,13.3,,Rincón del tapeo ,Hosteleria
+2025-04,2025-04-09,Hosteleria,Cobee,20.9,Kebab,Kebab con mi hermano ,Hosteleria
+2025-04,2025-04-08,Hosteleria,Principal,19.9,,Real Madrid Arsenal,Hosteleria
+2025-04,2025-04-06,Entretenimiento,Principal,8,,Visita cuevas,Entretenimiento
+2025-04,2025-04-05,Hosteleria,Cobee,6,Kebab,,Hosteleria
+2025-04,2025-04-05,Hosteleria,Cobee,5,,,Hosteleria
+2025-04,2025-04-04,Transporte,Principal,5.75,,Uber,Transporte
+2025-04,2025-04-03,Hosteleria,Cobee,36.86,,,Hosteleria
+2025-04,2025-04-03,Entretenimiento,Principal,22.6,,,Entretenimiento
+2025-03,2025-03-31,Otros,Principal,12,Peluqueria,,Otros
+2025-03,2025-03-30,Transporte,Metálico,2,,Limpiar el coche,Transporte
+2025-03,2025-03-30,Hosteleria,Principal,8,,100mon,Hosteleria
+2025-03,2025-03-29,Hosteleria,Principal,16.55,,,Hosteleria
+2025-03,2025-03-28,Hosteleria,Principal,10,,,Hosteleria
+2025-03,2025-03-27,Hosteleria,Principal,7,,,Hosteleria
+2025-03,2025-03-25,Transporte,Cobee,8,,,Transporte
+2025-03,2025-03-23,Alimentacion,Cobee,0.9,,Pan,Alimentacion
+2025-03,2025-03-23,Transporte,Principal,15,,Extra maleta,Transporte
+2025-03,2025-03-23,Hosteleria,Principal,55.8,,Voltereta kioto,Hosteleria
+2025-03,2025-03-22,Entretenimiento,Principal,4,,Bolera,Entretenimiento
+2025-03,2025-03-22,Hosteleria,Principal,2.16,,Gastos extras de deudas bolera,Hosteleria
+2025-03,2025-03-22,Hosteleria,Ahorro,12,,,Hosteleria
+2025-03,2025-03-22,Hosteleria,Principal,14,,"Asai, 8,5 y zumo 5.5",Hosteleria
+2025-03,2025-03-22,Hosteleria,Principal,10.4,Churros,,Hosteleria
+2025-03,2025-03-22,Hosteleria,Cobee,22.25,,,Hosteleria
+2025-03,2025-03-21,Hosteleria,Cobee,5,,Desayuno,Hosteleria
+2025-03,2025-03-20,Hosteleria,Cobee,19.2,,Esmorzar,Hosteleria
+2025-03,2025-03-20,Alimentacion,Principal,30.23,,Nachos y carbonara,Alimentacion
+2025-03,2025-03-19,Hosteleria,Cobee,7,Kebab,,Hosteleria
+2025-03,2025-03-19,Alimentacion,Principal,12.06,,,Alimentacion
+2025-03,2025-03-18,Entretenimiento,Cobee,10.25,,,Entretenimiento
+2025-03,2025-03-18,Hosteleria,Cobee,18,Churros,,Hosteleria
+2025-03,2025-03-18,Hosteleria,Cobee,2,Churros,,Hosteleria
+2025-03,2025-03-17,Hosteleria,Cobee,12,,Salchipapas y cerveza,Hosteleria
+2025-03,2025-03-17,Transporte,Cobee,6,,,Transporte
+2025-03,2025-03-16,Hosteleria,Cobee,18,,,Hosteleria
+2025-03,2025-03-16,Hosteleria,Cobee,8,,,Hosteleria
+2025-03,2025-03-16,Hosteleria,Cobee,11,Kebab,,Hosteleria
+2025-03,2025-03-16,Hosteleria,Cobee,8,,,Hosteleria
+2025-03,2025-03-16,Otros,Principal,25.9,,Locker,Otros
+2025-03,2025-03-16,Otros,Principal,0.88,,Locker extra,Otros
+2025-03,2025-03-14,Hosteleria,Cobee,11.5,,100mon,Hosteleria
+2025-03,2025-03-14,Hosteleria,Principal,5.65,,,Hosteleria
+2025-03,2025-03-12,Hosteleria,Cobee,14.2,,,Hosteleria
+2025-03,2025-03-12,Hosteleria,Principal,7.65,,,Hosteleria
+2025-03,2025-03-11,Transporte,Principal,3.99,,Valenbisi,Transporte
+2025-03,2025-03-09,Transporte,Principal,66.05,Viaje trabajo,Taxi,Transporte
+2025-03,2025-03-09,Transporte,Principal,60,Viaje trabajo,Taxi,Transporte
+2025-03,2025-03-09,Otros,Principal,16.95,Regalos,Funko Darth Vader,Otros
+2025-03,2025-03-09,Otros,Principal,4,Regalos,Cromos one piece ,Otros
+2025-03,2025-03-09,Alimentacion,Principal,1.58,,Corcho pan,Alimentacion
+2025-03,2025-03-09,Otros,Principal,5,Regalos,Chocolate,Otros
+2025-03,2025-03-08,Hosteleria,Principal,14.6,,Pizza,Hosteleria
+2025-03,2025-03-08,Hosteleria,Principal,1.55,,Cocacola,Hosteleria
+2025-03,2025-03-08,Hosteleria,Principal,5.2,,Desayuno,Hosteleria
+2025-03,2025-03-07,Alimentacion,Principal,2.79,,Almendras,Alimentacion
+2025-03,2025-03-07,Hosteleria,Principal,3.5,,Burger king,Hosteleria
+2025-03,2025-03-07,Entretenimiento,Principal,10.6,,Bocatas ruta,Entretenimiento
+2025-03,2025-03-07,Entretenimiento,Principal,3.14,,Tasa turística,Entretenimiento
+2025-03,2025-03-07,Hosteleria,Principal,9.9,Viaje trabajo,,Hosteleria
+2025-03,2025-03-05,Otros,Principal,2.95,Regalos,,Otros
+2025-03,2025-03-05,Hosteleria,Principal,8.6,Viaje trabajo,,Hosteleria
+2025-03,2025-03-04,Otros,Principal,19.95,Regalos,Funko Luffy,Otros
+2025-03,2025-03-04,Hosteleria,Principal,26.13,Viaje trabajo,,Hosteleria
+2025-03,2025-03-03,Hosteleria,Principal,9.9,Viaje trabajo,,Hosteleria
+2025-03,2025-03-03,Hosteleria,Principal,10.8,Viaje trabajo,,Hosteleria
+2025-03,2025-03-02,Hosteleria,Principal,8.99,Viaje trabajo,,Hosteleria
+2025-03,2025-03-02,Otros,Principal,0.05,Regalos,,Otros
+2025-03,2025-03-01,Hosteleria,Principal,5.5,,,Hosteleria
+2025-02,2025-02-28,Transporte,Metálico,60,Viaje trabajo,,Transporte
+2025-02,2025-02-28,Hosteleria,Cobee,55.05,,,Hosteleria
+2025-02,2025-02-28,Transporte,Metálico,60,Viaje trabajo,,Transporte
+2025-02,2025-02-27,Hosteleria,Principal,3.5,Viaje trabajo,,Hosteleria
+2025-02,2025-02-26,Hosteleria,Principal,16.95,Viaje trabajo,,Hosteleria
+2025-02,2025-02-26,Entretenimiento,Principal,223.5,Viaje trabajo,Caldea x3,Entretenimiento
+2025-02,2025-02-25,Hosteleria,Principal,1.5,Viaje trabajo,,Hosteleria
+2025-02,2025-02-25,Hosteleria,Principal,25.55,Viaje trabajo,,Hosteleria
+2025-02,2025-02-24,Hosteleria,Principal,23.7,Viaje trabajo,,Hosteleria
+2025-02,2025-02-24,Hosteleria,Principal,2.2,Viaje trabajo,,Hosteleria
+2025-02,2025-02-23,Transporte,Principal,1,,,Transporte
+2025-02,2025-02-23,Hosteleria,Principal,19.67,Viaje trabajo,,Hosteleria
+2025-02,2025-02-22,Otros,Principal,99.6,,,Otros
+2025-02,2025-02-21,Hosteleria,Principal,12.45,Kebab,,Hosteleria
+2025-02,2025-02-21,Otros,Principal,11.5,Peluqueria,,Otros
+2025-02,2025-02-21,Hosteleria,Cobee,0.9,Churros,,Hosteleria
+2025-02,2025-02-20,Otros,Principal,1.27,,,Otros
+2025-02,2025-02-16,Hosteleria,Cobee,55.85,,Comida prima,Hosteleria
+2025-02,2025-02-15,Hosteleria,Cobee,9.4,,Cervezas,Hosteleria
+2025-02,2025-02-15,Hosteleria,Cobee,42.8,Vacaciones,Ramen Valencia,Hosteleria
+2025-02,2025-02-15,Entretenimiento,Principal,122.38,,Hotel Andorra,Entretenimiento
+2025-02,2025-02-15,Hosteleria,Principal,8.6,,Churros,Hosteleria
+2025-02,2025-02-14,Hosteleria,Cobee,7,,Cervezas valencia,Hosteleria
+2025-02,2025-02-13,Hosteleria,Principal,12,Regalos,Manolitos,Hosteleria
+2025-02,2025-02-13,Hosteleria,Cobee,6,,Comida trabajo ,Hosteleria
+2025-02,2025-02-11,Hosteleria,Cobee,60.7,,S10Bar ,Hosteleria
+2025-02,2025-02-10,Transporte,Cobee,42,,Ave fallas,Transporte
+2025-02,2025-02-10,Transporte,Cobee,36.9,,Ave sorpresa ,Transporte
+2025-02,2025-02-09,Transporte,Principal,35,,Gasolina,Transporte
+2025-02,2025-02-08,Hosteleria,Cobee,14.4,,Fiesta Miquel,Hosteleria
+2025-02,2025-02-08,Transporte,Principal,0.5,,Vuelta en bicimad,Transporte
+2025-02,2025-02-07,Hosteleria,Cobee,7.5,,100 mon,Hosteleria
+2025-02,2025-02-07,Hosteleria,Principal,7.75,,Bocata de calamares ,Hosteleria
+2025-02,2025-02-06,Hosteleria,Cobee,7,,Fuentona ,Hosteleria
+2025-02,2025-02-04,Hosteleria,Cobee,17.98,,,Hosteleria
+2025-02,2025-02-03,Alimentacion,Cobee,4.99,,Croquetas ,Alimentacion
+2025-02,2025-02-02,Hosteleria,Principal,10,,Año nuevo chino,Hosteleria
+2025-02,2025-02-02,Otros,Principal,68.99,,SSD,Otros
+2025-02,2025-02-01,Hosteleria,Cobee,5.91,,Hamburguesa ,Hosteleria
+2025-02,2025-02-01,Hosteleria,Principal,3,,Cerveza ,Hosteleria
+2025-01,2025-01-31,Entretenimiento,Principal,70,,Regalo mamá ,Entretenimiento
+2025-01,2025-01-31,Hosteleria,Cobee,17.99,,Pizza,Hosteleria
+2025-01,2025-01-31,Hosteleria,Cobee,6.5,,100mon,Hosteleria
+2025-01,2025-01-30,Hosteleria,Cobee,3.5,,Fuentona ,Hosteleria
+2025-01,2025-01-29,Hosteleria,Principal,13.5,,Pizza,Hosteleria
+2025-01,2025-01-29,Alimentacion,Cobee,3.19,,Pizza futbol ,Alimentacion
+2025-01,2025-01-26,Hosteleria,Cobee,9.5,,Kevab Andrea y yo,Hosteleria
+2025-01,2025-01-26,Transporte,Cobee,4,,Metro valencia ,Transporte
+2025-01,2025-01-26,Hosteleria,Principal,11.6,,Cervezas valencia ,Hosteleria
+2025-01,2025-01-23,Hosteleria,Principal,3.3,,Nachos,Hosteleria
+2025-01,2025-01-22,Transporte,Cobee,8,,,Transporte
+2025-01,2025-01-21,Entretenimiento,Principal,15,,Patinaje ,Entretenimiento
+2025-01,2025-01-20,Transporte,Principal,10.4,,Tren Valencia ,Transporte
+2025-01,2025-01-19,Hosteleria,Cobee,19.9,,Carls Jr ,Hosteleria
+2025-01,2025-01-17,Hosteleria,Cobee,25.49,,Taco Bell,Hosteleria
+2025-01,2025-01-17,Hosteleria,Cobee,11,,100mon,Hosteleria
+2025-01,2025-01-13,Transporte,Cobee,8,,,Transporte
+2025-01,2025-01-13,Hosteleria,Cobee,22.6,,Supercopa,Hosteleria
+2025-01,2025-01-11,Transporte,Principal,30,,Gasolina ,Transporte
+2025-01,2025-01-11,Hosteleria,Cobee,15.98,,Dominos,Hosteleria
+2025-01,2025-01-10,Hosteleria,Principal,9.64,,100mon y shawarma,Hosteleria
+2025-01,2025-01-10,Hosteleria,Cobee,4,,100mon,Hosteleria
+2025-01,2025-01-08,Transporte,Cobee,8,,,Transporte
+2025-01,2025-01-07,Otros,Ahorro,25.98,,"Regalo Mamá, aceites esenciales ",Otros
+2025-01,2025-01-05,Hosteleria,Cobee,31.5,,Rincón del tapeo ,Hosteleria
+2025-01,2025-01-04,Hosteleria,Cobee,21,,Popeyes,Hosteleria
+2025-01,2025-01-03,Transporte,Ahorro,100,,Multa ZBE,Transporte
+2025-01,2025-01-03,Hosteleria,Cobee,24.98,,Madre valencia pizzas,Hosteleria
+2025-01,2025-01-03,Otros,Principal,35.23,,Regalo amigo invisible Marcos ,Otros
+2025-01,2025-01-02,Otros,Metálico,0.9,,Papel de regalo ,Otros
+2025-01,2025-01-02,Entretenimiento,Ahorro,10.1,,Palomitas Yelmo moana,Entretenimiento
+2024-12,2024-12-31,Entretenimiento,Principal,5.1,,Fiesta Nochevieja ,Entretenimiento
+2024-12,2024-12-31,Hosteleria,Cobee,10,,Tarde vieja ,Hosteleria
+2024-12,2024-12-30,Hosteleria,Principal,2,,100mon,Hosteleria
+2024-12,2024-12-30,Hosteleria,Principal,13.9,,Restos cena piratas ,Hosteleria
+2024-12,2024-12-29,Hosteleria,Cobee,4.2,,Desayuno con jamil,Hosteleria
+2024-12,2024-12-27,Entretenimiento,Ahorro,99.99,,Regalo papá ,Entretenimiento
+2024-12,2024-12-27,Otros,Principal,11.5,Peluqueria,Peluquería ,Otros
+2024-12,2024-12-27,Entretenimiento,Principal,68.59,,Zapatillas nuevas ,Entretenimiento
+2024-12,2024-12-27,Transporte,Principal,2.25,,Bombilla de la matricula ,Transporte
+2024-12,2024-12-27,Otros,Metálico,0.9,,Papel de regalo ,Otros
+2024-12,2024-12-27,Hosteleria,Cobee,10.98,,KFC después del musical ,Hosteleria
+2024-12,2024-12-27,Hosteleria,Cobee,40.5,,Sumo con Andrea (invitación),Hosteleria
+2024-12,2024-12-26,Otros,Principal,45.72,,Regalo Sergi ,Otros
+2024-12,2024-12-24,Alimentacion,Cobee,12.61,,Papel de regalo y comida,Alimentacion
+2024-12,2024-12-22,Hosteleria,Principal,10.95,,Kebap,Hosteleria
+2024-12,2024-12-22,Hosteleria,Principal,4.5,,Desayuno con Jaume ,Hosteleria
+2024-12,2024-12-22,Hosteleria,Principal,10,,Futura cena piratas,Hosteleria
+2024-12,2024-12-22,Hosteleria,Cobee,14,,100mon,Hosteleria
+2024-12,2024-12-21,Entretenimiento,Cobee,13.45,,"Dinero que le debía a andrea, quedan 19,455",Entretenimiento
+2024-12,2024-12-21,Hosteleria,Cobee,13.45,,Carls Jr ,Hosteleria
+2024-12,2024-12-21,Hosteleria,Cobee,3.5,,Bar dardos ,Hosteleria
+2024-12,2024-12-20,Hosteleria,Cobee,31.1,,Tapeo,Hosteleria
+2024-12,2024-12-20,Entretenimiento,Cobee,11,,Karaoke,Entretenimiento
+2024-12,2024-12-18,Hosteleria,Cobee,12.9,,Hamburguesa nostra ,Hosteleria
+2024-12,2024-12-18,Hosteleria,Cobee,0.9,,Churros ,Hosteleria
+2024-12,2024-12-13,Transporte,Cobee,8,,Metro,Transporte
+2024-12,2024-12-11,Hosteleria,Principal,27.56,,Shusi master,Hosteleria
+2024-12,2024-12-11,Hosteleria,Cobee,14.45,,Secrets empresa ,Hosteleria
+2024-12,2024-12-09,Transporte,Principal,50,,Gasolina ,Transporte
+2024-12,2024-12-09,Otros,Ahorro,30.6,,Regalo Andrea ,Otros
+2024-12,2024-12-07,Hosteleria,Cobee,13.25,,Chuches cine,Hosteleria
+2024-12,2024-12-07,Hosteleria,Principal,20.91,,Kfc Málaga ,Hosteleria
+2024-12,2024-12-07,Entretenimiento,Principal,18.75,,"Cine, señor de los anillos ",Entretenimiento
+2024-12,2024-12-06,Hosteleria,Cobee,25,,Champions burger malaga,Hosteleria
+2024-12,2024-12-06,Transporte,Cobee,2.8,,Bus malaga,Transporte
+2024-12,2024-12-04,Hosteleria,Cobee,18,,Cervezas trabajo ,Hosteleria
+2024-12,2024-12-04,Hosteleria,Principal,25,,Cena navidad ,Hosteleria
+2024-12,2024-12-02,Entretenimiento,Cobee,5.45,,Parte del concierto restan 32.905,Entretenimiento
+2024-12,2024-12-01,Hosteleria,Cobee,5.44,,Burguer King ,Hosteleria
+2024-12,2024-12-01,Hosteleria,Cobee,4.5,,Cerveza con Álvaro ,Hosteleria
+2024-11,2024-11-30,Hosteleria,Principal,24.2,,Graduación Jaume ,Hosteleria
+2024-11,2024-11-28,Entretenimiento,Principal,11.15,,Parte del concierto Rigoberta faltan 38.35,Entretenimiento
+2024-11,2024-11-28,Entretenimiento,Principal,11.15,,Cine,Entretenimiento
+2024-11,2024-11-28,Entretenimiento,Principal,25,,Juego UFC ,Entretenimiento
+2024-11,2024-11-28,Transporte,Principal,85,,Batería ,Transporte
+2024-11,2024-11-27,Hosteleria,Cobee,10.5,,Fuentona ,Hosteleria
+2024-11,2024-11-27,Hosteleria,Principal,23.3,,Cena Madrid Liverpool ,Hosteleria
+2024-11,2024-11-24,Hosteleria,Principal,25,,"El resto de hamburguesas, bizum a Javi ",Hosteleria
+2024-11,2024-11-23,Hosteleria,Cobee,12.5,,Primera hamburguesa champions burger ,Hosteleria
+2024-11,2024-11-22,Alimentacion,Principal,8.67,,Cena Nachos casa de Belén ,Alimentacion
+2024-11,2024-11-22,Hosteleria,Cobee,0.9,,Churros ,Hosteleria
+2024-11,2024-11-21,Hosteleria,Cobee,6.7,,Vips ,Hosteleria
+2024-11,2024-11-21,Hosteleria,Cobee,21.9,,Kfc,Hosteleria
+2024-11,2024-11-21,Hosteleria,Cobee,10.95,,Comida arriba de abajo ,Hosteleria
+2024-11,2024-11-21,Alimentacion,Cobee,0.4,,Cocacola ,Alimentacion
+2024-11,2024-11-15,Transporte,Principal,8,,Metro ,Transporte
+2024-11,2024-11-15,Otros,Principal,11.5,Peluqueria,Peluquería ,Otros
+2024-11,2024-11-15,Transporte,Principal,0.5,,Vuelta en bicimad,Transporte
+2024-11,2024-11-15,Alimentacion,Cobee,3.71,,La despensa ,Alimentacion
+2024-11,2024-11-11,Otros,Principal,19.15,,Fotos Andrea ,Otros
+2024-11,2024-11-11,Entretenimiento,Principal,220.32,,Regalo cumpleaños Andrea ,Entretenimiento
+2024-11,2024-11-10,Hosteleria,Cobee,9,,Burger king,Hosteleria
+2024-11,2024-11-10,Hosteleria,Cobee,8,,100mon,Hosteleria
+2024-11,2024-11-10,Hosteleria,Cobee,2,,Dunkin Andrea,Hosteleria
+2024-11,2024-11-09,Hosteleria,Cobee,41.8,,Kevab ,Hosteleria
+2024-11,2024-11-08,Hosteleria,Cobee,26.2,,Tapeo ,Hosteleria
+2024-11,2024-11-07,Otros,Principal,15,,Donacion ,Otros
+2024-11,2024-11-05,Otros,Principal,42.3,,Regalo Andrea ,Otros
+2024-11,2024-11-03,Hosteleria,Cobee,13.9,,Don Oso,Hosteleria
+2024-11,2024-11-03,Hosteleria,Cobee,5,,Churros,Hosteleria
+2024-11,2024-11-03,Entretenimiento,Principal,6.95,,Comida cine,Entretenimiento
+2024-10,2024-10-31,Transporte,Principal,5.25,,Peaje,Transporte
+2024-10,2024-10-31,Alimentacion,Principal,16.7,,Comida viaje ,Alimentacion
+2024-10,2024-10-31,Transporte,Principal,29.03,,Gasolina ,Transporte
+2024-10,2024-10-30,Hosteleria,Cobee,10.5,,Fuentona,Hosteleria
+2024-10,2024-10-29,Entretenimiento,My Investor,3.95,,Latigo,Entretenimiento
+2024-10,2024-10-27,Hosteleria,Cobee,6,,,Hosteleria
+2024-10,2024-10-27,Entretenimiento,Principal,76,,Mago pop,Entretenimiento
+2024-10,2024-10-27,Hosteleria,Principal,6,,100 mon,Hosteleria
+2024-10,2024-10-27,Hosteleria,Principal,18.13,,Casa Mingo ,Hosteleria
+2024-10,2024-10-26,Transporte,My Investor,30.03,,Uber,Transporte
+2024-10,2024-10-26,Hosteleria,My Investor,27,,Cervezas ,Hosteleria
+2024-10,2024-10-26,Hosteleria,My Investor,9,,Cerveza ,Hosteleria
+2024-10,2024-10-26,Hosteleria,Principal,16.5,,Tapeo,Hosteleria
+2024-10,2024-10-23,Transporte,Principal,79,,Ave,Transporte
+2024-10,2024-10-20,Hosteleria,Cobee,90.3,,Invitacion abuelos,Hosteleria
+2024-10,2024-10-19,Hosteleria,Cobee,6,,100mon,Hosteleria
+2024-10,2024-10-19,Hosteleria,Principal,17.6,,Hamburguesa nostra,Hosteleria
+2024-10,2024-10-18,Hosteleria,Cobee,29,,Tapeo ,Hosteleria
+2024-10,2024-10-17,Hosteleria,Cobee,11,,Tapeo ,Hosteleria
+2024-10,2024-10-17,Hosteleria,Cobee,8,,100mon,Hosteleria
+2024-10,2024-10-14,Hosteleria,Cobee,6,,Chop,Hosteleria
+2024-10,2024-10-14,Transporte,Principal,8,,Metro,Transporte
+2024-10,2024-10-12,Hosteleria,Cobee,31.8,,Frikando,Hosteleria
+2024-10,2024-10-12,Entretenimiento,Principal,14,,Cine,Entretenimiento
+2024-10,2024-10-10,Transporte,Principal,40.87,,Viaje malagon ,Transporte
+2024-10,2024-10-10,Alimentacion,Principal,35.98,,Comida,Alimentacion
+2024-10,2024-10-10,Hosteleria,Principal,3.8,,Bar Coyote ,Hosteleria
+2024-10,2024-10-06,Hosteleria,Principal,28.4,,Trujillo burger ,Hosteleria
+2024-10,2024-10-05,Otros,Principal,40,,Multa,Otros
+2024-10,2024-10-03,Hosteleria,Principal,12.36,,Comida trabajo ,Hosteleria
+2024-10,2024-10-03,Otros,Principal,11.5,Peluqueria,Peluqueria,Otros
+2024-10,2024-10-03,Hosteleria,Principal,90.4,,Invitar familia ,Hosteleria
+2024-10,2024-10-02,Hosteleria,Principal,20.7,,Kfc,Hosteleria
+2024-10,2024-10-01,Hosteleria,Principal,16.95,,New york burger ,Hosteleria

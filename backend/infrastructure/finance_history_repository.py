@@ -27,6 +27,9 @@ class CsvFinanceHistoryRepository:
             writer.writeheader()
             writer.writerows({column: record.get(column, "") for column in columns} for record in records)
 
+    def delete(self) -> None:
+        self.path.unlink(missing_ok=True)
+
 
 def ordered_columns(records: list[dict[str, Any]]) -> list[str]:
     preferred = [

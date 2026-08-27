@@ -30,6 +30,10 @@ class CsvTransactionHistoryRepository:
     def append_ingresos(self, rows: list[dict[str, Any]]) -> None:
         _append(self.ingresos_path, rows)
 
+    def delete(self) -> None:
+        self.gastos_path.unlink(missing_ok=True)
+        self.ingresos_path.unlink(missing_ok=True)
+
 
 def _load(path: Path) -> list[dict[str, Any]]:
     if not path.exists():

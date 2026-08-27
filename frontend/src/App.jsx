@@ -52,6 +52,7 @@ export function App() {
   const [isInputOpen, setIsInputOpen] = useState(true)
   const [processStatus, setProcessStatus] = useState('')
   const [checkpoint, setCheckpoint] = useState(null)
+  const [isDeletingHistorico, setIsDeletingHistorico] = useState(false)
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => getHistoryRows(result), [result])
@@ -181,6 +182,22 @@ export function App() {
       setError(err.message)
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  const deleteHistorico = async () => {
+    setIsDeletingHistorico(true)
+    setError('')
+    try {
+      await requestJson('/api/v1/process/historico', { method: 'DELETE' }, 'No se pudo borrar el histórico')
+      setCheckpoint(null)
+      setResult(null)
+      setParams((current) => ({ ...current, fecha_inicio: initialParams.fecha_inicio }))
+      setProcessStatus('Histórico borrado. Sube el Excel completo desde el principio para empezar de nuevo.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsDeletingHistorico(false)
     }
   }
 
@@ -368,6 +385,7 @@ export function App() {
                 isLoadingObjectives={isLoadingObjectives}
                 isSavingObjectives={isSavingObjectives}
                 isProcessing={isProcessing}
+                isDeletingHistorico={isDeletingHistorico}
                 hasValidationErrors={hasValidationErrors}
                 validationMessages={validationMessages}
                 objectivesStatus={objectivesStatus}
@@ -384,6 +402,7 @@ export function App() {
                 onObjectivesSave={saveObjectives}
                 onVisualize={(event) => processWorkbook(event, 'visualizar')}
                 onAddToHistory={(event) => processWorkbook(event, 'historico')}
+                onDeleteHistorico={deleteHistorico}
               />
             </aside>
           )}

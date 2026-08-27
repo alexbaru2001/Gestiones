@@ -441,3 +441,40 @@ def test_analisis_desglose_incluye_todo_el_historico_no_solo_el_ultimo_tramo(tmp
 
     assert round(split_interes_total, 2) == round(one_shot_interes_total, 2)
     assert split_dividendo_pagos == one_shot_dividendo_pagos
+
+
+def test_delete_historico_clears_summary_checkpoint_and_transaction_detail(tmp_path, monkeypatch):
+    client = TestClient(app)
+    repo = CsvFinanceHistoryRepository(tmp_path / "historial.csv")
+    checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
+    txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "gastos.csv", ingresos_path=tmp_path / "ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "finance_history_repository", repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_repo)
+
+    chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
+    commit_response = client.post(
+        f"/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert commit_response.status_code == 200
+    assert repo.load()
+    assert checkpoint_repo.load() is not None
+    assert txn_repo.load_gastos()
+    assert txn_repo.load_ingresos()
+
+    delete_response = client.delete("/api/v1/process/historico")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["ok"] is True
+
+    assert repo.load() == []
+    assert checkpoint_repo.load() is None
+    assert txn_repo.load_gastos() == []
+    assert txn_repo.load_ingresos() == []
+
+    # Borrar cuando ya no hay nada guardado no debe fallar.
+    second_delete = client.delete("/api/v1/process/historico")
+    assert second_delete.status_code == 200
