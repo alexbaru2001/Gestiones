@@ -203,6 +203,7 @@ def _normalizar_objetivos_presupuesto(objetivos_raw: Optional[List[Dict[str, Any
                 "fraccion_presupuesto": fr,
                 "duracion_meses": dm,
                 "mes_inicio": mes_inicio_norm,   # <-- clave siempre presente
+                "saldo_inicial": float(obj.get("saldo_inicial", 0.0) or 0.0),
             }
         )
 
@@ -224,6 +225,7 @@ def run_pipeline(
     objetivos: Optional[List[Dict[str, Any]]] = None,
     output_path: Optional[Union[str, Path]] = None,
     fondo_reserva_snapshot: Optional[Dict[str, Any]] = None,
+    checkpoint: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Ejecuta el pipeline completo:
@@ -231,6 +233,11 @@ def run_pipeline(
       - prepara tipo_logico
       - crea Budget (incluye transferencias)
       - llama a crear_historial_cuentas_virtuales (lógica pura)
+
+    `checkpoint` permite continuar un histórico ya cerrado en vez de arrancar desde los saldos fijos
+    de config.py: puede traer 'saldos_iniciales' (sustituye los saldos de cuentas), 'fondo_reserva_snapshot'
+    (si no se pasa el parámetro homónimo aparte) y 'deuda_acumulada'/'regalos'/'vacaciones'/'inversiones'/'ahorro'.
+    Sin checkpoint, el comportamiento es idéntico al de siempre.
     """
     if params is None:
         params = PipelineParams()
@@ -242,14 +249,19 @@ def run_pipeline(
         else:
             raise ValueError("No se ha proporcionado excel y no hay ruta por defecto configurada.")
 
+    checkpoint = checkpoint or {}
+    saldos_iniciales_actuales = checkpoint.get("saldos_iniciales") or saldos_iniciales
+    if fondo_reserva_snapshot is None:
+        fondo_reserva_snapshot = checkpoint.get("fondo_reserva_snapshot")
+
     gastos, ingresos, transferencias = _leer_inicio_xlsx(excel)
     gastos, ingresos = _preprocesar_tipo_logico(gastos, ingresos)
 
-    presupuesto = _crear_budget_desde_dfs(gastos, ingresos, transferencias, saldos_iniciales)
+    presupuesto = _crear_budget_desde_dfs(gastos, ingresos, transferencias, saldos_iniciales_actuales)
 
     objetivos_norm = _normalizar_objetivos_presupuesto(objetivos)
 
-    historial = crear_historial_cuentas_virtuales(
+    df_resumen, objetivos_df, estado_cierre = crear_historial_cuentas_virtuales(
         df_ingresos=ingresos,
         df_gastos=gastos,
         presupuesto=presupuesto,
@@ -257,10 +269,11 @@ def run_pipeline(
         porcentaje_gasto=params.porcentaje_gasto,
         porcentaje_inversion=params.porcentaje_inversion,
         porcentaje_vacaciones=params.porcentaje_vacaciones,
-        saldos_iniciales=saldos_iniciales,
+        saldos_iniciales=saldos_iniciales_actuales,
         output_path=str(output_path) if output_path else None,  # se mantiene por compatibilidad, lógica no debería escribir
         objetivos_config=objetivos_norm,
         fondo_reserva_snapshot=fondo_reserva_snapshot,
+        checkpoint=checkpoint,
     )
 
     return {
@@ -270,5 +283,6 @@ def run_pipeline(
         "transferencias": transferencias,
         "presupuesto": presupuesto,
         "objetivos": objetivos_norm,
-        "historial": historial,
+        "historial": (df_resumen, objetivos_df),
+        "estado_cierre": estado_cierre,
     }

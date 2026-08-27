@@ -1,0 +1,29 @@
+{
+  "ahorro": 20850.241700000002,
+  "as_of_month": "2025-12",
+  "comisiones_acumulado": 9.73,
+  "deuda_acumulada": 1872.1899999999998,
+  "dividendos_acumulado": 0.0,
+  "fondo_reserva_snapshot": {
+    "Cantidad cargada": 1652.3443000000002,
+    "Cantidad del fondo": 0.0,
+    "Porcentaje": 0.0
+  },
+  "ingreso_mes_anterior": 3489.46,
+  "inversiones": 511.81600000000014,
+  "objetivos_saldos": {},
+  "regalos": 330.1,
+  "saldos_iniciales": {
+    "Ahorro": 10975.759999999998,
+    "Amex": -1373.1799999999994,
+    "Cobee": -67.59999999999752,
+    "Degiro": 1240.27,
+    "Invertido": 2200.0,
+    "Metálico": 141.01,
+    "My Investor": 13886.809999999998,
+    "Principal": -31.339999999996962,
+    "Revolut": 0.0,
+    "Trade Republic": 169.5
+  },
+  "vacaciones": 356.45799999999986
+}

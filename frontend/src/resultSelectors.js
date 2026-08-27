@@ -38,6 +38,56 @@ export function getObjectiveRows(result) {
   return result?.historial?.objetivos ?? []
 }
 
+export function getDividendPayments(result) {
+  return result?.analisis?.dividendos_pagos ?? []
+}
+
+// Acumula los pagos de dividendos por empresa hasta una fecha de corte (inclusive), para que cada
+// pantalla pueda mostrar "lo cobrado hasta la foto/mes seleccionado" en vez del total histórico.
+// Pasa `untilDate` (YYYY-MM-DD) para un corte exacto de fecha, o `untilMonth` (YYYY-MM) para un
+// corte por mes; sin ninguno de los dos, se acumulan todos los pagos.
+export function aggregateDividendsByCompany(payments, { untilDate, untilMonth } = {}) {
+  const scoped = payments.filter((payment) => {
+    if (untilDate) return payment.fecha <= untilDate
+    if (untilMonth) return payment.fecha.slice(0, 7) <= untilMonth
+    return true
+  })
+  const groups = new Map()
+  const commentCounts = new Map()
+  for (const payment of [...scoped].sort((a, b) => (a.fecha < b.fecha ? -1 : 1))) {
+    const key = String(payment.codigo).toLowerCase()
+    if (!groups.has(key)) {
+      groups.set(key, { codigo: payment.codigo, empresa: payment.codigo, total: 0, pagos: 0, ultimo_pago: null })
+    }
+    const group = groups.get(key)
+    group.total += Number(payment.cantidad) || 0
+    group.pagos += 1
+    group.ultimo_pago = payment.fecha
+    const comment = String(payment.comentario ?? '').trim()
+    if (comment) {
+      if (!commentCounts.has(key)) commentCounts.set(key, new Map())
+      const counts = commentCounts.get(key)
+      counts.set(comment, (counts.get(comment) ?? 0) + 1)
+    }
+  }
+  for (const [key, group] of groups) {
+    const counts = commentCounts.get(key)
+    if (counts) {
+      let bestComment = null
+      let bestCount = 0
+      for (const [comment, count] of counts) {
+        if (count > bestCount) {
+          bestComment = comment
+          bestCount = count
+        }
+      }
+      if (bestComment) group.empresa = bestComment
+    }
+    group.total = Math.round(group.total * 100) / 100
+  }
+  return Array.from(groups.values()).sort((a, b) => b.total - a.total)
+}
+
 export function getObjectiveNames(objectiveRows) {
   return Array.from(new Set(objectiveRows.map((row) => row.Objetivo))).sort()
 }

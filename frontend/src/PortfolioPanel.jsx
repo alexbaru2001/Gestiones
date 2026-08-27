@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
+import { aggregateDividendsByCompany } from './resultSelectors'
 
 function formatMoney(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return 's/d'
@@ -53,7 +54,7 @@ const expectedPortfolioDocuments = [
 
 const lifeContextStorageKey = 'gestiones:portfolio-life-context'
 
-export function PortfolioPanel({ financeRows = [] }) {
+export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
   const fileInputRef = useRef(null)
   const [snapshot, setSnapshot] = useState(null)
   const [files, setFiles] = useState([])
@@ -104,6 +105,14 @@ export function PortfolioPanel({ financeRows = [] }) {
   const globalAnalysis = useMemo(
     () => buildGlobalPortfolioAnalysis(investmentPositions, investedTotal, costTotal, selectedFinance, lifeContext),
     [costTotal, investedTotal, investmentPositions, lifeContext, selectedFinance],
+  )
+  const dividendsByCompany = useMemo(
+    () => aggregateDividendsByCompany(dividendPayments, { untilDate: selectedSnapshot?.snapshot_date }),
+    [dividendPayments, selectedSnapshot?.snapshot_date],
+  )
+  const dividendCompanyRows = useMemo(
+    () => buildDividendCompanyRows(dividendsByCompany, investmentPositions),
+    [dividendsByCompany, investmentPositions],
   )
   const selectedDocumentStatus = useMemo(() => buildSelectedDocumentStatus(files), [files])
   const importedDocumentStatus = selectedSnapshot?.documents
@@ -645,6 +654,45 @@ export function PortfolioPanel({ financeRows = [] }) {
               </div>
             ) : (
               <p className="muted-text">No hay acciones con ticker compatible para análisis automático en este snapshot.</p>
+            )}
+          </section>
+
+          <section className="portfolio-card">
+            <h3>Dividendos por empresa</h3>
+            <p className="muted-text">Acumulado hasta {formatSnapshotDate(selectedSnapshot?.snapshot_date)}</p>
+            {dividendCompanyRows.length > 0 ? (
+              <ul className="dividend-company-list">
+                {dividendCompanyRows.map((row) => (
+                  <li key={row.codigo}>
+                    <div className="dividend-company-row-head">
+                      <span className="dividend-company-name">{row.empresa}</span>
+                      <span className="dividend-company-amount">{formatMoney(row.total)}</span>
+                    </div>
+                    <div className="dividend-company-bar-track">
+                      <div
+                        className="dividend-company-bar-fill"
+                        style={{
+                          width: `${Math.max(4, (row.total / Math.max(1, dividendCompanyRows[0].total)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="dividend-company-position">
+                      {row.positionValue !== null ? (
+                        <>
+                          <span>Posición actual: <span className="value">{formatMoney(row.positionValue)}</span></span>
+                          <span className={row.yieldPct !== null ? 'yield-positive' : ''}>
+                            {row.yieldPct !== null ? `${formatNumber(row.yieldPct, '%')} sobre posición` : 's/d'}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="no-match">Sin posición identificada en esta foto</span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted-text">No hay ingresos etiquetados como Dividendos en Finanzas todavía.</p>
             )}
           </section>
 
@@ -1287,6 +1335,54 @@ function loadLifeContext() {
 
 function getPositionKey(position) {
   return `${position.broker}-${position.isin ?? position.ticker ?? position.name}-${position.asset_type}`
+}
+
+const COMPANY_MATCH_STOPWORDS = new Set(['sa', 'sl', 'plc', 'inc', 'co', 'corp', 'company', 'and', 'the', 'de', 'la', 'group'])
+
+function normalizeMatchText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function significantMatchTokens(value) {
+  return normalizeMatchText(value)
+    .split(' ')
+    .filter((token) => token.length >= 3 && !COMPANY_MATCH_STOPWORDS.has(token))
+}
+
+function tickerBase(ticker) {
+  return normalizeMatchText(String(ticker ?? '').split('.')[0])
+}
+
+// Empareja una empresa de dividendos (etiqueta corta + comentario del Excel) con las posiciones
+// reales de Cartera, sin depender de una lista fija de empresas: compara tokens del nombre y,
+// como respaldo, el prefijo del ticker frente al código corto de la etiqueta.
+function matchDividendCompanyPositions(entry, positions) {
+  const entryTokens = new Set([...significantMatchTokens(entry.empresa), ...significantMatchTokens(entry.codigo)])
+  const entryCode = normalizeMatchText(entry.codigo)
+  return positions.filter((position) => {
+    const nameTokens = significantMatchTokens(position.name)
+    const hasNameOverlap = nameTokens.some((token) => entryTokens.has(token))
+    const base = tickerBase(position.ticker)
+    const hasTickerOverlap = Boolean(base && entryCode && (base === entryCode || base.startsWith(entryCode) || entryCode.startsWith(base)))
+    return hasNameOverlap || hasTickerOverlap
+  })
+}
+
+function buildDividendCompanyRows(dividendsByCompany, positions) {
+  return dividendsByCompany.map((entry) => {
+    const matches = matchDividendCompanyPositions(entry, positions)
+    const positionValue = matches.reduce((total, position) => total + Number(position.current_value ?? 0), 0)
+    return {
+      ...entry,
+      positionValue: matches.length > 0 ? positionValue : null,
+      yieldPct: matches.length > 0 && positionValue > 0 ? (entry.total / positionValue) * 100 : null,
+    }
+  })
 }
 
 function buildGlobalPortfolioAnalysis(positions, investedTotal, costTotal, finance, context) {

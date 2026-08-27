@@ -11,6 +11,12 @@ class CsvFinanceHistoryRepository:
     def __init__(self, path: Path | None = None):
         self.path = path or get_finance_history_path()
 
+    def load(self) -> list[dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        with self.path.open("r", encoding="utf-8", newline="") as file:
+            return list(csv.DictReader(file))
+
     def save(self, records: list[dict[str, Any]]) -> None:
         if not records:
             return

@@ -21,6 +21,7 @@ class LegacyPipelineAdapter:
         excel_bytes: bytes,
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
+        checkpoint: dict[str, Any] | None = None,
     ) -> PipelineResult:
         legacy_path_str = str(self._legacy_path)
         if legacy_path_str not in sys.path:
@@ -29,20 +30,40 @@ class LegacyPipelineAdapter:
         from pipeline import run_pipeline, PipelineParams  # type: ignore
 
         parsed = PipelineParams(**params.to_dict())
+        objetivos_con_checkpoint = self._apply_objetivo_checkpoint(objetivos or [], checkpoint or {})
         result = run_pipeline(
             excel=io.BytesIO(excel_bytes),
             params=parsed,
-            objetivos=objetivos or [],
+            objetivos=objetivos_con_checkpoint,
             fondo_reserva_snapshot=None,
             output_path=None,
+            checkpoint=checkpoint,
         )
-        return self._to_response(result)
+        return self._to_response(result, checkpoint or {})
 
-    def _to_response(self, result: dict[str, Any]) -> PipelineResult:
+    def _apply_objetivo_checkpoint(self, objetivos: list[dict], checkpoint: dict[str, Any]) -> list[dict]:
+        """Sustituye el saldo_inicial de cada objetivo todavía abierto por el saldo con el que cerró
+        el tramo anterior, para que un objetivo a caballo entre dos tramos no pierda su progreso."""
+        objetivos_saldos = checkpoint.get("objetivos_saldos") or {}
+        if not objetivos_saldos:
+            return objetivos
+        actualizados = []
+        for objetivo in objetivos:
+            nombre = objetivo.get("nombre")
+            if nombre in objetivos_saldos:
+                objetivo = {**objetivo, "saldo_inicial": objetivos_saldos[nombre]}
+            actualizados.append(objetivo)
+        return actualizados
+
+    def _to_response(self, result: dict[str, Any], checkpoint: dict[str, Any]) -> PipelineResult:
         historial = result.get("historial")
         resumen_df, objetivos_df = self._split_historial(historial)
-        resumen_df = self._add_dividend_history_to_summary(resumen_df, result.get("ingresos"))
-        resumen_df = self._add_fees_history_to_summary(resumen_df, result.get("gastos"))
+        resumen_df = self._add_dividend_history_to_summary(
+            resumen_df, result.get("ingresos"), float(checkpoint.get("dividendos_acumulado", 0.0))
+        )
+        resumen_df = self._add_fees_history_to_summary(
+            resumen_df, result.get("gastos"), float(checkpoint.get("comisiones_acumulado", 0.0))
+        )
         ultimo_mes = self._last_record(resumen_df)
 
         presupuesto = result.get("presupuesto")
@@ -63,9 +84,88 @@ class LegacyPipelineAdapter:
                 objetivos=self._dataframe_to_records(objetivos_df),
             ),
             analisis=self._build_analysis(result, resumen_df),
+            checkpoint=self._derive_checkpoint(result, resumen_df, objetivos_df),
         )
 
-    def _add_dividend_history_to_summary(self, resumen: Any, ingresos: Any) -> Any:
+    def _derive_checkpoint(self, result: dict[str, Any], resumen_df: Any, objetivos_df: Any = None) -> dict[str, Any] | None:
+        """Calcula el estado de cierre (saldos, acumulados) del último mes procesado, para que un
+        futuro tramo pueda continuar desde aquí en vez de reiniciar los acumuladores desde cero."""
+        if not isinstance(resumen_df, pd.DataFrame) or resumen_df.empty:
+            return None
+
+        last = resumen_df.iloc[-1]
+        mes = str(last.get("Mes"))
+
+        # Estado sin redondear del cierre del pipeline: usarlo (en vez de releer las columnas ya
+        # redondeadas a 2 decimales de resumen_df) evita que un futuro tramo arrastre un error de
+        # 1 céntimo por cada redondeo intermedio.
+        estado_cierre = result.get("estado_cierre") or {}
+
+        saldos_iniciales = None
+        presupuesto = result.get("presupuesto")
+        if presupuesto is not None:
+            try:
+                fecha_corte = pd.Period(mes, freq="M").to_timestamp(how="end")
+                balances = presupuesto.balances_a_fecha(fecha_corte)
+                saldos_iniciales = {str(nombre): float(valor) for nombre, valor in balances.items()}
+            except Exception:
+                saldos_iniciales = None
+
+        return {
+            "as_of_month": mes,
+            "saldos_iniciales": saldos_iniciales,
+            "deuda_acumulada": float(estado_cierre.get("deuda_acumulada", 0.0) or 0.0),
+            "regalos": float(estado_cierre.get("regalos", 0.0) or 0.0),
+            "vacaciones": float(estado_cierre.get("vacaciones", 0.0) or 0.0),
+            "inversiones": float(estado_cierre.get("inversiones", 0.0) or 0.0),
+            "ahorro": float(estado_cierre.get("ahorro", 0.0) or 0.0),
+            "fondo_reserva_snapshot": {
+                "Cantidad cargada": float(estado_cierre.get("fondo_cargado", 0.0) or 0.0),
+                "Cantidad del fondo": 0.0,
+                "Porcentaje": 0.0,
+            },
+            "dividendos_acumulado": float(last.get("Dividendos", 0.0) or 0.0),
+            "comisiones_acumulado": float(last.get("Comisiones", 0.0) or 0.0),
+            "ingreso_mes_anterior": self._real_income_for_month(result.get("ingresos"), mes),
+            "objetivos_saldos": self._objetivos_saldos_abiertos(objetivos_df, mes),
+        }
+
+    def _objetivos_saldos_abiertos(self, objetivos_df: Any, mes: str) -> dict[str, float]:
+        """Saldo de cierre de cada objetivo que sigue abierto (no ha vencido) al terminar el tramo,
+        para que el siguiente tramo continúe su progreso en vez de reiniciarlo a 0. Los objetivos que
+        vencen dentro de este mismo tramo ya quedan liquidados y no se arrastran."""
+        if not isinstance(objetivos_df, pd.DataFrame) or objetivos_df.empty:
+            return {}
+        if not {"Mes", "Objetivo", "saldo_fin_mes", "vence_en_mes"}.issubset(objetivos_df.columns):
+            return {}
+        hasta_mes = objetivos_df[objetivos_df["Mes"] <= mes]
+        if hasta_mes.empty:
+            return {}
+        ultima_fila_por_objetivo = hasta_mes.sort_values("Mes").groupby("Objetivo").tail(1)
+        abiertos = ultima_fila_por_objetivo[~ultima_fila_por_objetivo["vence_en_mes"].astype(bool)]
+        return {str(row["Objetivo"]): round(float(row["saldo_fin_mes"]), 2) for _, row in abiertos.iterrows()}
+
+    def _real_income_for_month(self, ingresos: Any, mes: str) -> float:
+        """Suma de 'Ingreso Real' del mes indicado, para que el primer mes de un tramo que continúa
+        un histórico ya cerrado calcule su presupuesto bruto igual que si nunca se hubiera cortado."""
+        if not isinstance(ingresos, pd.DataFrame) or ingresos.empty:
+            return 0.0
+        required = {"fecha", "cantidad", "tipo_logico"}
+        if not required.issubset(ingresos.columns):
+            return 0.0
+        data = ingresos.copy()
+        data["fecha"] = pd.to_datetime(data["fecha"], errors="coerce")
+        data["cantidad"] = pd.to_numeric(data["cantidad"].astype(str).str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
+        data = data.dropna(subset=["fecha"])
+        if data.empty:
+            return 0.0
+        reales = data[data["tipo_logico"] == "Ingreso Real"].copy()
+        if reales.empty:
+            return 0.0
+        reales["mes"] = reales["fecha"].dt.to_period("M").astype(str)
+        return round(float(reales.groupby("mes")["cantidad"].sum().get(mes, 0.0)), 2)
+
+    def _add_dividend_history_to_summary(self, resumen: Any, ingresos: Any, initial_value: float = 0.0) -> Any:
         required = {"fecha", "categoria", "cantidad", "etiquetas"}
         if not isinstance(resumen, pd.DataFrame) or resumen.empty:
             return resumen
@@ -90,16 +190,16 @@ class LegacyPipelineAdapter:
         output_months = output[month_column].astype(str)
 
         if dividends.empty:
-            output["Dividendos"] = 0.0
+            output["Dividendos"] = round(initial_value, 2)
             return output
 
         dividends["Mes"] = dividends["fecha"].dt.to_period("M").astype(str)
         monthly = dividends.groupby("Mes")["cantidad"].sum().sort_index()
-        accumulated = monthly.cumsum()
-        output["Dividendos"] = output_months.map(lambda month: accumulated_value_until(accumulated, month))
+        accumulated = monthly.cumsum() + initial_value
+        output["Dividendos"] = output_months.map(lambda month: accumulated_value_until(accumulated, month, initial_value))
         return output
 
-    def _add_fees_history_to_summary(self, resumen: Any, gastos: Any) -> Any:
+    def _add_fees_history_to_summary(self, resumen: Any, gastos: Any, initial_value: float = 0.0) -> Any:
         required = {"fecha", "categoria", "cantidad", "etiquetas"}
         if not isinstance(resumen, pd.DataFrame) or resumen.empty:
             return resumen
@@ -124,14 +224,62 @@ class LegacyPipelineAdapter:
         output_months = output[month_column].astype(str)
 
         if fees.empty:
-            output["Comisiones"] = 0.0
+            output["Comisiones"] = round(initial_value, 2)
             return output
 
         fees["Mes"] = fees["fecha"].dt.to_period("M").astype(str)
         monthly = fees.groupby("Mes")["cantidad"].sum().sort_index()
-        accumulated = monthly.cumsum()
-        output["Comisiones"] = output_months.map(lambda month: accumulated_value_until(accumulated, month))
+        accumulated = monthly.cumsum() + initial_value
+        output["Comisiones"] = output_months.map(lambda month: accumulated_value_until(accumulated, month, initial_value))
         return output
+
+    def _build_dividend_payments(self, ingresos: Any) -> list[dict[str, Any]]:
+        """Extrae cada pago de dividendo (fecha, empresa) a partir de la etiqueta secundaria
+        (p.ej. "Dividendos, IB") y del comentario (p.ej. "Iberdrola"). Devuelve la lista de pagos
+        individuales sin agregar, para que cada pantalla pueda acumularlos hasta la fecha que le
+        interese (mes seleccionado en Finanzas, fecha de la foto en Cartera). No depende de una
+        lista fija de empresas: cualquier etiqueta nueva que aparezca en el Excel se recoge igual."""
+        required = {"fecha", "categoria", "cantidad", "etiquetas"}
+        if not isinstance(ingresos, pd.DataFrame) or ingresos.empty or not required.issubset(ingresos.columns):
+            return []
+
+        data = ingresos.copy()
+        data["fecha"] = pd.to_datetime(data["fecha"], errors="coerce")
+        data["cantidad"] = pd.to_numeric(data["cantidad"].astype(str).str.replace(",", ".", regex=False), errors="coerce").fillna(0.0)
+        data["comentario"] = data.get("comentario", "").fillna("").astype(str)
+        data = data.dropna(subset=["fecha"])
+        if data.empty:
+            return []
+
+        categories = data["categoria"].map(normalize_text)
+        dividends = data[categories == "interes"].copy()
+        dividends["tag_list"] = dividends["etiquetas"].map(lambda value: [tag.strip() for tag in str(value).split(",")])
+        dividends = dividends[dividends["tag_list"].map(lambda tags: any(normalize_text(tag) == "dividendos" for tag in tags))]
+        if dividends.empty:
+            return []
+
+        def company_tag(tags: list[str]) -> str | None:
+            for tag in tags:
+                if tag and normalize_text(tag) != "dividendos":
+                    return tag
+            return None
+
+        dividends["codigo"] = dividends["tag_list"].map(company_tag)
+        dividends = dividends[dividends["codigo"].notna()]
+        if dividends.empty:
+            return []
+
+        payments = []
+        for row in dividends.sort_values("fecha").itertuples():
+            payments.append(
+                {
+                    "fecha": row.fecha.strftime("%Y-%m-%d"),
+                    "codigo": row.codigo,
+                    "comentario": row.comentario.strip(),
+                    "cantidad": round(float(row.cantidad), 2),
+                }
+            )
+        return payments
 
     def _split_historial(self, historial: Any) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         if isinstance(historial, tuple) and len(historial) == 2:
@@ -166,6 +314,7 @@ class LegacyPipelineAdapter:
             analysis["gastos"] = self._build_expense_analysis(gastos, ingresos)
             analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos, resumen)
             analysis["ingresos"] = self._build_income_analysis(ingresos)
+            analysis["dividendos_pagos"] = self._build_dividend_payments(ingresos)
         return analysis
 
     def _build_income_analysis(self, ingresos: pd.DataFrame) -> dict[str, Any]:
@@ -298,8 +447,8 @@ def normalize_text(value: Any) -> str:
     return text.strip().lower()
 
 
-def accumulated_value_until(series: pd.Series, month: str) -> float:
+def accumulated_value_until(series: pd.Series, month: str, default: float = 0.0) -> float:
     values = series[series.index <= month]
     if values.empty:
-        return 0.0
+        return round(float(default), 2)
     return round(float(values.iloc[-1]), 2)

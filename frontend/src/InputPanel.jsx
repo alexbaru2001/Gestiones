@@ -1,4 +1,4 @@
-import { FileSpreadsheet, FolderOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
+import { Eye, FileSpreadsheet, History, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { formatPercent } from './formatters'
 
 export function InputPanel({
@@ -11,6 +11,8 @@ export function InputPanel({
   hasValidationErrors,
   validationMessages,
   objectivesStatus,
+  processStatus,
+  checkpoint,
   error,
   errorRef,
   onFileChange,
@@ -20,10 +22,11 @@ export function InputPanel({
   onObjectiveRemove,
   onObjectivesLoad,
   onObjectivesSave,
-  onSubmit,
+  onVisualize,
+  onAddToHistory,
 }) {
   return (
-    <form className="panel" onSubmit={onSubmit}>
+    <form className="panel" onSubmit={onVisualize}>
       <div className="panel-header">
         <div>
           <span className="section-kicker">Configuración</span>
@@ -31,6 +34,12 @@ export function InputPanel({
         </div>
         <span className={file ? 'file-status selected' : 'file-status'}>{file ? file.name : 'Sin archivo'}</span>
       </div>
+
+      <p className="checkpoint-status">
+        {checkpoint?.as_of_month
+          ? `Histórico guardado hasta ${checkpoint.as_of_month}. La fecha de inicio debe ser posterior.`
+          : 'Todavía no hay histórico guardado: la primera vez que añadas al histórico se registra desde la fecha de inicio.'}
+      </p>
 
       <label className="file-input">
         <input type="file" accept=".xlsx,.xlsm,.xls" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
@@ -172,10 +181,25 @@ export function InputPanel({
         )}
       </div>
 
-      <button className="primary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
-        <FolderOpen aria-hidden="true" size={18} />
-        {isProcessing ? 'Procesando...' : 'Procesar'}
-      </button>
+      <div className="process-actions">
+        <button className="secondary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
+          <Eye aria-hidden="true" size={18} />
+          {isProcessing ? 'Procesando...' : 'Visualizar'}
+        </button>
+        <button className="primary-button" type="button" onClick={onAddToHistory} disabled={isProcessing || hasValidationErrors}>
+          <History aria-hidden="true" size={18} />
+          {isProcessing ? 'Procesando...' : 'Añadir al histórico'}
+        </button>
+      </div>
+      <p className="process-actions-hint muted-text">
+        "Visualizar" solo muestra el resultado. "Añadir al histórico" lo guarda de forma permanente y no admite meses ya guardados.
+      </p>
+
+      {processStatus && !error && (
+        <p className="status-message" aria-live="polite">
+          {processStatus}
+        </p>
+      )}
 
       {error && (
         <p className="error-message" role="alert" tabIndex="-1" ref={errorRef}>

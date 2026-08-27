@@ -9,5 +9,6 @@ class FinanceProcessingPort(Protocol):
         excel_bytes: bytes,
         params: PipelineConfig,
         objetivos: list[dict] | None = None,
+        checkpoint: dict | None = None,
     ) -> PipelineResult:
         ...

@@ -8,6 +8,7 @@ import { PortfolioPanel } from './PortfolioPanel'
 import { createObjective, objectiveFromApi, objectiveToPayload } from './objectives'
 import {
   filterObjectiveRows,
+  getDividendPayments,
   getHistoryRows,
   getObjectiveNames,
   getObjectiveRows,
@@ -44,9 +45,12 @@ export function App() {
   const [selectedMonth, setSelectedMonth] = useState('')
   const [activeArea, setActiveArea] = useState('finanzas')
   const [isInputOpen, setIsInputOpen] = useState(true)
+  const [processStatus, setProcessStatus] = useState('')
+  const [checkpoint, setCheckpoint] = useState(null)
 
   const latest = result?.historial?.ultimo_mes
   const rows = useMemo(() => getHistoryRows(result), [result])
+  const dividendPayments = useMemo(() => getDividendPayments(result), [result])
   const selectedRow = useMemo(() => getSelectedRow(rows, latest, selectedMonth), [latest, rows, selectedMonth])
   const previousRow = useMemo(() => getPreviousRow(rows, selectedRow), [rows, selectedRow])
   const recentRows = useMemo(() => getRecentRows(rows), [rows])
@@ -70,6 +74,9 @@ export function App() {
 
   useEffect(() => {
     loadObjectives({ silent: true })
+    requestJson('/api/v1/process/checkpoint', {}, '')
+      .then((data) => setCheckpoint(data.result ?? null))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -90,7 +97,7 @@ export function App() {
     }
   }
 
-  const processWorkbook = async (event) => {
+  const processWorkbook = async (event, modo = 'visualizar') => {
     event.preventDefault()
     if (!file) {
       setError('Selecciona un Excel antes de procesar.')
@@ -103,10 +110,12 @@ export function App() {
 
     setIsProcessing(true)
     setError('')
+    setProcessStatus('')
     setResult(null)
 
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('modo', modo)
     const objetivos = activeObjectives.map(objectiveToPayload)
     if (objetivos.length > 0) {
       formData.append('objetivos_json', JSON.stringify(objetivos))
@@ -132,6 +141,21 @@ export function App() {
       setSelectedObjective('all')
       setSelectedMonth(data.result?.historial?.ultimo_mes?.Mes ?? '')
       setIsInputOpen(false)
+      if (modo === 'historico') {
+        setCheckpoint(data.result?.checkpoint ?? null)
+        const nuevos = data.meses_nuevos ?? []
+        const yaGuardados = data.meses_ya_guardados ?? []
+        const hasta = data.result?.checkpoint?.as_of_month ?? data.result?.historial?.ultimo_mes?.Mes ?? ''
+        if (nuevos.length > 0) {
+          setProcessStatus(`Añadidos ${nuevos.length} ${nuevos.length === 1 ? 'mes nuevo' : 'meses nuevos'} (${nuevos.join(', ')}). Histórico hasta ${hasta}.`)
+        } else if (yaGuardados.length > 0) {
+          setProcessStatus(`Esos meses ya estaban guardados, no se ha duplicado nada. Histórico sincronizado hasta ${hasta}.`)
+        } else {
+          setProcessStatus(`Añadido al histórico hasta ${hasta}.`)
+        }
+      } else {
+        setProcessStatus('Vista previa (no se ha guardado en el histórico).')
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -326,6 +350,8 @@ export function App() {
                 hasValidationErrors={hasValidationErrors}
                 validationMessages={validationMessages}
                 objectivesStatus={objectivesStatus}
+                processStatus={processStatus}
+                checkpoint={checkpoint}
                 error={error}
                 errorRef={errorRef}
                 onFileChange={setFile}
@@ -335,7 +361,8 @@ export function App() {
                 onObjectiveRemove={removeObjective}
                 onObjectivesLoad={() => loadObjectives()}
                 onObjectivesSave={saveObjectives}
-                onSubmit={processWorkbook}
+                onVisualize={(event) => processWorkbook(event, 'visualizar')}
+                onAddToHistory={(event) => processWorkbook(event, 'historico')}
               />
             </aside>
           )}
@@ -363,7 +390,7 @@ export function App() {
       ) : activeArea === 'invertir' ? (
         <InvestmentPanel />
       ) : (
-        <PortfolioPanel financeRows={rows} />
+        <PortfolioPanel dividendPayments={dividendPayments} financeRows={rows} />
       )}
     </main>
   )

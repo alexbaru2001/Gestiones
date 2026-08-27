@@ -7,6 +7,7 @@ from backend.domain.investments import analyze_ticker
 from backend.domain.models import PipelineConfig
 from backend.domain.portfolio import UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
+from backend.infrastructure.finance_checkpoint_repository import JsonFinanceCheckpointRepository
 from backend.infrastructure.finance_history_repository import CsvFinanceHistoryRepository
 from backend.infrastructure.objectives_repository import (
     JsonObjectivesRepository,
@@ -20,6 +21,7 @@ app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
 portfolio_repository = LocalPortfolioRepository()
 finance_history_repository = CsvFinanceHistoryRepository()
+finance_checkpoint_repository = JsonFinanceCheckpointRepository()
 
 app.add_middleware(
     CORSMiddleware,
@@ -115,7 +117,10 @@ async def process_workbook(
     porcentaje_inversion: float = 0.1,
     porcentaje_vacaciones: float = 0.05,
     objetivos_json: str | None = Form(default=None),
+    modo: str = Form(default="visualizar"),
 ):
+    if modo not in ("visualizar", "historico"):
+        raise HTTPException(status_code=400, detail="modo debe ser 'visualizar' o 'historico'.")
     if not file.filename.lower().endswith((".xlsx", ".xlsm", ".xls")):
         raise HTTPException(status_code=400, detail="El archivo debe ser Excel (.xlsx/.xlsm/.xls)")
 
@@ -133,15 +138,57 @@ async def process_workbook(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    checkpoint = finance_checkpoint_repository.load()
+    checkpoint_as_of = checkpoint.get("as_of_month") if checkpoint else None
+    fecha_inicio_month = fecha_inicio[:7]
+
+    if checkpoint_as_of and fecha_inicio_month <= checkpoint_as_of:
+        # Repetir o solapar el tramo ya cerrado no necesita continuar los acumuladores desde el
+        # checkpoint: se recalcula igual que si nunca hubiera existido. El paso de guardado más abajo
+        # ya se encarga de no duplicar los meses que ya estén en el histórico (o de sincronizar el
+        # checkpoint si el Excel completo coincide con lo ya guardado, sin escribir nada nuevo).
+        checkpoint = None
+
     use_case = build_process_finance_workbook_use_case()
     try:
         result = use_case.execute(
             excel_bytes=content,
             params=config,
             objetivos=objetivos,
+            checkpoint=checkpoint,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    finance_history_repository.save(result.historial.resumen)
-    return {"ok": True, "result": result.to_dict()}
+    meses_nuevos: list[str] = []
+    meses_ya_guardados: list[str] = []
+    if modo == "historico":
+        computed_rows = result.historial.resumen
+        if not computed_rows:
+            raise HTTPException(status_code=400, detail="No hay ningún mes que procesar en ese rango.")
+        existing_rows = finance_history_repository.load()
+        existing_months = {row.get("Mes") for row in existing_rows}
+        new_rows = [row for row in computed_rows if row.get("Mes") not in existing_months]
+        meses_nuevos = sorted(row.get("Mes") for row in new_rows)
+        meses_ya_guardados = sorted({row.get("Mes") for row in computed_rows if row.get("Mes") in existing_months})
+        if new_rows:
+            merged_rows = sorted(existing_rows + new_rows, key=lambda row: row.get("Mes") or "")
+            finance_history_repository.save(merged_rows)
+        # El checkpoint se sincroniza siempre con el cierre de este cálculo, tanto si había meses
+        # nuevos que añadir como si el Excel solo confirmaba lo que ya estaba guardado (por ejemplo,
+        # la primera vez que se usa este flujo con un histórico que ya existía de antes).
+        if result.checkpoint:
+            finance_checkpoint_repository.save(result.checkpoint)
+
+    return {
+        "ok": True,
+        "result": result.to_dict(),
+        "modo": modo,
+        "meses_nuevos": meses_nuevos,
+        "meses_ya_guardados": meses_ya_guardados,
+    }
+
+
+@app.get("/api/v1/process/checkpoint")
+def get_finance_checkpoint() -> dict[str, Any]:
+    return {"ok": True, "result": finance_checkpoint_repository.load()}

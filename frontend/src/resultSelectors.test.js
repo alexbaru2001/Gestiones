@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  aggregateDividendsByCompany,
   filterObjectiveRows,
+  getDividendPayments,
   getHistoryRows,
   getObjectiveNames,
   getObjectiveRows,
@@ -47,4 +49,33 @@ test('objective selectors filter names and totals', () => {
     gasto: 7,
     liquidacion: 7,
   })
+})
+
+test('getDividendPayments reads the raw payment list and defaults to empty', () => {
+  const payments = [{ fecha: '2024-11-15', codigo: 'IB', comentario: 'Iberdrola', cantidad: 7.57 }]
+  assert.equal(getDividendPayments({ analisis: { dividendos_pagos: payments } }), payments)
+  assert.deepEqual(getDividendPayments({}), [])
+  assert.deepEqual(getDividendPayments(null), [])
+})
+
+test('aggregateDividendsByCompany accumulates only up to the given cutoff', () => {
+  const payments = [
+    { fecha: '2024-10-15', codigo: 'PyG', comentario: 'Procter and Gamber', cantidad: 0.28 },
+    { fecha: '2024-11-05', codigo: 'PyG', comentario: 'Procter and Gamber', cantidad: 3.98 },
+    { fecha: '2024-11-15', codigo: 'IB', comentario: 'Iberdrola', cantidad: 7.57 },
+  ]
+
+  const all = aggregateDividendsByCompany(payments)
+  assert.deepEqual(all.map((row) => [row.empresa, row.total]), [
+    ['Iberdrola', 7.57],
+    ['Procter and Gamber', 4.26],
+  ])
+
+  const untilOctober = aggregateDividendsByCompany(payments, { untilMonth: '2024-10' })
+  assert.deepEqual(untilOctober.map((row) => [row.empresa, row.total, row.pagos]), [['Procter and Gamber', 0.28, 1]])
+
+  const untilNov10 = aggregateDividendsByCompany(payments, { untilDate: '2024-11-10' })
+  assert.deepEqual(untilNov10.map((row) => [row.empresa, row.total]), [['Procter and Gamber', 4.26]])
+
+  assert.deepEqual(aggregateDividendsByCompany(payments, { untilDate: '2024-10-01' }), [])
 })

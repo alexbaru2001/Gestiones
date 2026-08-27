@@ -308,6 +308,9 @@ def crear_historial_cuentas_virtuales(
     output_path=None,  # compatibilidad, no se usa
     objetivos_config=None,  # lista de dicts YA NORMALIZADA o None
     fondo_reserva_snapshot=None,  # dict/Series: 'Cantidad cargada', 'Cantidad del fondo', 'Porcentaje'
+    checkpoint=None,  # dict: 'deuda_acumulada', 'regalos', 'vacaciones', 'inversiones', 'ahorro' — punto de
+    # partida de los acumuladores cuando este tramo continúa un histórico ya cerrado, en vez de arrancar
+    # desde cero. Sin checkpoint, el comportamiento es idéntico al de siempre.
 ):
     """
     Lógica pura: calcula df_resumen y objetivos_df y los devuelve.
@@ -486,17 +489,18 @@ def crear_historial_cuentas_virtuales(
     # -------------------------
     # Inicializaciones (tu lógica)
     # -------------------------
-    deuda_acumulada = 0.0
-    regalos = 0.0
+    checkpoint = checkpoint or {}
+    deuda_acumulada = float(checkpoint.get("deuda_acumulada", 0.0))
+    regalos = float(checkpoint.get("regalos", 0.0))
 
-    vacaciones_inicial = saldos_iniciales.get("Metálico", 0.0)
+    vacaciones_inicial = float(checkpoint.get("vacaciones", saldos_iniciales.get("Metálico", 0.0)))
     vacaciones = vacaciones_inicial
 
     ahorro = 0.0
-    ahorro_inicial = sum(v for k, v in saldos_iniciales.items() if k != "Metálico")
+    ahorro_inicial = float(checkpoint.get("ahorro", sum(v for k, v in saldos_iniciales.items() if k != "Metálico")))
     ahorro += ahorro_inicial
 
-    inversiones = 0.0
+    inversiones = float(checkpoint.get("inversiones", 0.0))
     resumenes = []
     ahorro_emergencia = 0.0
 
@@ -620,7 +624,13 @@ def crear_historial_cuentas_virtuales(
         # -------------------------
         
         if mes_actual == primer_mes_historial:
-            presupuesto_bruto = presupuesto_inicial_mes_1
+            ingreso_mes_anterior_checkpoint = checkpoint.get("ingreso_mes_anterior")
+            if ingreso_mes_anterior_checkpoint is not None:
+                # Continuamos un histórico ya cerrado: el "mes anterior" real viene del checkpoint,
+                # no del valor fijo que solo tiene sentido quando no hay ningún mes previo conocido.
+                presupuesto_bruto = float(ingreso_mes_anterior_checkpoint) * porcentaje_gasto
+            else:
+                presupuesto_bruto = presupuesto_inicial_mes_1
         else:
             presupuesto_bruto = float(ingresos_reales_mensual.get(mes_anterior, 0.0)) * porcentaje_gasto
 
@@ -826,7 +836,18 @@ def crear_historial_cuentas_virtuales(
         ]
     )
 
-    return df_resumen, objetivos_df
+    # Estado de cierre sin redondear, para que un futuro tramo pueda continuar exactamente donde este
+    # se queda (los valores en df_resumen ya vienen redondeados a 2 decimales para mostrar).
+    estado_cierre = {
+        "deuda_acumulada": deuda_acumulada,
+        "regalos": regalos,
+        "vacaciones": vacaciones,
+        "inversiones": inversiones,
+        "ahorro": ahorro,
+        "fondo_cargado": fondo_cargado,
+    }
+
+    return df_resumen, objetivos_df, estado_cierre
 
 
 

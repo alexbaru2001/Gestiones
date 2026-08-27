@@ -4,7 +4,13 @@ from backend.domain.results import HistoryResult, MovementSummary, PipelineResul
 
 
 class FakeFinancePort:
-    def run_pipeline_from_bytes(self, excel_bytes: bytes, params: PipelineConfig, objetivos: list[dict] | None = None):
+    def run_pipeline_from_bytes(
+        self,
+        excel_bytes: bytes,
+        params: PipelineConfig,
+        objetivos: list[dict] | None = None,
+        checkpoint: dict | None = None,
+    ):
         return PipelineResult(
             params=params.to_dict(),
             movimientos=MovementSummary(gastos=1, ingresos=2, transferencias=3, cuentas=4),

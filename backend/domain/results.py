@@ -40,6 +40,7 @@ class PipelineResult:
     movimientos: MovementSummary
     historial: HistoryResult
     analisis: dict[str, Any] | None = None
+    checkpoint: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         data = {
@@ -49,4 +50,6 @@ class PipelineResult:
         }
         if self.analisis is not None:
             data["analisis"] = self.analisis
+        if self.checkpoint is not None:
+            data["checkpoint"] = self.checkpoint
         return data

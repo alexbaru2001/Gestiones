@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
 import { formatDelta, formatMoney } from './formatters'
-import { comparisonRows } from './resultSelectors'
+import { aggregateDividendsByCompany, comparisonRows, getDividendPayments } from './resultSelectors'
 
 const moneyFields = [
   'total',
@@ -144,6 +144,13 @@ function getSavingsAnalysis(result) {
     mensual: [],
     ultimo_mes: null,
   }
+}
+
+function formatDateEs(value) {
+  if (!value) return 's/d'
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return 's/d'
+  return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function getIncomeAnalysis(result) {
@@ -932,6 +939,8 @@ export function ResultsPanel({
   const interestPct = investedMoney > 0 ? (Math.abs(interestAmount) / investedMoney) * 100 : 0
   const investmentDividends = asNumber(selectedRow?.Dividendos)
   const investmentInterest = Math.max(0, interestAmount - investmentDividends)
+  const dividendCompanyBreakdown = aggregateDividendsByCompany(getDividendPayments(result), { untilMonth: selectedRow?.Mes })
+  const dividendCompanyMax = Math.max(1, ...dividendCompanyBreakdown.map((row) => asNumber(row.total)))
 
   return (
     <section className="panel result-panel" aria-busy={isProcessing}>
@@ -1474,6 +1483,41 @@ export function ResultsPanel({
                       seriesB={{ color: '#1f4d3d', label: 'Invertido', values: investmentInvestedValues }}
                     />
                   </div>
+                </section>
+
+                <section className="typology-chart-panel">
+                  <div className="table-toolbar compact-toolbar">
+                    <div>
+                      <h3 className="table-title">Dividendos por empresa</h3>
+                      <span className="muted-text">Acumulado hasta {selectedRow?.Mes ?? 'el periodo seleccionado'}</span>
+                    </div>
+                  </div>
+                  {dividendCompanyBreakdown.length > 0 ? (
+                    <ul className="dividend-company-list">
+                      {dividendCompanyBreakdown.map((row) => (
+                        <li key={row.codigo}>
+                          <div className="dividend-company-row-head">
+                            <span className="dividend-company-name">{row.empresa}</span>
+                            <span className="dividend-company-amount">{formatMoney(row.total)}</span>
+                          </div>
+                          <div className="dividend-company-bar-track">
+                            <div
+                              className="dividend-company-bar-fill"
+                              style={{ width: `${Math.max(4, (asNumber(row.total) / dividendCompanyMax) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="dividend-company-meta">
+                            {row.pagos} {row.pagos === 1 ? 'pago' : 'pagos'} · último el {formatDateEs(row.ultimo_pago)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <strong>Sin dividendos etiquetados</strong>
+                      <span>Etiqueta un ingreso de categoría Interés con "Dividendos" y el nombre de la empresa para verlo aquí.</span>
+                    </div>
+                  )}
                 </section>
               </section>
             )}

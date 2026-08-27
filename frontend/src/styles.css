@@ -5590,3 +5590,135 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---- dividendos por empresa ---- */
+.dividend-company-list {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dividend-company-list li {
+  display: grid;
+  gap: 6px;
+}
+
+.dividend-company-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dividend-company-name {
+  color: var(--color-ink);
+  font-family: "Bitter", ui-serif, serif;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dividend-company-amount {
+  color: var(--color-ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dividend-company-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-line);
+  overflow: hidden;
+}
+
+.dividend-company-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #1f5c6b;
+}
+
+.dividend-company-meta {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.portfolio-panel .dividend-company-bar-fill {
+  background: #b08d57;
+}
+
+.portfolio-panel .dividend-company-name {
+  font-family: "Cormorant Garamond", ui-serif, serif;
+}
+
+.dividend-company-position {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-line);
+  font-size: 12px;
+}
+
+.dividend-company-position .value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.dividend-company-position .yield-positive {
+  color: #2f7a55;
+}
+
+.dividend-company-position .no-match {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+/* ---- histórico: visualizar vs añadir al histórico ---- */
+.checkpoint-status {
+  margin: -4px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+  color: var(--color-ink);
+  font-size: 12.5px;
+}
+
+.process-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  background: var(--color-primary-soft);
+}
+
+.secondary-button:disabled,
+.process-actions .primary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.process-actions-hint {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
