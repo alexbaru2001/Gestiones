@@ -169,20 +169,23 @@ async def process_workbook(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    meses_nuevos: list[str] = []
-    meses_ya_guardados: list[str] = []
+    # El resumen mensual que devuelve el pipeline en ESTE cálculo solo cubre el tramo del Excel
+    # subido (p.ej. solo enero-agosto si es lo único que se sube). Para que el frontend (gráficas de
+    # Tipologías, Presupuesto, Ahorro...) siempre vea el histórico completo, se combina aquí con lo
+    # ya guardado — tanto en "visualizar" (sin persistir nada) como en "historico" (que además persiste).
+    computed_rows = result.historial.resumen
+    if modo == "historico" and not computed_rows:
+        raise HTTPException(status_code=400, detail="No hay ningún mes que procesar en ese rango.")
+    existing_rows = finance_history_repository.load()
+    existing_months = {row.get("Mes") for row in existing_rows}
+    new_rows = [row for row in computed_rows if row.get("Mes") not in existing_months]
+    meses_nuevos = sorted(row.get("Mes") for row in new_rows)
+    meses_ya_guardados = sorted({row.get("Mes") for row in computed_rows if row.get("Mes") in existing_months})
+    display_rows = sorted(existing_rows + new_rows, key=lambda row: row.get("Mes") or "")
+
     if modo == "historico":
-        computed_rows = result.historial.resumen
-        if not computed_rows:
-            raise HTTPException(status_code=400, detail="No hay ningún mes que procesar en ese rango.")
-        existing_rows = finance_history_repository.load()
-        existing_months = {row.get("Mes") for row in existing_rows}
-        new_rows = [row for row in computed_rows if row.get("Mes") not in existing_months]
-        meses_nuevos = sorted(row.get("Mes") for row in new_rows)
-        meses_ya_guardados = sorted({row.get("Mes") for row in computed_rows if row.get("Mes") in existing_months})
         if new_rows:
-            merged_rows = sorted(existing_rows + new_rows, key=lambda row: row.get("Mes") or "")
-            finance_history_repository.save(merged_rows)
+            finance_history_repository.save(display_rows)
         # El checkpoint se sincroniza siempre con el cierre de este cálculo, tanto si había meses
         # nuevos que añadir como si el Excel solo confirmaba lo que ya estaba guardado (por ejemplo,
         # la primera vez que se usa este flujo con un histórico que ya existía de antes).
@@ -200,9 +203,14 @@ async def process_workbook(
             [row for row in transacciones.get("ingresos", []) if row.get("Mes") in meses_nuevos_set]
         )
 
+    result_dict = result.to_dict()
+    result_dict["historial"]["resumen"] = display_rows
+    result_dict["historial"]["meses"] = len(display_rows)
+    result_dict["historial"]["ultimo_mes"] = display_rows[-1] if display_rows else None
+
     return {
         "ok": True,
-        "result": result.to_dict(),
+        "result": result_dict,
         "modo": modo,
         "meses_nuevos": meses_nuevos,
         "meses_ya_guardados": meses_ya_guardados,

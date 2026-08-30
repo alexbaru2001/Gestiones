@@ -416,7 +416,7 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
         ) : null}
       </div>
 
-      {!selectedSnapshot ? importSection : null}
+      {importSection}
 
       {status ? <p className="status-message">{status}</p> : null}
       {error ? <p className="error-message">{error}</p> : null}
@@ -803,8 +803,6 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
           </section>
 
           <h3 className="portfolio-section-title">Gestión de datos</h3>
-
-          {importSection}
 
           <section className="portfolio-card">
             <div className="portfolio-chart-header">

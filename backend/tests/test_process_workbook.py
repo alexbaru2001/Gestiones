@@ -1,11 +1,30 @@
 from io import BytesIO
 
 import pandas as pd
+import pytest
 from fastapi.testclient import TestClient
 
 import backend.main as backend_main
+from backend.infrastructure.finance_checkpoint_repository import JsonFinanceCheckpointRepository
+from backend.infrastructure.finance_history_repository import CsvFinanceHistoryRepository
 from backend.infrastructure.objectives_repository import JsonObjectivesRepository
+from backend.infrastructure.transaction_history_repository import CsvTransactionHistoryRepository
 from backend.main import app
+
+
+@pytest.fixture(autouse=True)
+def _isolated_finance_repositories(tmp_path, monkeypatch):
+    """Cada test de este archivo llama a /api/v1/process directamente sobre las instancias por
+    defecto de backend.main. Sin aislar los repositorios aquí, un test acabaría leyendo/escribiendo
+    el historial.csv y checkpoint reales del repo (que además ya tienen datos del usuario committeados),
+    contaminando los resultados con meses que el propio test nunca subió."""
+    monkeypatch.setattr(backend_main, "finance_history_repository", CsvFinanceHistoryRepository(tmp_path / "historial.csv"))
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json"))
+    monkeypatch.setattr(
+        backend_main,
+        "transaction_history_repository",
+        CsvTransactionHistoryRepository(gastos_path=tmp_path / "gastos.csv", ingresos_path=tmp_path / "ingresos.csv"),
+    )
 
 
 def _sample_workbook() -> BytesIO:
