@@ -1,34 +1,37 @@
-import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ListChecks, RefreshCw, Search, Star, Trash2 } from 'lucide-react'
 import { requestJson } from './api'
-
-const metricGroups = [
-  ['rpd_ttm', 'RPD TTM', '%'],
-  ['rpd_forward', 'RPD forward', '%'],
-  ['dgr5', 'DGR 5 años', '%'],
-  ['dgr10', 'DGR 10 años', '%'],
-  ['payout', 'Payout', '%'],
-  ['per_ttm', 'PER', ''],
-  ['de_ratio', 'Deuda/Patrimonio', 'x'],
-  ['roe', 'ROE', '%'],
-  ['ev_ebitda', 'EV/EBITDA', 'x'],
-  ['fcf_yield', 'FCF yield', '%'],
-  ['streak_years', 'Racha pagos', 'años'],
-  ['streak_growth', 'Racha crecimiento', 'años'],
-]
-
-const ratioExplanations = [
-  ['RPD TTM', 'Rentabilidad por dividendo pagada durante los últimos 12 meses. Sirve para medir renta actual.'],
-  ['RPD forward', 'Rentabilidad esperada usando el dividendo anual previsto. Es útil, pero depende de estimaciones.'],
-  ['DGR 5/10 años', 'Crecimiento anual compuesto del dividendo. Para dividendos crecientes interesa que sea positivo y estable.'],
-  ['Payout', 'Porcentaje del beneficio destinado a dividendos. Si es demasiado alto, el dividendo tiene menos margen.'],
-  ['PER', 'Precio dividido entre beneficio por acción. Ayuda a valorar si el precio parece exigente frente a beneficios.'],
-  ['Deuda/Patrimonio', 'Relación entre deuda y fondos propios. Menor deuda suele dar más margen en crisis.'],
-  ['ROE', 'Rentabilidad sobre fondos propios. Mide la calidad con la que la empresa convierte capital en beneficios.'],
-  ['EV/EBITDA', 'Valor de empresa frente al EBITDA. Complementa al PER, especialmente si hay deuda relevante.'],
-  ['FCF yield', 'Flujo de caja libre frente a capitalización. Indica cuánto efectivo genera el negocio respecto al precio.'],
-  ['Rachas', 'Años consecutivos pagando o aumentando dividendo. Dan contexto sobre disciplina y estabilidad histórica.'],
-]
+import {
+  evaluateMetric,
+  extractPortfolioTickers,
+  formatBand,
+  getBestTickerForMetric,
+  getMetricBand,
+  getScoreTrend,
+  getValuation,
+  getWeakestBlock,
+  markDividendCuts,
+  metricGroups,
+  metricHelp,
+  ratioExplanations,
+  scoreBlockWeights,
+} from './investmentMetrics'
+import {
+  buildReviewRows,
+  detectReviewChanges,
+  splitAnalyzablePositions,
+  summarizeReview,
+} from './portfolioReview'
+import {
+  DEFAULT_FINALISTS,
+  DEFAULT_TOP,
+  chunkTickers,
+  describeProgress,
+  getValuationLabel,
+  rankByPrescore,
+  rankByScore,
+  toExplorationRow,
+} from './exploration'
 
 const scoreBlocks = ['Dividendo', 'Solidez', 'Valoración', 'Historial']
 const periodOptions = [
@@ -52,6 +55,13 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('es-ES', { month: 'short', year: 'numeric' }).format(new Date(value))
 }
 
+function formatDateTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
 function getBarWidth(value, max) {
   if (!max || !Number.isFinite(max)) return '0%'
   return `${Math.max(0, Math.min(100, (Number(value) / max) * 100))}%`
@@ -63,42 +73,339 @@ function getScoreClass(score) {
   return 'bad'
 }
 
-export function InvestmentPanel() {
+export function InvestmentPanel({ autoStartReview = false, onReviewStarted }) {
   const [ticker, setTicker] = useState('KO')
   const [result, setResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [period, setPeriod] = useState('1y')
   const [error, setError] = useState('')
 
+  const [mode, setMode] = useState('analizar')
+  const [suggestions, setSuggestions] = useState([])
+  const [areSuggestionsOpen, setAreSuggestionsOpen] = useState(false)
+  const [watchlist, setWatchlist] = useState([])
+  const [portfolioTickers, setPortfolioTickers] = useState([])
+  const [compareSelection, setCompareSelection] = useState([])
+  const [comparison, setComparison] = useState(null)
+  const [isComparing, setIsComparing] = useState(false)
+  const [portfolioSnapshot, setPortfolioSnapshot] = useState(null)
+  const [review, setReview] = useState(null)
+  const [reviewProgress, setReviewProgress] = useState(null)
+  const [universes, setUniverses] = useState([])
+  const [savedExplorations, setSavedExplorations] = useState({})
+  const [universeKey, setUniverseKey] = useState('sp500')
+  const [exploration, setExploration] = useState(null)
+  const [exploreProgress, setExploreProgress] = useState(null)
+  const searchBoxRef = useRef(null)
+
+  const dividendRows = useMemo(() => markDividendCuts(result?.dividends_by_year ?? []), [result])
   const dividendMax = useMemo(() => {
-    const values = result?.dividends_by_year?.map((item) => Number(item.amount)).filter(Number.isFinite) ?? []
+    const values = dividendRows.map((item) => Number(item.amount)).filter(Number.isFinite)
     return Math.max(...values, 0)
-  }, [result])
-
+  }, [dividendRows])
   const priceRows = useMemo(() => filterPriceRows(result?.price_history ?? [], period), [period, result])
+  const valuation = useMemo(() => getValuation(result?.metrics), [result])
+  const weakestBlock = useMemo(() => getWeakestBlock(result?.breakdown), [result])
+  const portfolioSplit = useMemo(() => splitAnalyzablePositions(portfolioSnapshot), [portfolioSnapshot])
+  const reviewRows = useMemo(() => buildReviewRows(review?.positions ?? []), [review])
+  const reviewSummary = useMemo(() => summarizeReview(review?.positions ?? []), [review])
+  const reviewChanges = useMemo(() => detectReviewChanges(review?.positions ?? []), [review])
+  const watchedTicker = useMemo(
+    () => watchlist.find((entry) => entry.ticker === result?.ticker) ?? null,
+    [result, watchlist],
+  )
 
-  const analyzeTicker = async (event) => {
-    event.preventDefault()
-    const cleanTicker = ticker.trim().toUpperCase()
-    if (!cleanTicker) {
-      setError('Indica un ticker para analizar.')
+  const loadWatchlist = useCallback(async () => {
+    try {
+      const data = await requestJson('/api/v1/investments/watchlist', {}, 'No se pudo cargar el seguimiento')
+      setWatchlist(data.result ?? [])
+    } catch {
+      setWatchlist([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadWatchlist()
+    requestJson('/api/v1/portfolio', {}, 'No se pudo cargar la cartera')
+      .then((data) => {
+        setPortfolioSnapshot(data.result)
+        setPortfolioTickers(extractPortfolioTickers(data.result))
+      })
+      .catch(() => setPortfolioTickers([]))
+    requestJson('/api/v1/investments/portfolio-review', {}, 'No se pudo cargar la revisión')
+      .then((data) => setReview(data.result))
+      .catch(() => setReview(null))
+    requestJson('/api/v1/investments/universes', {}, 'No se pudieron cargar los universos')
+      .then((data) => {
+        setUniverses(data.result?.universes ?? [])
+        setSavedExplorations(data.result?.explorations ?? {})
+      })
+      .catch(() => setUniverses([]))
+  }, [loadWatchlist])
+
+  // Búsqueda por nombre con retardo: antes había que saberse el ticker exacto ("ROVI.MC").
+  useEffect(() => {
+    const query = ticker.trim()
+    if (query.length < 2 || !areSuggestionsOpen) {
+      setSuggestions([])
+      return undefined
+    }
+    const timer = setTimeout(() => {
+      requestJson(`/api/v1/investments/search?q=${encodeURIComponent(query)}`, {}, 'No se pudo buscar')
+        .then((data) => setSuggestions(data.result ?? []))
+        .catch(() => setSuggestions([]))
+    }, 350)
+    return () => clearTimeout(timer)
+  }, [areSuggestionsOpen, ticker])
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(event.target)) setAreSuggestionsOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [])
+
+  const analyze = useCallback(
+    async (requestedTicker, { refresh = false } = {}) => {
+      const cleanTicker = String(requestedTicker ?? '').trim().toUpperCase()
+      if (!cleanTicker) {
+        setError('Indica un ticker para analizar.')
+        return
+      }
+      setMode('analizar')
+      setAreSuggestionsOpen(false)
+      setIsLoading(true)
+      setError('')
+      try {
+        const data = await requestJson(
+          `/api/v1/investments/analyze?ticker=${encodeURIComponent(cleanTicker)}${refresh ? '&refresh=true' : ''}`,
+          {},
+          'No se pudo analizar el ticker',
+        )
+        setResult(data.result)
+        setTicker(data.result?.ticker ?? cleanTicker)
+        loadWatchlist()
+      } catch (err) {
+        setError(err.message)
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [loadWatchlist],
+  )
+
+  const toggleWatch = async (entryTicker, analysis = null) => {
+    const key = String(entryTicker ?? '').trim().toUpperCase()
+    if (!key) return
+    const isWatched = watchlist.some((entry) => entry.ticker === key)
+    try {
+      const data = isWatched
+        ? await requestJson(`/api/v1/investments/watchlist/${encodeURIComponent(key)}`, { method: 'DELETE' }, 'No se pudo quitar del seguimiento')
+        : await requestJson(
+            '/api/v1/investments/watchlist',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ticker: key, analysis }),
+            },
+            'No se pudo guardar en el seguimiento',
+          )
+      setWatchlist(data.result ?? [])
+      setCompareSelection((previous) => previous.filter((item) => item !== key || !isWatched))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const runPortfolioReview = useCallback(
+    async ({ refresh = false } = {}) => {
+      const positions = portfolioSplit.analyzable
+      if (!positions.length) {
+        setError('No hay posiciones con ticker que analizar. Importa una foto de cartera primero.')
+        return
+      }
+      setMode('cartera')
+      setError('')
+      setReviewProgress({ done: 0, total: positions.length, ticker: positions[0].ticker, failed: [] })
+
+      const failed = []
+      let latest = review
+      // Una posición cada vez: así se puede ir informando del avance y un fallo suelto no tumba
+      // la revisión entera, como pasaría con una única petición de medio minuto.
+      for (const [index, position] of positions.entries()) {
+        setReviewProgress({ done: index, total: positions.length, ticker: position.ticker, failed: [...failed] })
+        try {
+          const analysis = await requestJson(
+            `/api/v1/investments/analyze?ticker=${encodeURIComponent(position.ticker)}${refresh ? '&refresh=true' : ''}`,
+            {},
+            `No se pudo analizar ${position.ticker}`,
+          )
+          const saved = await requestJson(
+            '/api/v1/investments/portfolio-review',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ticker: position.ticker, analysis: analysis.result, position }),
+            },
+            `No se pudo guardar la revisión de ${position.ticker}`,
+          )
+          latest = saved.result
+          setReview(saved.result)
+        } catch (err) {
+          failed.push({ ticker: position.ticker, error: err.message })
+        }
+      }
+
+      // Lo vendido deja de revisarse: si no, la nota de la cartera arrastraría posiciones que ya no están.
+      try {
+        const pruned = await requestJson(
+          '/api/v1/investments/portfolio-review/prune',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tickers: positions.map((position) => position.ticker) }),
+          },
+          'No se pudo limpiar la revisión',
+        )
+        latest = pruned.result
+        setReview(pruned.result)
+      } catch {
+        setReview(latest)
+      }
+
+      setReviewProgress({ done: positions.length, total: positions.length, ticker: '', failed })
+    },
+    [portfolioSplit, review],
+  )
+
+  useEffect(() => {
+    if (!autoStartReview || !portfolioSplit.analyzable.length) return
+    onReviewStarted?.()
+    runPortfolioReview()
+    // Solo debe dispararse cuando se llega desde el botón de Cartera y ya hay posiciones cargadas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartReview, portfolioSplit.analyzable.length])
+
+  const selectedUniverse = universes.find((item) => item.key === universeKey) ?? null
+
+  const runExploration = useCallback(async () => {
+    const universe = universes.find((item) => item.key === universeKey)
+    if (!universe) return
+    setMode('explorar')
+    setError('')
+    setExploration(null)
+    setExploreProgress({ phase: 'criba', done: 0, total: universe.size, ticker: '' })
+
+    try {
+      const candidatesResponse = await requestJson(
+        '/api/v1/investments/explore/candidates',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ universe: universeKey }) },
+        'No se pudo preparar el universo',
+      )
+      const candidates = candidatesResponse.result?.candidates ?? []
+      const chunkSize = candidatesResponse.result?.chunk ?? 100
+
+      // Fase 1: criba barata por tandas, para poder ir contando el avance.
+      const screened = []
+      const chunks = chunkTickers(candidates, chunkSize)
+      for (const chunk of chunks) {
+        setExploreProgress({ phase: 'criba', done: screened.length, total: candidates.length, ticker: '' })
+        const response = await requestJson(
+          '/api/v1/investments/explore/screen',
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tickers: chunk }) },
+          'Falló la criba',
+        )
+        screened.push(...(response.result ?? []))
+      }
+
+      // Fase 2: solo las finalistas pasan por el análisis completo, que es lo caro.
+      const finalists = rankByPrescore(screened, DEFAULT_FINALISTS)
+      const analyzed = []
+      const failed = []
+      for (const [index, finalist] of finalists.entries()) {
+        setExploreProgress({ phase: 'analisis', done: index, total: finalists.length, ticker: finalist.ticker })
+        try {
+          const response = await requestJson(
+            `/api/v1/investments/analyze?ticker=${encodeURIComponent(finalist.ticker)}`,
+            {},
+            `No se pudo analizar ${finalist.ticker}`,
+          )
+          analyzed.push(toExplorationRow(response.result, finalist.prescore))
+        } catch (err) {
+          failed.push({ ticker: finalist.ticker, error: err.message })
+        }
+      }
+
+      const results = rankByScore(analyzed, DEFAULT_TOP)
+      const saved = await requestJson(
+        '/api/v1/investments/explore/save',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            universe: universeKey,
+            label: universe.label,
+            approximate: universe.approximate,
+            screened: screened.length,
+            analyzed: analyzed.length,
+            results,
+          }),
+        },
+        'No se pudo guardar la exploración',
+      )
+      setExploration({ ...saved.result, failed })
+      setSavedExplorations((previous) => ({ ...previous, [universeKey]: saved.result }))
+      setExploreProgress(null)
+    } catch (err) {
+      setError(err.message)
+      setExploreProgress(null)
+    }
+  }, [universeKey, universes])
+
+  const refreshUniverse = async () => {
+    try {
+      await requestJson(
+        `/api/v1/investments/universes/${encodeURIComponent(universeKey)}/refresh`,
+        { method: 'POST' },
+        'No se pudo refrescar la lista',
+      )
+      const data = await requestJson('/api/v1/investments/universes', {}, 'No se pudieron cargar los universos')
+      setUniverses(data.result?.universes ?? [])
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const toggleCompare = (entryTicker) => {
+    setCompareSelection((previous) =>
+      previous.includes(entryTicker)
+        ? previous.filter((item) => item !== entryTicker)
+        : previous.length >= 4
+          ? previous
+          : [...previous, entryTicker],
+    )
+  }
+
+  const runComparison = async (refresh = false) => {
+    if (compareSelection.length < 2) {
+      setError('Elige al menos dos tickers para comparar.')
       return
     }
-
-    setIsLoading(true)
+    setMode('comparar')
+    setIsComparing(true)
     setError('')
     try {
       const data = await requestJson(
-        `/api/v1/investments/analyze?ticker=${encodeURIComponent(cleanTicker)}`,
+        `/api/v1/investments/compare?tickers=${encodeURIComponent(compareSelection.join(','))}${refresh ? '&refresh=true' : ''}`,
         {},
-        'No se pudo analizar el ticker',
+        'No se pudo comparar',
       )
-      setResult(data.result)
-      setTicker(data.result?.ticker ?? cleanTicker)
+      setComparison(data.result)
     } catch (err) {
       setError(err.message)
     } finally {
-      setIsLoading(false)
+      setIsComparing(false)
     }
   }
 
@@ -110,12 +417,78 @@ export function InvestmentPanel() {
           <h2>Invertir</h2>
           <p>Dividendos, valoración y solidez por ticker</p>
         </div>
+        <div className="investment-mode-tabs" role="tablist" aria-label="Modo de análisis">
+          <button
+            className={mode === 'analizar' ? 'active' : ''}
+            role="tab"
+            aria-selected={mode === 'analizar'}
+            type="button"
+            onClick={() => setMode('analizar')}
+          >
+            Analizar
+          </button>
+          <button
+            className={mode === 'comparar' ? 'active' : ''}
+            role="tab"
+            aria-selected={mode === 'comparar'}
+            type="button"
+            onClick={() => setMode('comparar')}
+          >
+            Comparar {compareSelection.length ? `(${compareSelection.length})` : ''}
+          </button>
+          <button
+            className={mode === 'explorar' ? 'active' : ''}
+            role="tab"
+            aria-selected={mode === 'explorar'}
+            type="button"
+            onClick={() => setMode('explorar')}
+          >
+            Explorar
+          </button>
+          <button
+            className={mode === 'cartera' ? 'active' : ''}
+            role="tab"
+            aria-selected={mode === 'cartera'}
+            type="button"
+            onClick={() => setMode('cartera')}
+          >
+            Mi cartera
+          </button>
+        </div>
       </div>
 
-      <form className="ticker-form" onSubmit={analyzeTicker}>
-        <label>
-          Ticker
-          <input value={ticker} onChange={(event) => setTicker(event.target.value)} placeholder="KO, JNJ, ROVI.MC..." />
+      <form
+        className="ticker-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          analyze(ticker)
+        }}
+      >
+        <label className="ticker-search" ref={searchBoxRef}>
+          Empresa o ticker
+          <input
+            value={ticker}
+            onChange={(event) => {
+              setTicker(event.target.value)
+              setAreSuggestionsOpen(true)
+            }}
+            onFocus={() => setAreSuggestionsOpen(true)}
+            placeholder="Iberdrola, Coca-Cola, ROVI.MC..."
+            autoComplete="off"
+          />
+          {areSuggestionsOpen && suggestions.length ? (
+            <ul className="ticker-suggestions">
+              {suggestions.map((item) => (
+                <li key={item.ticker}>
+                  <button type="button" onClick={() => analyze(item.ticker)}>
+                    <strong>{item.ticker}</strong>
+                    <span>{item.name}</span>
+                    <small>{[item.exchange, item.sector].filter(Boolean).join(' · ')}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </label>
         <button className="primary-button inline-primary" type="submit" disabled={isLoading}>
           <Search aria-hidden="true" size={18} />
@@ -123,16 +496,81 @@ export function InvestmentPanel() {
         </button>
       </form>
 
-      {error ? <p className="error-message">{error}</p> : null}
-
-      {!result && !isLoading ? (
-        <div className="empty-state compact-empty">
-          <strong>Sin ticker cargado</strong>
-          <span>Busca una empresa para ver métricas, score, dividendos y precio reciente.</span>
+      {portfolioSplit.analyzable.length ? (
+        <div className="portfolio-shortcuts">
+          <button
+            className="primary-button inline-primary review-button"
+            type="button"
+            disabled={Boolean(reviewProgress && reviewProgress.done < reviewProgress.total)}
+            onClick={() => runPortfolioReview()}
+          >
+            <ListChecks aria-hidden="true" size={17} />
+            Analizar toda la cartera ({portfolioSplit.analyzable.length})
+          </button>
+          <span className="muted-text">En tu cartera:</span>
+          {portfolioTickers.map((item) => (
+            <button key={item.ticker} type="button" title={item.name} onClick={() => analyze(item.ticker)}>
+              {item.ticker}
+            </button>
+          ))}
         </div>
       ) : null}
 
-      {result ? (
+      {error ? <p className="error-message">{error}</p> : null}
+
+      {mode !== 'cartera' && mode !== 'explorar' ? (
+      <WatchlistTable
+        entries={watchlist}
+        selection={compareSelection}
+        onAnalyze={analyze}
+        onRemove={(entryTicker) => toggleWatch(entryTicker)}
+        onToggleCompare={toggleCompare}
+        onCompare={() => runComparison(false)}
+        isComparing={isComparing}
+      />
+      ) : null}
+
+      {mode === 'comparar' ? (
+        <ComparisonTable comparison={comparison} onAnalyze={analyze} isLoading={isComparing} />
+      ) : null}
+
+      {mode === 'explorar' ? (
+        <UniverseExplorer
+          exploration={exploration ?? savedExplorations[universeKey] ?? null}
+          onAnalyze={analyze}
+          onExplore={runExploration}
+          onRefreshMembers={refreshUniverse}
+          onSelect={(key) => {
+            setUniverseKey(key)
+            setExploration(null)
+          }}
+          progress={exploreProgress}
+          selected={selectedUniverse}
+          universes={universes}
+        />
+      ) : null}
+
+      {mode === 'cartera' ? (
+        <PortfolioReview
+          changes={reviewChanges}
+          lastReview={review?.last_review}
+          onAnalyze={analyze}
+          onRefresh={() => runPortfolioReview({ refresh: true })}
+          progress={reviewProgress}
+          rows={reviewRows}
+          split={portfolioSplit}
+          summary={reviewSummary}
+        />
+      ) : null}
+
+      {mode === 'analizar' && !result && !isLoading ? (
+        <div className="empty-state compact-empty">
+          <strong>Sin ticker cargado</strong>
+          <span>Busca una empresa por nombre o pulsa una de tu cartera para ver métricas, score y dividendos.</span>
+        </div>
+      ) : null}
+
+      {mode === 'analizar' && result ? (
         <div className="investment-dashboard">
           <header className="investment-hero">
             <div>
@@ -142,12 +580,38 @@ export function InvestmentPanel() {
                 {result.sector || 'Sector no disponible'} · {result.exchange?.name || 'Bolsa no disponible'} ·{' '}
                 {result.exchange?.currency || 'Divisa no disponible'}
               </p>
+              <div className="investment-hero-actions">
+                <button
+                  className={watchedTicker ? 'watch-button is-watched' : 'watch-button'}
+                  type="button"
+                  onClick={() => toggleWatch(result.ticker, result)}
+                >
+                  <Star aria-hidden="true" size={15} />
+                  {watchedTicker ? 'En seguimiento' : 'Seguir'}
+                </button>
+                <button className="watch-button" type="button" onClick={() => analyze(result.ticker, { refresh: true })}>
+                  <RefreshCw aria-hidden="true" size={15} />
+                  Actualizar
+                </button>
+                {result.cached_at ? <span className="muted-text">Datos de {formatDateTime(result.cached_at)}</span> : null}
+              </div>
             </div>
-            <article className={`score-card ${getScoreClass(result.score)}`}>
-              <span>Score</span>
-              <strong>{formatNumber(result.score)}/100</strong>
-              <small>{result.recommendation}</small>
-            </article>
+            <div className="investment-hero-score">
+              <article className={`score-card ${getScoreClass(result.score)}`}>
+                <span>Score</span>
+                <strong>{formatNumber(result.score)}/100</strong>
+                <small>{result.recommendation}</small>
+              </article>
+              {result.flags?.length ? (
+                <section className="warning-panel hero-flags">
+                  <strong>Banderas rojas</strong>
+                  {result.flags.map((flag) => (
+                    <span key={flag}>{flag}</span>
+                  ))}
+                </section>
+              ) : null}
+              <ScoreTrend entry={watchedTicker} />
+            </div>
           </header>
 
           <div className="investment-kpis">
@@ -155,20 +619,49 @@ export function InvestmentPanel() {
               <span>Precio</span>
               <strong>{formatNumber(result.price, result.exchange?.currency)}</strong>
             </article>
-            {metricGroups.map(([key, label, suffix]) => (
-              <article key={key}>
-                <span>{label}</span>
-                <strong>{formatNumber(result.metrics?.[key], suffix)}</strong>
-              </article>
-            ))}
+            {metricGroups.map(([key, label, suffix]) => {
+              const band = getMetricBand(key, result.rules)
+              const state = evaluateMetric(result.metrics?.[key], band)
+              return (
+                <article className={state ? `kpi-${state}` : undefined} key={key} title={metricHelp[key]}>
+                  <span>{label}</span>
+                  <strong>{formatNumber(result.metrics?.[key], suffix)}</strong>
+                  {band ? <small>{formatBand(band, suffix === 'x' ? '' : suffix)}</small> : null}
+                </article>
+              )
+            })}
           </div>
 
-          {result.flags?.length ? (
-            <section className="warning-panel">
-              <strong>Banderas rojas</strong>
-              {result.flags.map((flag) => (
-                <span key={flag}>{flag}</span>
-              ))}
+          {valuation ? (
+            <section className="investment-card valuation-card">
+              <h3>Valoración por dividendo</h3>
+              <div className="valuation-grid">
+                <article>
+                  <span>RPD actual</span>
+                  <strong>{formatNumber(valuation.current, '%')}</strong>
+                </article>
+                <article>
+                  <span>Su media de 5 años</span>
+                  <strong>{formatNumber(valuation.average, '%')}</strong>
+                </article>
+                <article className={valuation.verdict === 'barata' ? 'kpi-on' : valuation.verdict === 'cara' ? 'kpi-off' : undefined}>
+                  <span>Frente a su media</span>
+                  <strong>
+                    {valuation.difference >= 0 ? '+' : ''}
+                    {formatNumber(valuation.difference, 'pp')}
+                  </strong>
+                  <small>cotiza {valuation.verdict}</small>
+                </article>
+                <article>
+                  <span>Precio de referencia</span>
+                  <strong>{formatNumber(valuation.referencePrice, result.exchange?.currency)}</strong>
+                  <small>al que daría su RPD media</small>
+                </article>
+              </div>
+              <p className="muted-text">
+                El precio de referencia es orientativo: solo dice a qué precio el dividendo actual rendiría lo que ha
+                rendido de media estos cinco años. No incorpora crecimiento ni riesgo del negocio.
+              </p>
             </section>
           ) : null}
 
@@ -176,7 +669,9 @@ export function InvestmentPanel() {
             <div className="chart-header">
               <div>
                 <h3>Precio histórico</h3>
-                <span>{priceRows.length ? `${formatDate(priceRows[0].date)} - ${formatDate(priceRows.at(-1).date)}` : 'Sin datos'}</span>
+                <span>
+                  {priceRows.length ? `${formatDate(priceRows[0].date)} - ${formatDate(priceRows.at(-1).date)}` : 'Sin datos'}
+                </span>
               </div>
               <div className="period-tabs">
                 {periodOptions.map(([key, label]) => (
@@ -192,17 +687,13 @@ export function InvestmentPanel() {
           <div className="investment-analysis-grid">
             <section className="investment-card">
               <h3>Desglose del score</h3>
-              <div className="score-breakdown">
-                {scoreBlocks.map((block) => (
-                  <div className="score-row" key={block}>
-                    <span>{block}</span>
-                    <div className="score-bar">
-                      <span style={{ width: getBarWidth(result.breakdown?.[block], 40) }} />
-                    </div>
-                    <strong>{formatNumber(result.breakdown?.[block])}</strong>
-                  </div>
-                ))}
-              </div>
+              {weakestBlock && weakestBlock.lost > 0 ? (
+                <p className="muted-text">
+                  Donde más puntos pierde: <strong>{weakestBlock.block}</strong> ({formatNumber(weakestBlock.lost)} de{' '}
+                  {weakestBlock.weight} posibles).
+                </p>
+              ) : null}
+              <ScoreBreakdown breakdown={result.breakdown} details={result.details} rules={result.rules} />
             </section>
 
             <section className="investment-card">
@@ -213,10 +704,10 @@ export function InvestmentPanel() {
 
           <section className="investment-card">
             <h3>Dividendos anuales</h3>
-            {result.dividends_by_year?.length ? (
+            {dividendRows.length ? (
               <div className="dividend-bars">
-                {result.dividends_by_year.slice(-12).map((item) => (
-                  <article key={item.year}>
+                {dividendRows.slice(-12).map((item) => (
+                  <article className={`trend-${item.trend}`} key={item.year}>
                     <span>{item.year}</span>
                     <div>
                       <span style={{ width: getBarWidth(item.amount, dividendMax) }} />
@@ -229,35 +720,604 @@ export function InvestmentPanel() {
               <p className="muted-text">Sin histórico de dividendos disponible.</p>
             )}
           </section>
-
-          <section className="investment-card">
-            <h3>Criterios por bloque</h3>
-            <div className="criteria-grid">
-              {scoreBlocks.map((block) => (
-                <article key={block}>
-                  <strong>{block}</strong>
-                  {(result.details?.[block] ?? []).map((item) => (
-                    <span key={`${block}-${item.metric}`}>
-                      {item.metric}: {formatNumber(item.value)} · {item.range} · score {formatNumber(item.subscore)}
-                    </span>
-                  ))}
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="investment-card">
-            <h3>Guía de ratios</h3>
-            <div className="ratio-guide-grid">
-              {ratioExplanations.map(([label, text]) => (
-                <article key={label}>
-                  <strong>{label}</strong>
-                  <span>{text}</span>
-                </article>
-              ))}
-            </div>
-          </section>
         </div>
+      ) : null}
+
+      <RatioGuide />
+    </section>
+  )
+}
+
+function RatioGuide() {
+  const [isOpen, setIsOpen] = useState(true)
+
+  return (
+    <section className="investment-card ratio-guide-card">
+      <div className="chart-header">
+        <div>
+          <h3>Guía de ratios</h3>
+          <span>Qué mide cada cifra del panel</span>
+        </div>
+        <button className="watch-button" type="button" aria-expanded={isOpen} onClick={() => setIsOpen(!isOpen)}>
+          {isOpen ? 'Ocultar' : 'Mostrar'}
+        </button>
+      </div>
+      {isOpen ? (
+        <div className="ratio-guide-grid">
+          {ratioExplanations.map(([label, text]) => (
+            <article key={label}>
+              <strong>{label}</strong>
+              <span>{text}</span>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function ScoreTrend({ entry }) {
+  const trend = useMemo(() => getScoreTrend(entry?.history ?? []), [entry])
+  if (!trend) return null
+  const direction = trend.delta > 0 ? 'up' : trend.delta < 0 ? 'down' : 'flat'
+  return (
+    <p className={`score-trend trend-${direction}`}>
+      {trend.delta >= 0 ? '+' : ''}
+      {formatNumber(trend.delta)} puntos desde {trend.since}
+    </p>
+  )
+}
+
+function ScoreBreakdown({ breakdown, details, rules }) {
+  const [openBlock, setOpenBlock] = useState('')
+  return (
+    <div className="score-breakdown">
+      {scoreBlocks.map((block) => {
+        const isOpen = openBlock === block
+        const rows = details?.[block] ?? []
+        return (
+          <div className={isOpen ? 'score-row is-open' : 'score-row'} key={block}>
+            <button type="button" aria-expanded={isOpen} onClick={() => setOpenBlock(isOpen ? '' : block)}>
+              <span>{block}</span>
+              <div className="score-bar">
+                <span style={{ width: getBarWidth(breakdown?.[block], scoreBlockWeights[block]) }} />
+              </div>
+              <strong>
+                {formatNumber(breakdown?.[block])}/{scoreBlockWeights[block]}
+              </strong>
+            </button>
+            {isOpen ? (
+              <ul className="score-criteria">
+                {rows.length ? (
+                  rows.map((item) => (
+                    <li key={`${block}-${item.metric}`}>
+                      <span className="criteria-name">{item.metric}</span>
+                      <span className="criteria-value">{formatNumber(item.value)}</span>
+                      <span className="criteria-range">{item.range}</span>
+                      <span className="criteria-score">{formatNumber(item.subscore)}</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="muted-text">Sin criterios disponibles para este bloque.</li>
+                )}
+              </ul>
+            ) : null}
+          </div>
+        )
+      })}
+      {rules ? <p className="muted-text">Umbrales aplicados según el sector de la empresa.</p> : null}
+    </div>
+  )
+}
+
+function WatchlistTable({ entries, selection, onAnalyze, onRemove, onToggleCompare, onCompare, isComparing }) {
+  if (!entries.length) {
+    return (
+      <section className="investment-card watchlist-card">
+        <div className="chart-header">
+          <div>
+            <h3>Seguimiento</h3>
+            <span>Guarda una empresa con "Seguir" y quedará aquí con su puntuación</span>
+          </div>
+        </div>
+        <p className="muted-text">Todavía no sigues ninguna empresa.</p>
+      </section>
+    )
+  }
+
+  return (
+    <section className="investment-card watchlist-card">
+      <div className="chart-header">
+        <div>
+          <h3>Seguimiento</h3>
+          <span>{entries.length} empresas guardadas · marca 2 a 4 para compararlas</span>
+        </div>
+        <button
+          className="watch-button"
+          type="button"
+          disabled={selection.length < 2 || isComparing}
+          onClick={onCompare}
+        >
+          {isComparing ? 'Comparando...' : `Comparar (${selection.length})`}
+        </button>
+      </div>
+      <div className="table-wrap">
+        <table className="watchlist-table">
+          <thead>
+            <tr>
+              <th aria-label="Comparar" />
+              <th>Ticker</th>
+              <th>Empresa</th>
+              <th className="num">Score</th>
+              <th className="num">RPD</th>
+              <th className="num">Precio</th>
+              <th>Revisado</th>
+              <th aria-label="Quitar" />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => {
+              const trend = getScoreTrend(entry.history ?? [])
+              return (
+                <tr key={entry.ticker}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selection.includes(entry.ticker)}
+                      onChange={() => onToggleCompare(entry.ticker)}
+                      aria-label={`Comparar ${entry.ticker}`}
+                    />
+                  </td>
+                  <td>
+                    <button className="link-button" type="button" onClick={() => onAnalyze(entry.ticker)}>
+                      {entry.ticker}
+                    </button>
+                  </td>
+                  <td>{entry.name}</td>
+                  <td className="num">
+                    {Number.isFinite(Number(entry.last_score)) ? (
+                      <span className={`score-pill ${getScoreClass(Number(entry.last_score))}`}>
+                        {formatNumber(entry.last_score)}
+                      </span>
+                    ) : (
+                      's/d'
+                    )}
+                    {trend && trend.delta !== 0 ? (
+                      <small className={trend.delta > 0 ? 'trend-up' : 'trend-down'}>
+                        {trend.delta > 0 ? '+' : ''}
+                        {formatNumber(trend.delta)}
+                      </small>
+                    ) : null}
+                  </td>
+                  <td className="num">{formatNumber(entry.last_rpd, '%')}</td>
+                  <td className="num">{formatNumber(entry.last_price, entry.currency)}</td>
+                  <td>{entry.last_checked ?? 'nunca'}</td>
+                  <td>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`Quitar ${entry.ticker} del seguimiento`}
+                      onClick={() => onRemove(entry.ticker)}
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+
+
+function UniverseExplorer({ exploration, onAnalyze, onExplore, onRefreshMembers, onSelect, progress, selected, universes }) {
+  const isRunning = Boolean(progress)
+  const results = exploration?.results ?? []
+  const failed = exploration?.failed ?? []
+
+  return (
+    <div className="portfolio-review">
+      <section className="investment-card">
+        <div className="chart-header">
+          <div>
+            <h3>Explorar un universo</h3>
+            <span>Criba rápida de todo el índice y análisis a fondo de las {DEFAULT_FINALISTS} mejores</span>
+          </div>
+        </div>
+
+        <div className="universe-picker" role="radiogroup" aria-label="Universo a explorar">
+          {universes.map((universe) => (
+            <button
+              aria-checked={selected?.key === universe.key}
+              className={selected?.key === universe.key ? 'is-selected' : undefined}
+              key={universe.key}
+              role="radio"
+              type="button"
+              onClick={() => onSelect(universe.key)}
+            >
+              <strong>{universe.label}</strong>
+              <small>{universe.size} empresas{universe.approximate ? ' · aproximado' : ''}</small>
+            </button>
+          ))}
+        </div>
+
+        {selected ? <p className="muted-text">{selected.description}</p> : null}
+
+        <div className="investment-hero-actions">
+          <button className="primary-button inline-primary review-button" type="button" disabled={isRunning} onClick={onExplore}>
+            <ListChecks aria-hidden="true" size={17} />
+            {isRunning ? 'Explorando...' : `Analizar ${selected?.label ?? 'universo'}`}
+          </button>
+          {selected?.source_url ? (
+            <button className="watch-button" type="button" disabled={isRunning} onClick={onRefreshMembers}>
+              <RefreshCw aria-hidden="true" size={15} />
+              Refrescar lista de miembros
+            </button>
+          ) : null}
+          {exploration?.finished_at ? (
+            <span className="muted-text">Última exploración: {formatDateTime(exploration.finished_at)}</span>
+          ) : null}
+        </div>
+
+        {isRunning ? (
+          <div className="review-progress">
+            <div className="review-progress-bar">
+              <span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
+            </div>
+            <span className="muted-text">{describeProgress(progress)}</span>
+          </div>
+        ) : null}
+
+        {failed.length ? (
+          <p className="warning-text">Sin datos para: {failed.map((item) => item.ticker).join(', ')}</p>
+        ) : null}
+      </section>
+
+      {results.length ? (
+        <section className="investment-card">
+          <div className="chart-header">
+            <div>
+              <h3>Las {results.length} mejores de {exploration.label ?? selected?.label}</h3>
+              <span>
+                Cribadas {exploration.screened ?? '?'} empresas · analizadas a fondo {exploration.analyzed ?? '?'}
+              </span>
+            </div>
+          </div>
+          <p className="muted-text">
+            Son las mejores de las {DEFAULT_FINALISTS} finalistas que mejor pintaban en la criba, no un top
+            {' '}{DEFAULT_TOP} garantizado del índice entero: la criba solo mira dividendo e historial, así que una
+            empresa con poca RPD hoy y cuentas impecables puede quedarse fuera.
+            {exploration.approximate
+              ? ' Además, este universo es una aproximación por región y tamaño, no la lista oficial del índice.'
+              : ''}
+          </p>
+          <div className="table-wrap">
+            <table className="watchlist-table review-table">
+              <thead>
+                <tr>
+                  <th>Empresa</th>
+                  <th>Sector</th>
+                  <th className="num">Score</th>
+                  <th className="num">RPD</th>
+                  <th className="num">DGR 5a</th>
+                  <th className="num">Payout</th>
+                  <th className="num">PER</th>
+                  <th>Frente a su media</th>
+                  <th className="num">Banderas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((row) => {
+                  const valuation = getValuationLabel(row)
+                  return (
+                    <tr key={row.ticker}>
+                      <td>
+                        <button className="link-button" type="button" onClick={() => onAnalyze(row.ticker)}>
+                          {row.ticker}
+                        </button>
+                        <small className="review-name">{row.name}</small>
+                      </td>
+                      <td>{row.sector || '—'}</td>
+                      <td className="num">
+                        <span className={`score-pill ${getScoreClass(Number(row.score))}`}>{formatNumber(row.score)}</span>
+                      </td>
+                      <td className="num">{formatNumber(row.rpd_ttm, '%')}</td>
+                      <td className="num">{formatNumber(row.dgr5, '%')}</td>
+                      <td className="num">{formatNumber(row.payout, '%')}</td>
+                      <td className="num">{formatNumber(row.per_ttm)}</td>
+                      <td className={valuation === 'barata' ? 'trend-up' : valuation === 'cara' ? 'trend-down' : undefined}>
+                        {valuation ?? 's/d'}
+                      </td>
+                      <td className="num">{row.flags?.length ? <span className="flag-count">{row.flags.length}</span> : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : !isRunning ? (
+        <div className="empty-state compact-empty">
+          <strong>Sin exploración</strong>
+          <span>Elige un universo y pulsa Analizar. La criba tarda segundos; el análisis a fondo, un par de minutos.</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PortfolioReview({ changes, lastReview, onAnalyze, onRefresh, progress, rows, split, summary }) {
+  const isRunning = Boolean(progress && progress.done < progress.total)
+  const failed = progress?.failed ?? []
+
+  return (
+    <div className="portfolio-review">
+      <section className="investment-card">
+        <div className="chart-header">
+          <div>
+            <h3>Revisión de cartera</h3>
+            <span>
+              {lastReview ? `Última revisión completa: ${lastReview}` : 'Todavía no has revisado la cartera'}
+            </span>
+          </div>
+          <button className="watch-button" type="button" disabled={isRunning} onClick={onRefresh}>
+            <RefreshCw aria-hidden="true" size={15} />
+            Forzar actualización
+          </button>
+        </div>
+
+        {isRunning ? (
+          <div className="review-progress">
+            <div className="review-progress-bar">
+              <span style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+            </div>
+            <span className="muted-text">
+              Analizando {progress.done + 1} de {progress.total} · {progress.ticker}
+            </span>
+          </div>
+        ) : null}
+
+        {summary ? (
+          <div className="review-summary">
+            <article>
+              <span>Nota media ponderada</span>
+              <strong>{formatNumber(summary.weightedScore)}/100</strong>
+              <small>media simple: {formatNumber(summary.simpleScore)}</small>
+            </article>
+            <article className={summary.flaggedCount ? 'kpi-off' : 'kpi-on'}>
+              <span>Con banderas rojas</span>
+              <strong>{summary.flaggedCount} de {summary.analyzed}</strong>
+              <small>{formatNumber(summary.flaggedWeight, '%')} de lo analizado</small>
+            </article>
+            <article>
+              <span>Analizado</span>
+              <strong>{formatNumber(summary.reviewedValue, '€')}</strong>
+              <small>{summary.analyzed} posiciones con ticker</small>
+            </article>
+            <article>
+              <span>Sin analizar</span>
+              <strong>{split.skipped.length} posiciones</strong>
+              <small>{formatNumber(split.skippedWeight, '%')} de la cartera</small>
+            </article>
+          </div>
+        ) : (
+          <p className="muted-text">
+            Pulsa "Analizar toda la cartera" para puntuar tus {split.analyzable.length} posiciones con ticker.
+          </p>
+        )}
+
+        {failed.length ? (
+          <p className="warning-text">
+            Sin datos para: {failed.map((item) => `${item.ticker} (${item.error})`).join(', ')}
+          </p>
+        ) : null}
+      </section>
+
+      {changes.length ? (
+        <section className="investment-card">
+          <h3>Cambios desde la revisión anterior</h3>
+          <ul className="review-changes">
+            {changes.map((change) => (
+              <li className={`severity-${change.severity}`} key={`${change.ticker}-${change.kind}`}>
+                <strong>{change.ticker}</strong>
+                <span>{change.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : rows.length ? (
+        <section className="investment-card">
+          <h3>Cambios desde la revisión anterior</h3>
+          <p className="muted-text">Nada relevante ha cambiado desde la revisión anterior.</p>
+        </section>
+      ) : null}
+
+      {rows.length ? (
+        <section className="investment-card">
+          <div className="chart-header">
+            <div>
+              <h3>Posiciones revisadas</h3>
+              <span>Ordenadas de peor a mejor puntuación</span>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="watchlist-table review-table">
+              <thead>
+                <tr>
+                  <th>Activo</th>
+                  <th className="num">Peso</th>
+                  <th className="num">Score</th>
+                  <th className="num">Δ</th>
+                  <th className="num">RPD</th>
+                  <th>Frente a su media</th>
+                  <th className="num">Banderas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.ticker}>
+                    <td>
+                      <button className="link-button" type="button" onClick={() => onAnalyze(row.ticker)}>
+                        {row.ticker}
+                      </button>
+                      <small className="review-name">{row.portfolio_name ?? row.name}</small>
+                    </td>
+                    <td className="num">{formatNumber(row.weight, '%')}</td>
+                    <td className="num">
+                      {Number.isFinite(Number(row.last_score)) ? (
+                        <span className={`score-pill ${getScoreClass(Number(row.last_score))}`}>
+                          {formatNumber(row.last_score)}
+                        </span>
+                      ) : (
+                        's/d'
+                      )}
+                    </td>
+                    <td className="num">
+                      {row.delta === null ? (
+                        '—'
+                      ) : (
+                        <span className={row.delta > 0 ? 'trend-up' : row.delta < 0 ? 'trend-down' : undefined}>
+                          {row.delta > 0 ? '+' : ''}
+                          {formatNumber(row.delta)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num">{formatNumber(row.last_rpd, '%')}</td>
+                    <td className={row.valuation === 'barata' ? 'trend-up' : row.valuation === 'cara' ? 'trend-down' : undefined}>
+                      {row.valuation ?? 's/d'}
+                    </td>
+                    <td className="num">{row.flagCount ? <span className="flag-count">{row.flagCount}</span> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {split.skipped.length ? (
+        <section className="investment-card">
+          <h3>No analizables</h3>
+          <p className="muted-text">
+            Fondos indexados, efectivo y criptoactivos no tienen ticker de Yahoo ni métricas de dividendo, así que la
+            revisión no los cubre: son {split.skipped.length} posiciones y {formatNumber(split.skippedWeight, '%')} de
+            tu cartera.
+          </p>
+          <ul className="skipped-list">
+            {split.skipped.map((item) => (
+              <li key={item.name}>
+                <span>{item.name}</span>
+                <strong>{formatNumber(item.value, '€')}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  )
+}
+
+function ComparisonTable({ comparison, onAnalyze, isLoading }) {
+  if (isLoading) return <p className="muted-text">Comparando empresas...</p>
+  if (!comparison) {
+    return (
+      <div className="empty-state compact-empty">
+        <strong>Sin comparación</strong>
+        <span>Marca entre 2 y 4 empresas de tu seguimiento y pulsa "Comparar".</span>
+      </div>
+    )
+  }
+
+  const { columns = [], metrics = [], errors = [] } = comparison
+  if (!columns.length) return <p className="muted-text">No se pudo analizar ninguno de los tickers elegidos.</p>
+
+  return (
+    <section className="investment-card comparison-card">
+      <div className="chart-header">
+        <div>
+          <h3>Comparativa</h3>
+          <span>La mejor cifra de cada fila va destacada</span>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="comparison-table">
+          <thead>
+            <tr>
+              <th>Métrica</th>
+              {columns.map((column) => (
+                <th className="num" key={column.ticker}>
+                  <button className="link-button" type="button" onClick={() => onAnalyze(column.ticker)}>
+                    {column.ticker}
+                  </button>
+                  <small>{column.name}</small>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="comparison-score-row">
+              <th scope="row">Score</th>
+              {columns.map((column) => (
+                <td className="num" key={column.ticker}>
+                  <span className={`score-pill ${getScoreClass(Number(column.score))}`}>{formatNumber(column.score)}</span>
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">Precio</th>
+              {columns.map((column) => (
+                <td className="num" key={column.ticker}>
+                  {formatNumber(column.price, column.exchange?.currency)}
+                </td>
+              ))}
+            </tr>
+            {metrics.map((metric) => {
+              const best = getBestTickerForMetric(columns, metric)
+              return (
+                <tr key={metric.key}>
+                  <th scope="row" title={metricHelp[metric.key]}>
+                    {metric.label}
+                  </th>
+                  {columns.map((column) => {
+                    const band = getMetricBand(metric.key, column.rules)
+                    const state = evaluateMetric(column.metrics?.[metric.key], band)
+                    return (
+                      <td
+                        className={`num${column.ticker === best ? ' is-best' : ''}${state === 'off' ? ' is-off' : ''}`}
+                        key={column.ticker}
+                      >
+                        {formatNumber(column.metrics?.[metric.key], metric.suffix)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+            <tr>
+              <th scope="row">Banderas rojas</th>
+              {columns.map((column) => (
+                <td className="num" key={column.ticker}>
+                  {column.flags?.length ? <span className="flag-count">{column.flags.length}</span> : '—'}
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th scope="row">Veredicto</th>
+              {columns.map((column) => (
+                <td key={column.ticker}>{column.recommendation}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {errors.length ? (
+        <p className="warning-text">
+          Sin datos para: {errors.map((item) => `${item.ticker} (${item.error})`).join(', ')}
+        </p>
       ) : null}
     </section>
   )

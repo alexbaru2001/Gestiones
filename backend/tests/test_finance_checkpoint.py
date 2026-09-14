@@ -478,3 +478,42 @@ def test_delete_historico_clears_summary_checkpoint_and_transaction_detail(tmp_p
     # Borrar cuando ya no hay nada guardado no debe fallar.
     second_delete = client.delete("/api/v1/process/historico")
     assert second_delete.status_code == 200
+
+
+def test_historical_months_come_back_as_numbers_not_strings(tmp_path, monkeypatch):
+    """Los meses que vienen del histórico guardado (CSV, todo texto) deben devolverse con valores
+    numéricos como los recién calculados: el frontend formatea con formatMoney, que pinta '-' ante
+    cualquier valor que no sea number, así que si llegaran como texto el histórico saldría en blanco."""
+    client = TestClient(app)
+    repo = CsvFinanceHistoryRepository(tmp_path / "historial.csv")
+    checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
+    txn_repo = CsvTransactionHistoryRepository(
+        gastos_path=tmp_path / "gastos.csv", ingresos_path=tmp_path / "ingresos.csv"
+    )
+    monkeypatch.setattr(backend_main, "finance_history_repository", repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    monkeypatch.setattr(backend_main, "transaction_history_repository", txn_repo)
+
+    chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
+    client.post(
+        "/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+
+    # Un segundo tramo: los meses ya guardados (2024-10..12) se releen del CSV y se combinan con los nuevos.
+    chunk2 = _workbook(CHUNK2_GASTOS, CHUNK2_INGRESOS)
+    response = client.post(
+        "/api/v1/process?fecha_inicio=2025-01-01",
+        data={"modo": "visualizar"},
+        files={"file": ("Inicio.xlsx", chunk2.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200
+    rows = response.json()["result"]["historial"]["resumen"]
+    by_month = {row["Mes"]: row for row in rows}
+    assert set(by_month) == {"2024-10", "2024-11", "2024-12", "2025-01", "2025-02"}
+
+    historical = by_month["2024-10"]
+    for field in ("total", "💰 Ahorros", "💳 Gasto del mes", "📈 Inversiones"):
+        assert isinstance(historical[field], (int, float)), f"{field} llegó como {type(historical[field])}"
+    assert isinstance(historical["Mes"], str)

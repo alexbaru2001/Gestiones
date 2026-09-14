@@ -30,7 +30,7 @@ def test_ai_analysis_uses_groq_when_key_is_configured(monkeypatch):
 
 
 def test_analyze_investment_returns_payload(monkeypatch):
-    def fake_analyze_ticker(ticker: str):
+    def fake_analyze_ticker(ticker: str, refresh: bool = False):
         return {
             "ticker": ticker,
             "name": "Coca-Cola",
@@ -49,7 +49,7 @@ def test_analyze_investment_returns_payload(monkeypatch):
 
 
 def test_analyze_investment_reports_invalid_ticker(monkeypatch):
-    def fake_analyze_ticker(_ticker: str):
+    def fake_analyze_ticker(_ticker: str, refresh: bool = False):
         raise ValueError("Ticker no válido")
 
     monkeypatch.setattr(main, "analyze_ticker", fake_analyze_ticker)

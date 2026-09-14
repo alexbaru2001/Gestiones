@@ -49,6 +49,8 @@ export function App() {
   const [selectedObjective, setSelectedObjective] = useState('all')
   const [selectedMonth, setSelectedMonth] = useState('')
   const [activeArea, setActiveArea] = useState('finanzas')
+  // La revisión de cartera se puede lanzar desde Cartera, pero se enseña en Invertir.
+  const [autoStartReview, setAutoStartReview] = useState(false)
   const [isInputOpen, setIsInputOpen] = useState(true)
   const [processStatus, setProcessStatus] = useState('')
   const [checkpoint, setCheckpoint] = useState(null)
@@ -310,7 +312,7 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={activeArea === 'cartera' ? 'app-shell app-shell-wide' : 'app-shell'}>
       <header className="topbar">
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">
@@ -428,9 +430,16 @@ export function App() {
           />
         </section>
       ) : activeArea === 'invertir' ? (
-        <InvestmentPanel />
+        <InvestmentPanel autoStartReview={autoStartReview} onReviewStarted={() => setAutoStartReview(false)} />
       ) : (
-        <PortfolioPanel dividendPayments={dividendPayments} financeRows={rows} />
+        <PortfolioPanel
+          dividendPayments={dividendPayments}
+          financeRows={rows}
+          onReviewPortfolio={() => {
+            setAutoStartReview(true)
+            setActiveArea('invertir')
+          }}
+        />
       )}
     </main>
   )

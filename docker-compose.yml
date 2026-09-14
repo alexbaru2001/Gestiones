@@ -15,6 +15,7 @@ services:
       - "8000:8000"
     volumes:
       - ./Personal_finanzas/Data:/app/Personal_finanzas/Data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)\""]
       interval: 10s
@@ -37,6 +38,7 @@ services:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     ports:
       - "5173:5173"
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy

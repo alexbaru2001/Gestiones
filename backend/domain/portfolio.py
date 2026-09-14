@@ -12,17 +12,18 @@ from typing import Any
 import openpyxl
 
 
-ISIN_TICKERS = {
-    "DE0007074007": "KWS.DE",
-    "ES0144580Y14": "IBE.MC",
-    "ES0173516115": "REP.MC",
-    "US91324P1021": "UNH",
-    "FR0000121014": "MC.PA",
-    "US7427181091": "PG",
-    "US9311421039": "WMT",
-    "ES0157261019": "ROVI.MC",
-    "XFC000A2YY6Q": "BTC-EUR",
-}
+from backend.domain.asset_catalog import (
+    BUILTIN_ASSET_METADATA,
+    BUILTIN_ISIN_TICKERS,
+    fill_missing_metadata,
+    fill_missing_tickers,
+    known_metadata,
+    resolve_metadata,
+)
+
+# Se mantienen los nombres por compatibilidad: son la semilla de los mapeos, pero ya no son la única
+# fuente. Lo que no esté aquí se resuelve automáticamente al importar (ver backend/domain/asset_catalog.py).
+ISIN_TICKERS = BUILTIN_ISIN_TICKERS
 
 FUND_NAME_MAP = {
     "INDEX MSCI EUROPE": "LU0389811539",
@@ -38,24 +39,7 @@ FUND_NAME_MAP = {
     "VANGUARD US 500": "IE0032126645",
 }
 
-ASSET_METADATA = {
-    "DE0007074007": {"region": "Europa", "sector": "Consumo defensivo", "focus": "Acciones calidad"},
-    "ES0144580Y14": {"region": "Europa", "sector": "Utilities", "focus": "Dividendos"},
-    "ES0173516115": {"region": "Europa", "sector": "Energia", "focus": "Dividendos"},
-    "US91324P1021": {"region": "Norteamerica", "sector": "Salud", "focus": "Salud defensiva"},
-    "FR0000121014": {"region": "Europa", "sector": "Lujo", "focus": "Acciones calidad"},
-    "US7427181091": {"region": "Norteamerica", "sector": "Consumo defensivo", "focus": "Dividendos"},
-    "US9311421039": {"region": "Norteamerica", "sector": "Consumo defensivo", "focus": "Dividendos"},
-    "ES0157261019": {"region": "Europa", "sector": "Salud", "focus": "Acciones calidad"},
-    "XFC000A2YY6Q": {"region": "Global", "sector": "Criptoactivo", "focus": "Alternativos"},
-    "LU0389811539": {"region": "Europa", "sector": "Renta variable diversificada", "focus": "Indexados"},
-    "LU0996175948": {"region": "Emergentes", "sector": "Renta variable diversificada", "focus": "Indexados"},
-    "LU0968301142": {"region": "Frontera", "sector": "Renta variable diversificada", "focus": "Mercados frontera"},
-    "IE00B6RVWW34": {"region": "Japon", "sector": "Renta variable diversificada", "focus": "Indexados"},
-    "IE00B83YJG36": {"region": "Global", "sector": "Inmobiliario", "focus": "Real estate"},
-    "IE00B42W4L06": {"region": "Global", "sector": "Small caps", "focus": "Indexados"},
-    "IE0032126645": {"region": "Norteamerica", "sector": "Renta variable diversificada", "focus": "Indexados"},
-}
+ASSET_METADATA = BUILTIN_ASSET_METADATA
 
 EXPECTED_DOCUMENTS = [
     {"kind": "trade_republic_net_worth", "label": "Trade Republic - patrimonio neto"},
@@ -412,6 +396,15 @@ def build_snapshot(
         elif transaction["kind"] == "deposit":
             deposits_by_broker[transaction["broker"]] += amount
 
+    # Al construir la foto sí se permite consultar la red: es una acción explícita del usuario
+    # (importar/recargar) y así una acción recién comprada queda con su ticker y su clasificación
+    # desde el primer momento. Se resuelve una sola vez para todas las posiciones.
+    fill_missing_tickers(positions, allow_network=True)
+    catalog = resolve_metadata(
+        {str(p["isin"]): str(p["ticker"]) for p in positions if p.get("isin") and p.get("ticker")},
+        allow_network=True,
+    )
+
     enriched_positions = []
     for position in positions:
         key = position_key(position)
@@ -428,7 +421,7 @@ def build_snapshot(
                 "unrealized_gain": round(pnl, 4) if pnl is not None else None,
                 "unrealized_gain_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
                 "horizon": infer_horizon(position),
-                **get_asset_metadata(position),
+                **get_asset_metadata(position, catalog),
             }
         )
 
@@ -661,17 +654,21 @@ def infer_horizon(position: dict[str, Any]) -> str:
     return "medio"
 
 
-def get_asset_metadata(position: dict[str, Any]) -> dict[str, str]:
+def get_asset_metadata(position: dict[str, Any], catalog: dict[str, dict[str, str]] | None = None) -> dict[str, str]:
     if position["asset_type"] == "cash":
         return {"region": "Liquidez", "sector": "Efectivo", "focus": "Liquidez"}
-    metadata = ASSET_METADATA.get(position.get("isin") or "")
-    if metadata:
-        return metadata
     if position["asset_type"] == "fund":
-        return {"region": "Global", "sector": "Renta variable diversificada", "focus": "Fondos"}
-    if position["asset_type"] == "crypto":
-        return {"region": "Global", "sector": "Criptoactivo", "focus": "Alternativos"}
-    return {"region": "Sin clasificar", "sector": "Sin clasificar", "focus": "Sin clasificar"}
+        defaults = {"region": "Global", "sector": "Renta variable diversificada", "focus": "Fondos"}
+    elif position["asset_type"] == "crypto":
+        defaults = {"region": "Global", "sector": "Criptoactivo", "focus": "Alternativos"}
+    else:
+        defaults = {"region": "Sin clasificar", "sector": "Sin clasificar", "focus": "Sin clasificar"}
+
+    catalog = known_metadata() if catalog is None else catalog
+    # El catálogo puede traer solo parte de los campos (p. ej. sector sin foco, que no se deduce):
+    # lo que falte se completa con el valor por defecto del tipo de activo.
+    metadata = catalog.get(position.get("isin") or "") or {}
+    return {**defaults, **{field: value for field, value in metadata.items() if value}}
 
 
 def parse_number(value: Any) -> float | None:
@@ -921,4 +918,11 @@ def save_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
 def load_snapshot(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    # Fotos guardadas antes de que se conociera el ticker de una acción: se completan con lo ya
+    # resuelto en la caché, sin tocar la red, para que abrir Cartera siga siendo instantáneo.
+    positions = snapshot.get("positions") if isinstance(snapshot, dict) else None
+    if isinstance(positions, list):
+        fill_missing_tickers(positions, allow_network=False)
+        fill_missing_metadata(positions, allow_network=False)
+    return snapshot

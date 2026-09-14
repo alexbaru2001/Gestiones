@@ -15,6 +15,12 @@ DEFAULT_INGRESOS_HISTORY_PATH = (
     Path(__file__).resolve().parents[1] / "Personal_finanzas" / "Data" / "ingresos_historico.csv"
 )
 DEFAULT_INVESTMENT_KNOWLEDGE_PATH = DEFAULT_INVESTMENTS_PATH / "knowledge"
+DEFAULT_ASSET_CATALOG_PATH = DEFAULT_INVESTMENTS_PATH / "asset_catalog.json"
+DEFAULT_WATCHLIST_PATH = DEFAULT_INVESTMENTS_PATH / "watchlist.json"
+DEFAULT_PORTFOLIO_REVIEW_PATH = DEFAULT_INVESTMENTS_PATH / "portfolio_review.json"
+DEFAULT_UNIVERSES_PATH = DEFAULT_INVESTMENTS_PATH / "universes.json"
+DEFAULT_EXPLORATIONS_PATH = DEFAULT_INVESTMENTS_PATH / "exploraciones.json"
+DEFAULT_ANALYSIS_CACHE_PATH = DEFAULT_INVESTMENTS_PATH / "analysis_cache"
 
 
 def get_cors_origins() -> list[str]:
@@ -63,6 +69,48 @@ def get_ingresos_history_path() -> Path:
     configured_path = os.getenv("GESTIONES_INGRESOS_HISTORY_PATH", "")
     if not configured_path.strip():
         return DEFAULT_INGRESOS_HISTORY_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_asset_catalog_path() -> Path:
+    configured_path = os.getenv("GESTIONES_ASSET_CATALOG_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_ASSET_CATALOG_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_watchlist_path() -> Path:
+    configured_path = os.getenv("GESTIONES_WATCHLIST_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_WATCHLIST_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_portfolio_review_path() -> Path:
+    configured_path = os.getenv("GESTIONES_PORTFOLIO_REVIEW_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_PORTFOLIO_REVIEW_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_universes_path() -> Path:
+    configured_path = os.getenv("GESTIONES_UNIVERSES_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_UNIVERSES_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_explorations_path() -> Path:
+    configured_path = os.getenv("GESTIONES_EXPLORATIONS_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_EXPLORATIONS_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_analysis_cache_path() -> Path:
+    configured_path = os.getenv("GESTIONES_ANALYSIS_CACHE_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_ANALYSIS_CACHE_PATH
     return Path(configured_path).expanduser()
 
 

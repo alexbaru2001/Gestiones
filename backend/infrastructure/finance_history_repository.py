@@ -14,8 +14,8 @@ class CsvFinanceHistoryRepository:
     def load(self) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
-        with self.path.open("r", encoding="utf-8", newline="") as file:
-            return list(csv.DictReader(file))
+        with self.path.open("r", encoding="utf-8-sig", newline="") as file:
+            return [_with_numeric_values(record) for record in csv.DictReader(file)]
 
     def save(self, records: list[dict[str, Any]]) -> None:
         if not records:
@@ -29,6 +29,26 @@ class CsvFinanceHistoryRepository:
 
     def delete(self) -> None:
         self.path.unlink(missing_ok=True)
+
+
+def _with_numeric_values(record: dict[str, Any]) -> dict[str, Any]:
+    """El CSV devuelve todo como texto ('6205.88'), pero el resto de la app espera números nativos:
+    el frontend formatea con formatMoney, que muestra '-' ante cualquier valor que no sea number, así
+    que un mes leído del histórico saldría vacío en pantalla. "Mes" se mantiene como texto."""
+    converted: dict[str, Any] = {}
+    for key, value in record.items():
+        if key == "Mes" or not isinstance(value, str):
+            converted[key] = value
+            continue
+        text = value.strip()
+        if not text:
+            converted[key] = None
+            continue
+        try:
+            converted[key] = float(text)
+        except ValueError:
+            converted[key] = value
+    return converted
 
 
 def ordered_columns(records: list[dict[str, Any]]) -> list[str]:

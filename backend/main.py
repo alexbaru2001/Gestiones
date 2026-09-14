@@ -3,8 +3,10 @@ from typing import Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import get_cors_origins
-from backend.domain.investments import analyze_ticker
+from backend.domain.investments import analyze_ticker, compare_tickers, search_tickers
+from backend.domain.exploration import DOWNLOAD_CHUNK, collect_candidates, prescore, screen_chunk
 from backend.domain.models import PipelineConfig
+from backend.domain.universes import list_universes, refresh_members
 from backend.domain.portfolio import UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
 from backend.infrastructure.finance_checkpoint_repository import JsonFinanceCheckpointRepository
@@ -17,6 +19,9 @@ from backend.infrastructure.objectives_repository import (
 )
 from backend.infrastructure.portfolio_repository import LocalPortfolioRepository
 from backend.infrastructure.transaction_history_repository import CsvTransactionHistoryRepository
+from backend.infrastructure.exploration_repository import JsonExplorationRepository
+from backend.infrastructure.portfolio_review_repository import JsonPortfolioReviewRepository
+from backend.infrastructure.watchlist_repository import JsonWatchlistRepository, WatchlistStorageError
 
 app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
@@ -24,6 +29,9 @@ portfolio_repository = LocalPortfolioRepository()
 finance_history_repository = CsvFinanceHistoryRepository()
 finance_checkpoint_repository = JsonFinanceCheckpointRepository()
 transaction_history_repository = CsvTransactionHistoryRepository()
+watchlist_repository = JsonWatchlistRepository()
+portfolio_review_repository = JsonPortfolioReviewRepository()
+exploration_repository = JsonExplorationRepository()
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,12 +64,175 @@ def save_objectives(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
 
 
 @app.get("/api/v1/investments/analyze")
-def analyze_investment(ticker: str) -> dict[str, Any]:
+def analyze_investment(ticker: str, refresh: bool = False) -> dict[str, Any]:
     try:
-        return {"ok": True, "result": analyze_ticker(ticker)}
+        result = analyze_ticker(ticker, refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    # Si el ticker está en seguimiento, cada análisis deja su punto en el histórico de puntuación.
+    try:
+        watchlist_repository.record_analysis(result)
+    except WatchlistStorageError:
+        pass
+    return {"ok": True, "result": result}
+
+
+@app.get("/api/v1/investments/search")
+def search_investments(q: str) -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": search_tickers(q)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/investments/compare")
+def compare_investments(tickers: str, refresh: bool = False) -> dict[str, Any]:
+    requested = [item for item in tickers.split(",") if item.strip()]
+    try:
+        return {"ok": True, "result": compare_tickers(requested, refresh=refresh)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/investments/watchlist")
+def get_watchlist() -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": watchlist_repository.load()}
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/investments/watchlist")
+def add_to_watchlist(payload: dict[str, Any]) -> dict[str, Any]:
+    ticker = payload.get("ticker")
+    if not isinstance(ticker, str) or not ticker.strip():
+        raise HTTPException(status_code=400, detail="Indica un ticker para seguir.")
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else None
+    try:
+        return {"ok": True, "result": watchlist_repository.add(ticker, analysis)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/api/v1/investments/watchlist/{ticker}")
+def remove_from_watchlist(ticker: str) -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": watchlist_repository.remove(ticker)}
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/investments/portfolio-review")
+def get_portfolio_review() -> dict[str, Any]:
+    try:
+        return {"ok": True, "result": portfolio_review_repository.load()}
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/investments/portfolio-review")
+def record_portfolio_review(payload: dict[str, Any]) -> dict[str, Any]:
+    """Anota una posición revisada. El frontend llama una vez por ticker para poder ir informando
+    del avance: una sola petición para toda la cartera dejaría la pantalla muerta medio minuto."""
+    ticker = payload.get("ticker")
+    analysis = payload.get("analysis")
+    if not isinstance(ticker, str) or not ticker.strip():
+        raise HTTPException(status_code=400, detail="Indica un ticker para revisar.")
+    if not isinstance(analysis, dict):
+        raise HTTPException(status_code=400, detail="Falta el análisis de la posición.")
+    position = payload.get("position") if isinstance(payload.get("position"), dict) else None
+    try:
+        return {"ok": True, "result": portfolio_review_repository.record(ticker, analysis, position)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/investments/portfolio-review/prune")
+def prune_portfolio_review(payload: dict[str, Any]) -> dict[str, Any]:
+    tickers = payload.get("tickers")
+    if not isinstance(tickers, list):
+        raise HTTPException(status_code=400, detail="Indica los tickers que siguen en cartera.")
+    try:
+        return {"ok": True, "result": portfolio_review_repository.forget_missing([str(item) for item in tickers])}
+    except WatchlistStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/investments/universes")
+def get_universes() -> dict[str, Any]:
+    try:
+        saved = exploration_repository.load_all()
+    except WatchlistStorageError:
+        saved = {}
+    return {"ok": True, "result": {"universes": list_universes(), "explorations": saved, "chunk": DOWNLOAD_CHUNK}}
+
+
+@app.post("/api/v1/investments/universes/{universe_key}/refresh")
+def refresh_universe(universe_key: str) -> dict[str, Any]:
+    try:
+        members = refresh_members(universe_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "result": {"universe": universe_key, "size": len(members)}}
+
+
+@app.post("/api/v1/investments/explore/candidates")
+def explore_candidates(payload: dict[str, Any]) -> dict[str, Any]:
+    universe_key = payload.get("universe")
+    if not isinstance(universe_key, str) or not universe_key.strip():
+        raise HTTPException(status_code=400, detail="Indica qué universo quieres explorar.")
+    try:
+        candidates = collect_candidates(universe_key.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "result": {"candidates": candidates, "chunk": DOWNLOAD_CHUNK}}
+
+
+@app.post("/api/v1/investments/explore/screen")
+def explore_screen(payload: dict[str, Any]) -> dict[str, Any]:
+    """Criba de un grupo de tickers. El frontend va llamando por tandas para poder ir informando
+    del avance en vez de dejar la pantalla muerta durante media descarga del índice entero."""
+    tickers = payload.get("tickers")
+    if not isinstance(tickers, list) or not tickers:
+        raise HTTPException(status_code=400, detail="Indica los tickers de esta tanda.")
+    if len(tickers) > DOWNLOAD_CHUNK:
+        raise HTTPException(status_code=400, detail=f"Como mucho {DOWNLOAD_CHUNK} tickers por tanda.")
+    try:
+        rows = screen_chunk([str(item).strip().upper() for item in tickers if str(item).strip()])
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "result": [{**row, "prescore": prescore(row)} for row in rows]}
+
+
+@app.post("/api/v1/investments/explore/save")
+def save_exploration(payload: dict[str, Any]) -> dict[str, Any]:
+    universe_key = payload.get("universe")
+    results = payload.get("results")
+    if not isinstance(universe_key, str) or not universe_key.strip():
+        raise HTTPException(status_code=400, detail="Indica qué universo se ha explorado.")
+    if not isinstance(results, list):
+        raise HTTPException(status_code=400, detail="Faltan los resultados de la exploración.")
+    meta = {
+        "screened": payload.get("screened"),
+        "analyzed": payload.get("analyzed"),
+        "approximate": bool(payload.get("approximate")),
+        "label": payload.get("label"),
+    }
+    try:
+        return {"ok": True, "result": exploration_repository.save(universe_key.strip(), results, meta)}
+    except WatchlistStorageError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

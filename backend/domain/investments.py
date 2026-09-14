@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import json
 import math
@@ -11,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from backend.config import get_investment_knowledge_path
+from backend.config import get_analysis_cache_path, get_investment_knowledge_path
 
 
 EXCHANGE_NAMES = {
@@ -115,11 +116,74 @@ class TickerMetrics:
     streak_growth: int
     fcf_pos_years: int
     dgr_reliable: bool
+    rpd_avg5: float
+    rpd_vs_avg5: float
+    reference_price: float
 
 
-def analyze_ticker(ticker: str) -> dict[str, Any]:
+ANALYSIS_CACHE_TTL_HOURS = 12
+
+
+def analyze_ticker(ticker: str, refresh: bool = False) -> dict[str, Any]:
+    """El análisis de un ticker se reutiliza durante ANALYSIS_CACHE_TTL_HOURS.
+
+    La caché vive en disco porque la de memoria se perdía al reiniciar el contenedor y, mientras
+    duraba, no caducaba nunca: un ticker consultado hoy seguía devolviendo el precio de ayer.
+    """
     normalized = normalize_ticker(ticker)
-    return _analyze_ticker_cached(normalized)
+    if refresh:
+        delete_cached_analysis(normalized)
+    else:
+        cached = load_cached_analysis(normalized)
+        if cached is not None:
+            return cached
+
+    result = build_analysis(normalized)
+    store_cached_analysis(normalized, result)
+    return result
+
+
+def analysis_cache_file(ticker: str) -> Path:
+    safe_name = re.sub(r"[^A-Z0-9._-]", "_", ticker.upper())
+    return get_analysis_cache_path() / f"{safe_name}.json"
+
+
+def load_cached_analysis(ticker: str) -> dict[str, Any] | None:
+    path = analysis_cache_file(ticker)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        cached_at = datetime.fromisoformat(str(payload["cached_at"]))
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+    if datetime.now(timezone.utc) - cached_at > timedelta(hours=ANALYSIS_CACHE_TTL_HOURS):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    return {**result, "cached_at": payload["cached_at"]}
+
+
+def store_cached_analysis(ticker: str, result: dict[str, Any]) -> None:
+    path = analysis_cache_file(ticker)
+    cached_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"cached_at": cached_at, "result": result}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+    result["cached_at"] = cached_at
+
+
+def delete_cached_analysis(ticker: str) -> None:
+    try:
+        analysis_cache_file(ticker).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def normalize_ticker(ticker: str) -> str:
@@ -131,8 +195,7 @@ def normalize_ticker(ticker: str) -> str:
     return normalized
 
 
-@lru_cache(maxsize=64)
-def _analyze_ticker_cached(ticker: str) -> dict[str, Any]:
+def build_analysis(ticker: str) -> dict[str, Any]:
     metrics, dividends, prices = fetch_metrics(ticker)
     rules = rules_for_sector(metrics.sector)
     flags = red_flags(metrics)
@@ -165,6 +228,94 @@ def _analyze_ticker_cached(ticker: str) -> dict[str, Any]:
     )
 
 
+COMPARE_MAX_TICKERS = 4
+
+# Lo que se enseña en la tabla comparativa: clave de la métrica, etiqueta y si conviene que sea alto.
+COMPARISON_METRICS = (
+    ("rpd_ttm", "RPD TTM", "%", "high"),
+    ("rpd_avg5", "RPD media 5a", "%", None),
+    ("dgr5", "DGR 5a", "%", "high"),
+    ("payout", "Payout", "%", "low"),
+    ("per_ttm", "PER", "", "low"),
+    ("roe", "ROE", "%", "high"),
+    ("de_ratio", "Deuda/Patrimonio", "", "low"),
+    ("streak_years", "Racha de pago", " años", "high"),
+)
+
+
+def compare_tickers(tickers: list[str], refresh: bool = False) -> dict[str, Any]:
+    """Análisis de varios tickers a la vez, sin las series largas: la comparación es tabular."""
+    normalized: list[str] = []
+    for ticker in tickers:
+        candidate = normalize_ticker(ticker)
+        if candidate not in normalized:
+            normalized.append(candidate)
+    if not normalized:
+        raise ValueError("Indica al menos un ticker para comparar.")
+    if len(normalized) > COMPARE_MAX_TICKERS:
+        raise ValueError(f"Se pueden comparar como mucho {COMPARE_MAX_TICKERS} tickers a la vez.")
+
+    columns = []
+    errors = []
+    for ticker in normalized:
+        try:
+            result = analyze_ticker(ticker, refresh=refresh)
+        except (ValueError, RuntimeError) as exc:
+            errors.append({"ticker": ticker, "error": str(exc)})
+            continue
+        columns.append(
+            {
+                key: result.get(key)
+                for key in ("ticker", "name", "sector", "price", "score", "recommendation", "flags", "metrics", "rules", "breakdown", "exchange")
+            }
+        )
+
+    return {
+        "columns": columns,
+        "errors": errors,
+        "metrics": [
+            {"key": key, "label": label, "suffix": suffix, "better": better}
+            for key, label, suffix, better in COMPARISON_METRICS
+        ],
+    }
+
+
+def search_tickers(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    """Búsqueda por nombre: hasta ahora había que saberse el ticker exacto ('ROVI.MC')."""
+    text = query.strip()
+    if len(text) < 2:
+        return []
+    try:
+        import yfinance as yf
+    except ImportError as exc:  # pragma: no cover - dependencia del contenedor
+        raise RuntimeError("Falta instalar yfinance en el backend.") from exc
+
+    try:
+        quotes = yf.Search(text, max_results=max(limit * 2, 10)).quotes or []
+    except Exception as exc:
+        raise RuntimeError(f"No se pudo buscar '{text}': {exc}") from exc
+
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for quote in quotes:
+        symbol = str(quote.get("symbol") or "").strip()
+        if not symbol or symbol in seen or quote.get("quoteType") not in {"EQUITY", "ETF"}:
+            continue
+        seen.add(symbol)
+        results.append(
+            {
+                "ticker": symbol,
+                "name": str(quote.get("longname") or quote.get("shortname") or symbol),
+                "exchange": str(quote.get("exchDisp") or quote.get("exchange") or ""),
+                "sector": str(quote.get("sectorDisp") or quote.get("sector") or ""),
+                "type": str(quote.get("quoteType") or ""),
+            }
+        )
+        if len(results) >= limit:
+            break
+    return results
+
+
 def fetch_metrics(ticker: str) -> tuple[TickerMetrics, pd.Series, pd.Series]:
     try:
         import yfinance as yf
@@ -184,12 +335,15 @@ def fetch_metrics(ticker: str) -> tuple[TickerMetrics, pd.Series, pd.Series]:
     cashflow = safe_cashflow(asset)
     payout_fcf, fcf_pos_years, fcf_series = cashflow_metrics(cashflow)
 
+    yield_history = dividend_yield_history(by_year_raw, history)
+    rpd_avg5 = average_of_last(yield_history, 5)
     dgr5 = cagr_from_annual(by_year_clean, 5)
     dgr10 = cagr_from_annual(by_year_clean, 10)
     ttm = dividends_ttm(dividends)
     forward_div = info.get("forwardAnnualDividendRate") or info.get("dividendRate")
     exchange_code = str(info.get("exchange") or "").strip()
 
+    rpd_ttm_now = (ttm / price * 100.0) if price > 0 else math.nan
     metrics = TickerMetrics(
         ticker=ticker,
         name=str(info.get("shortName") or info.get("longName") or ticker),
@@ -199,7 +353,7 @@ def fetch_metrics(ticker: str) -> tuple[TickerMetrics, pd.Series, pd.Series]:
         exchange_code=exchange_code,
         exchange_name=EXCHANGE_NAMES.get(exchange_code, exchange_code or "Unknown"),
         country=str(info.get("country") or ""),
-        rpd_ttm=(ttm / price * 100.0) if price > 0 else math.nan,
+        rpd_ttm=rpd_ttm_now,
         rpd_forward=(float(forward_div) / price * 100.0) if is_number(forward_div) and price > 0 else math.nan,
         dgr5=(dgr5 * 100.0) if not math.isnan(dgr5) else math.nan,
         dgr10=(dgr10 * 100.0) if not math.isnan(dgr10) else math.nan,
@@ -214,6 +368,9 @@ def fetch_metrics(ticker: str) -> tuple[TickerMetrics, pd.Series, pd.Series]:
         streak_growth=dividend_growth_streak(by_year_clean),
         fcf_pos_years=fcf_pos_years,
         dgr_reliable=not dgr_not_reliable(by_year_clean, by_year_raw),
+        rpd_avg5=rpd_avg5,
+        rpd_vs_avg5=rpd_ttm_now - rpd_avg5 if not math.isnan(rpd_avg5) and not math.isnan(rpd_ttm_now) else math.nan,
+        reference_price=(ttm / rpd_avg5 * 100.0) if rpd_avg5 > 0 and ttm > 0 else math.nan,
     )
     prices = history["Close"].dropna() if history is not None and "Close" in history else pd.Series(dtype="float64")
     return metrics, by_year_raw, prices
@@ -307,6 +464,42 @@ def dividends_by_year_clean(dividends: pd.Series) -> pd.Series:
             cleaned[year] = float(sum(regulars))
 
     return pd.Series(cleaned).sort_index() if cleaned else pd.Series(dtype="float64")
+
+
+def dividend_yield_history(by_year: pd.Series, history: pd.DataFrame) -> pd.Series:
+    """RPD de cada año cerrado: dividendo pagado ese año sobre el precio medio del mismo año.
+
+    Es la referencia clásica para saber si una empresa de dividendo cotiza cara o barata frente a
+    su propia historia, y se calcula con datos que ya se descargan (no hace falta otra llamada).
+    """
+    if by_year is None or by_year.empty or history is None or history.empty or "Close" not in history:
+        return pd.Series(dtype="float64")
+    closes = history["Close"].dropna()
+    if closes.empty:
+        return pd.Series(dtype="float64")
+    closes.index = to_naive_index(closes.index)
+    average_price_by_year = closes.groupby(closes.index.year).mean()
+    current_year = pd.Timestamp.today().year
+
+    yields: dict[int, float] = {}
+    for year, dividend in by_year.items():
+        year = int(year)
+        if year >= current_year:  # el año en curso está incompleto y falsearía la media
+            continue
+        average_price = average_price_by_year.get(year)
+        if average_price is None or not is_number(average_price) or float(average_price) <= 0:
+            continue
+        yields[year] = float(dividend) / float(average_price) * 100.0
+    return pd.Series(yields, dtype="float64").sort_index()
+
+
+def average_of_last(series: pd.Series, years: int) -> float:
+    if series is None or series.empty:
+        return math.nan
+    window = series.tail(years)
+    if window.empty:
+        return math.nan
+    return float(window.mean())
 
 
 def cagr_from_annual(series_by_year: pd.Series, years: int) -> float:

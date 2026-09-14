@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
 import { aggregateDividendsByCompany } from './resultSelectors'
@@ -54,7 +54,10 @@ const expectedPortfolioDocuments = [
 
 const lifeContextStorageKey = 'gestiones:portfolio-life-context'
 
-export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
+// Grupos que caben en la leyenda sin que la columna de Asignación sobrepase al gráfico de evolución.
+const ALLOCATION_PREVIEW_SIZE = 7
+
+export function PortfolioPanel({ financeRows = [], dividendPayments = [], onReviewPortfolio }) {
   const fileInputRef = useRef(null)
   const [snapshot, setSnapshot] = useState(null)
   const [files, setFiles] = useState([])
@@ -73,6 +76,13 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
   const [lifeContext, setLifeContext] = useState(() => loadLifeContext())
   const [expandedPositionKey, setExpandedPositionKey] = useState('')
   const [positionAnalyses, setPositionAnalyses] = useState({})
+  const [sortKey, setSortKey] = useState('value')
+  const [sortDirection, setSortDirection] = useState(-1)
+  const [selectedPositionKey, setSelectedPositionKey] = useState('')
+  const [areFundsOpen, setAreFundsOpen] = useState(false)
+  const [expandedAllocation, setExpandedAllocation] = useState('')
+  const [showAllAllocation, setShowAllAllocation] = useState(false)
+  const [detailTab, setDetailTab] = useState('resumen')
 
   const financeByMonth = useMemo(() => buildFinanceByMonth(financeRows), [financeRows])
   const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots, financeByMonth), [financeByMonth, snapshot, snapshots])
@@ -94,10 +104,35 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
   )
   const financeInvested = summary?.finance_invested ?? null
   const costTotal = Number(financeInvested ?? summary?.known_cost ?? 0)
+  // Dividendos y comisiones no salen de los brokers: vienen del histórico de Finanzas. Si ese
+  // histórico va por detrás de la fecha de la foto, decirlo aquí evita leer como "a día de hoy" una
+  // cifra que en realidad es de meses atrás.
+  const financeSourceMonth = summary?.finance_source_month ?? null
+  const financeIsBehind = Boolean(financeSourceMonth && selectedSnapshot?.snapshot_month && financeSourceMonth < selectedSnapshot.snapshot_month)
+  const financeSourceLabel = !financeSourceMonth
+    ? 'Sin datos de Finanzas'
+    : financeIsBehind
+      ? `Finanzas solo llega a ${financeSourceMonth}`
+      : `Hasta ${formatSnapshotDate(selectedSnapshot?.snapshot_date)}`
   const brokerCost = Number(summary?.known_cost ?? 0)
   const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
+  const positionRows = useMemo(() => buildPositionRows(investmentPositions, investedTotal), [investedTotal, investmentPositions])
+  const sortedPositionRows = useMemo(
+    () => sortPositionRows(positionRows, sortKey, sortDirection),
+    [positionRows, sortKey, sortDirection],
+  )
+  const selectedPosition = useMemo(() => {
+    const match = investmentPositions.find((position) => getPositionKey(position) === selectedPositionKey)
+    if (match) return match
+    // Sin selección explícita se muestra la mayor posición: es la que más explica la cartera.
+    return [...investmentPositions].sort((a, b) => Number(b.current_value ?? 0) - Number(a.current_value ?? 0))[0] ?? null
+  }, [investmentPositions, selectedPositionKey])
   const evolutionRows = useMemo(() => buildEvolutionRows(snapshots, financeByMonth), [financeByMonth, snapshots])
   const donutBackground = useMemo(() => buildDonutBackground(chartItems), [chartItems])
+  // La leyenda vive en la misma fila que el gráfico de evolución: si se listan todos los grupos,
+  // la columna crece sola y deja la otra mitad vacía. Se recorta y se despliega bajo demanda.
+  const hiddenAllocationCount = Math.max(chartItems.length - ALLOCATION_PREVIEW_SIZE, 0)
+  const visibleChartItems = showAllAllocation ? chartItems : chartItems.slice(0, ALLOCATION_PREVIEW_SIZE)
   const selectedFinance = useMemo(
     () => getFinanceForSnapshotMonth(financeByMonth, selectedSnapshot?.snapshot_month) ?? getLatestFinance(financeByMonth),
     [financeByMonth, selectedSnapshot?.snapshot_month],
@@ -446,51 +481,13 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
             <article className="tone-dividends">
               <span>Dividendos acumulados</span>
               <strong>{formatMoney(summary?.dividends)}</strong>
-              <small>Hasta {formatSnapshotDate(selectedSnapshot.snapshot_date)}</small>
+              <small className={financeIsBehind ? 'warning-text' : undefined}>{financeSourceLabel}</small>
             </article>
             <article className="tone-fees">
               <span>Comisiones</span>
               <strong>{formatMoney(summary?.fees)}</strong>
-              <small>Acumuladas hasta {formatSnapshotDate(selectedSnapshot.snapshot_date)}</small>
+              <small className={financeIsBehind ? 'warning-text' : undefined}>{financeSourceLabel}</small>
             </article>
-          </section>
-
-          <section className="portfolio-card">
-            <button className="portfolio-summary-toggle" type="button" onClick={() => setIsSummaryOpen((current) => !current)}>
-              {isSummaryOpen ? 'Ocultar resumen' : 'Mostrar resumen'}
-            </button>
-            {isSummaryOpen ? (
-              <>
-                <div className="portfolio-summary">
-                  <article>
-                    <span>Total local visible</span>
-                    <strong>{formatMoney(summary?.total_value)}</strong>
-                  </article>
-                  <article>
-                    <span>Coste broker detectado</span>
-                    <strong>{formatMoney(brokerCost)}</strong>
-                  </article>
-                  <article>
-                    <span>Efectivo no principal</span>
-                    <strong>{formatMoney(summary?.cash)}</strong>
-                  </article>
-                </div>
-
-                <div className="broker-grid">
-                  {brokers.map((broker) => (
-                    <article key={broker.broker}>
-                      <strong>{broker.broker}</strong>
-                      <span>Total: {formatMoney(broker.total_value)}</span>
-                      <span>Valor actual invertido: {formatMoney(broker.invested)}</span>
-                      <span>Coste broker detectado: {formatMoney(broker.known_cost)}</span>
-                      <span>Efectivo: {formatMoney(broker.cash)}</span>
-                      <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
-                      <span>Dividendos: {formatMoney(broker.dividends)}</span>
-                    </article>
-                  ))}
-                </div>
-              </>
-            ) : null}
           </section>
 
           {selectedSnapshot.warnings?.length ? (
@@ -502,160 +499,278 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
             </section>
           ) : null}
 
-          <section className="portfolio-card portfolio-evolution-card">
-            <div className="portfolio-chart-header">
-              <div>
-                <h3>Evolución</h3>
-                <span className="muted-text">{evolutionRows.length} fotos guardadas</span>
+          <div className="portfolio-board">
+            <section className="portfolio-card portfolio-evolution-card">
+              <div className="portfolio-chart-header">
+                <div>
+                  <h3>Evolución</h3>
+                  <span className="muted-text">{evolutionRows.length} fotos guardadas</span>
+                </div>
               </div>
-            </div>
-            {evolutionRows.length ? (
-              <PortfolioEvolutionChart
-                mode={portfolioEvolutionMode}
-                onModeChange={setPortfolioEvolutionMode}
-                rows={evolutionRows}
-                selectedKey={getSnapshotKey(selectedSnapshot)}
-              />
-            ) : (
-              <p className="muted-text">Aún no hay fotos suficientes para dibujar evolución.</p>
-            )}
-          </section>
+              {evolutionRows.length ? (
+                <PortfolioEvolutionChart
+                  mode={portfolioEvolutionMode}
+                  onModeChange={setPortfolioEvolutionMode}
+                  rows={evolutionRows}
+                  selectedKey={getSnapshotKey(selectedSnapshot)}
+                />
+              ) : (
+                <p className="muted-text">Aún no hay fotos suficientes para dibujar evolución.</p>
+              )}
+            </section>
 
-          <h3 className="portfolio-section-title">Composición de cartera</h3>
-
-          <section className="portfolio-card">
-            <div className="portfolio-chart-header">
-              <h3>Distribución dinámica</h3>
-              <div className="portfolio-chart-tabs" role="tablist" aria-label="Vista de distribución de cartera">
-                {chartModes.map((mode) => (
-                  <button
-                    className={chartMode === mode.id ? 'active' : ''}
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setChartMode(mode.id)}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="portfolio-structure">
-              <div
-                className="portfolio-donut"
-                aria-label="Estructura porcentual de cartera"
-                style={{ background: donutBackground }}
-              >
-                <strong>{formatMoney(investedTotal)}</strong>
-                <span>valor actual</span>
-              </div>
-              <div className="portfolio-stacked-bar" aria-label="Distribución porcentual de cartera invertida">
-                {chartItems.map((item, index) => (
-                  <span
-                    key={item.label}
-                    style={{
-                      background: getChartColor(index),
-                      width: getWeight(item.value, investedTotal),
-                    }}
-                    title={`${item.label}: ${formatMoney(item.value)} · ${formatNumber(item.weight, '%')}`}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="portfolio-distribution">
-              {chartItems.map((item, index) => (
-                <article key={item.label}>
-                  <div>
-                    <strong>
-                      <i style={{ background: getChartColor(index) }} />
-                      {item.label}
-                    </strong>
-                    <span>{formatMoney(item.value)}</span>
-                  </div>
-                  <span>{formatNumber(item.weight, '%')}</span>
-                  <div className="portfolio-bar">
-                    <span style={{ background: getChartColor(index), width: getWeight(item.value, investedTotal) }} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="portfolio-card">
-            <h3>Posiciones</h3>
-            <div className="table-wrap compact-table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Broker</th>
-                    <th>Activo</th>
-                    <th>Tipo</th>
-                    <th>Cantidad</th>
-                    <th>Valor</th>
-                    <th>Coste</th>
-                    <th>P/L</th>
-                    <th>Sector</th>
-                    <th>Región</th>
-                    <th>Horizonte</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {investmentPositions.map((position) => (
-                    <tr key={`${position.broker}-${position.isin ?? position.name}-${position.asset_type}`}>
-                      <td>{position.broker}</td>
-                      <td>{position.ticker ?? position.name}</td>
-                      <td>{formatAssetType(position.asset_type)}</td>
-                      <td>{formatNumber(position.quantity)}</td>
-                      <td>{formatMoney(position.current_value)}</td>
-                      <td>{formatMoney(position.cost)}</td>
-                      <td>{formatMoney(position.unrealized_gain)}</td>
-                      <td>{position.sector ?? 's/d'}</td>
-                      <td>{position.region ?? 's/d'}</td>
-                      <td>{position.horizon}</td>
-                    </tr>
+            <section className="portfolio-card">
+              <div className="portfolio-chart-header">
+                <h3>Asignación</h3>
+                <div className="portfolio-chart-tabs" role="tablist" aria-label="Vista de distribución de cartera">
+                  {chartModes.map((mode) => (
+                    <button
+                      className={chartMode === mode.id ? 'active' : ''}
+                      key={mode.id}
+                      role="tab"
+                      aria-selected={chartMode === mode.id}
+                      type="button"
+                      onClick={() => {
+                        setChartMode(mode.id)
+                        setExpandedAllocation('')
+                        setShowAllAllocation(false)
+                      }}
+                    >
+                      {mode.label}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </div>
+              </div>
+              <div className="portfolio-structure">
+                <div
+                  className="portfolio-donut"
+                  aria-label="Estructura porcentual de cartera"
+                  style={{ background: donutBackground }}
+                >
+                  <strong>{formatMoney(investedTotal)}</strong>
+                  <span>valor actual</span>
+                </div>
+              </div>
+              <p className="muted-text allocation-hint">Pulsa un grupo para ver qué activos lo componen.</p>
+              <div className="allocation-list">
+                {visibleChartItems.map((item, index) => {
+                  const isOpen = expandedAllocation === item.label
+                  return (
+                    <article className={isOpen ? 'is-open' : undefined} key={item.label}>
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        onClick={() => setExpandedAllocation(isOpen ? '' : item.label)}
+                      >
+                        <i style={{ background: getChartColor(index) }} />
+                        <span className="allocation-name">{item.label}</span>
+                        <span className="allocation-value">{formatMoney(item.value)}</span>
+                        <span className="allocation-weight">{formatNumber(item.weight, '%')}</span>
+                        <span className="allocation-caret" aria-hidden="true">{isOpen ? '−' : '+'}</span>
+                      </button>
+                      <div className="portfolio-bar">
+                        <span style={{ background: getChartColor(index), width: getWeight(item.value, investedTotal) }} />
+                      </div>
+                      {isOpen ? (
+                        <ul className="allocation-members">
+                          {item.members.map((member) => (
+                            <li key={getPositionKey(member)}>
+                              <span className="member-name">{getPositionLabel(member)}</span>
+                              <span className="member-meta">{member.broker}</span>
+                              <span className="member-value">{formatMoney(member.current_value)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+              {hiddenAllocationCount > 0 ? (
+                <button
+                  className="allocation-more"
+                  type="button"
+                  aria-expanded={showAllAllocation}
+                  onClick={() => setShowAllAllocation((previous) => !previous)}
+                >
+                  {showAllAllocation ? 'Ver menos' : `Ver más (${hiddenAllocationCount})`}
+                </button>
+              ) : null}
+            </section>
+          </div>
 
-          <section className="portfolio-card">
-            <h3>Análisis por acción</h3>
-            {analyzableStockPositions.length ? (
-              <div className="portfolio-position-grid portfolio-analysis-list">
-                {analyzableStockPositions.map((position) => (
-                <article key={getPositionKey(position)}>
-                  <div>
-                    <strong>{position.ticker ?? position.name}</strong>
-                    <span>{position.broker} · {position.region ?? 'Sin región'} · {position.sector ?? 'Sin sector'}</span>
+          <div className="portfolio-lower">
+            <section className="portfolio-card">
+              <div className="portfolio-chart-header">
+                <h3>Posiciones</h3>
+                <div className="positions-header-actions">
+                  <span className="muted-text">Pulsa una fila para ver el detalle</span>
+                  {onReviewPortfolio ? (
+                    <button className="portfolio-summary-toggle" type="button" onClick={onReviewPortfolio}>
+                      Analizar toda la cartera
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="table-wrap compact-table-wrap">
+                <table className="positions-table">
+                  <thead>
+                    <tr>
+                      {[
+                        { key: 'label', label: 'Activo', numeric: false },
+                        { key: 'broker', label: 'Bróker', numeric: false },
+                        { key: 'sector', label: 'Sector', numeric: false },
+                        { key: 'value', label: 'Valor', numeric: true },
+                        { key: 'weight', label: 'Peso', numeric: true },
+                      ].map((column) => (
+                        <th className={column.numeric ? 'num' : undefined} key={column.key}>
+                          <button
+                            className={sortKey === column.key ? 'sortable is-active' : 'sortable'}
+                            type="button"
+                            onClick={() => {
+                              setSortDirection((current) => (sortKey === column.key ? -current : column.numeric ? -1 : 1))
+                              setSortKey(column.key)
+                            }}
+                          >
+                            {column.label}
+                            <span aria-hidden="true">{sortKey === column.key ? (sortDirection === 1 ? ' ▴' : ' ▾') : ''}</span>
+                          </button>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedPositionRows.map((row) =>
+                      row.kind === 'funds' ? (
+                        <Fragment key={row.id}>
+                          <tr className="is-group" onClick={() => setAreFundsOpen((current) => !current)}>
+                            <td>
+                              <span className="row-caret" aria-hidden="true">{areFundsOpen ? '−' : '+'}</span>
+                              <strong>{row.label}</strong>
+                              <span className="row-sub">{row.name}</span>
+                            </td>
+                            <td>{row.broker}</td>
+                            <td className="muted-cell">{row.sector}</td>
+                            <td className="num">{formatMoney(row.value)}</td>
+                            <td className="num">{formatNumber(row.weight, '%')}</td>
+                          </tr>
+                          {areFundsOpen
+                            ? row.members.map((member) => (
+                                <tr
+                                  className={selectedPositionKey === member.id ? 'is-child is-selected' : 'is-child'}
+                                  key={member.id}
+                                  onClick={() => setSelectedPositionKey(member.id)}
+                                >
+                                  <td>
+                                    <span className="row-name">{member.label}</span>
+                                  </td>
+                                  <td>{member.broker}</td>
+                                  <td className="muted-cell">{member.region} · {member.sector}</td>
+                                  <td className="num">{formatMoney(member.value)}</td>
+                                  <td className="num">{formatNumber(member.weight, '%')}</td>
+                                </tr>
+                              ))
+                            : null}
+                        </Fragment>
+                      ) : (
+                        <tr
+                          className={selectedPositionKey === row.id ? 'is-selected' : undefined}
+                          key={row.id}
+                          onClick={() => setSelectedPositionKey(row.id)}
+                        >
+                          <td>
+                            <strong>{row.label}</strong>
+                            <span className="row-sub">{row.name}</span>
+                          </td>
+                          <td>{row.broker}</td>
+                          <td className="muted-cell">{row.sector}</td>
+                          <td className="num">{formatMoney(row.value)}</td>
+                          <td className="num">
+                            <span className="weight-cell">
+                              <span className="weight-bar"><i style={{ width: getWeight(row.value, investedTotal) }} /></span>
+                              {formatNumber(row.weight, '%')}
+                            </span>
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="portfolio-card portfolio-detail-rail">
+              {selectedPosition ? (
+                <>
+                  <div className="detail-head">
+                    <strong>{getPositionLabel(selectedPosition)}</strong>
+                    <span className="muted-text">{selectedPosition.name}</span>
+                  </div>
+                  <div className="detail-figures">
+                    <article>
+                      <span>Valor</span>
+                      <strong>{formatMoney(selectedPosition.current_value)}</strong>
+                    </article>
+                    <article>
+                      <span>Peso</span>
+                      <strong>{formatNumber((Number(selectedPosition.current_value ?? 0) / investedTotal) * 100, '%')}</strong>
+                    </article>
                   </div>
                   <div className="position-score">
                     <span>Puntuación</span>
-                    <strong>{formatPositionScore(positionAnalyses[getPositionKey(position)], position)}</strong>
+                    <strong>{formatPositionScore(positionAnalyses[getPositionKey(selectedPosition)], selectedPosition)}</strong>
                   </div>
-                  <div className="portfolio-bar">
-                    <span style={{ width: getWeight(position.current_value, investedTotal) }} />
-                  </div>
-                  <div className="position-card-footer">
-                    <span>{formatMoney(position.current_value)} · {formatNumber((Number(position.current_value ?? 0) / investedTotal) * 100, '%')}</span>
-                    <button
-                      className="portfolio-summary-toggle"
-                      type="button"
-                      onClick={() => togglePositionAnalysis(position)}
-                      disabled={!position.ticker}
-                    >
-                      {expandedPositionKey === getPositionKey(position) ? 'Cerrar análisis' : position.ticker ? 'Ver análisis' : 'Sin ticker'}
-                    </button>
-                  </div>
-                  {expandedPositionKey === getPositionKey(position) ? (
-                    <PositionAnalysis analysis={positionAnalyses[getPositionKey(position)]} position={position} />
+                  <dl className="detail-meta">
+                    <div>
+                      <dt>Bróker</dt>
+                      <dd>{selectedPosition.broker}</dd>
+                    </div>
+                    <div>
+                      <dt>Tipo</dt>
+                      <dd>{formatAssetType(selectedPosition.asset_type)}</dd>
+                    </div>
+                    <div>
+                      <dt>Sector</dt>
+                      <dd>{selectedPosition.sector ?? 'Sin clasificar'}</dd>
+                    </div>
+                    <div>
+                      <dt>Región</dt>
+                      <dd>{selectedPosition.region ?? 'Sin clasificar'}</dd>
+                    </div>
+                    <div>
+                      <dt>Horizonte</dt>
+                      <dd>{selectedPosition.horizon}</dd>
+                    </div>
+                    <div>
+                      <dt>Coste</dt>
+                      <dd>{formatMoney(selectedPosition.cost)}</dd>
+                    </div>
+                    <div>
+                      <dt>P/L</dt>
+                      <dd>{formatMoney(selectedPosition.unrealized_gain)}</dd>
+                    </div>
+                  </dl>
+                  <button
+                    className="portfolio-summary-toggle"
+                    type="button"
+                    onClick={() => togglePositionAnalysis(selectedPosition)}
+                    disabled={!selectedPosition.ticker}
+                  >
+                    {expandedPositionKey === getPositionKey(selectedPosition)
+                      ? 'Cerrar análisis'
+                      : selectedPosition.ticker
+                        ? 'Ver análisis'
+                        : 'Sin ticker'}
+                  </button>
+                  {expandedPositionKey === getPositionKey(selectedPosition) ? (
+                    <PositionAnalysis analysis={positionAnalyses[getPositionKey(selectedPosition)]} position={selectedPosition} />
                   ) : null}
-                </article>
-                ))}
-              </div>
-            ) : (
-              <p className="muted-text">No hay acciones con ticker compatible para análisis automático en este snapshot.</p>
-            )}
-          </section>
+                </>
+              ) : (
+                <p className="muted-text">Selecciona una posición para ver su detalle.</p>
+              )}
+            </section>
+          </div>
 
           <section className="portfolio-card">
             <h3>Dividendos por empresa</h3>
@@ -696,8 +811,60 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
             )}
           </section>
 
-          <h3 className="portfolio-section-title">Planificación</h3>
+          <h3 className="portfolio-section-title">Detalle y gestión</h3>
+          <div className="portfolio-subtabs" role="tablist" aria-label="Secciones de detalle de cartera">
+            {[
+              { id: 'resumen', label: 'Resumen por bróker' },
+              { id: 'planificacion', label: 'Planificación' },
+              { id: 'datos', label: 'Datos e importación' },
+            ].map((tab) => (
+              <button
+                className={detailTab === tab.id ? 'active' : ''}
+                key={tab.id}
+                role="tab"
+                aria-selected={detailTab === tab.id}
+                type="button"
+                onClick={() => setDetailTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
+          {detailTab === 'resumen' ? (
+            <section className="portfolio-card">
+              <div className="portfolio-summary">
+                <article>
+                  <span>Total local visible</span>
+                  <strong>{formatMoney(summary?.total_value)}</strong>
+                </article>
+                <article>
+                  <span>Coste broker detectado</span>
+                  <strong>{formatMoney(brokerCost)}</strong>
+                </article>
+                <article>
+                  <span>Efectivo no principal</span>
+                  <strong>{formatMoney(summary?.cash)}</strong>
+                </article>
+              </div>
+
+              <div className="broker-grid">
+                {brokers.map((broker) => (
+                  <article key={broker.broker}>
+                    <strong>{broker.broker}</strong>
+                    <span>Total: {formatMoney(broker.total_value)}</span>
+                    <span>Valor actual invertido: {formatMoney(broker.invested)}</span>
+                    <span>Coste broker detectado: {formatMoney(broker.known_cost)}</span>
+                    <span>Efectivo: {formatMoney(broker.cash)}</span>
+                    <span>Rentabilidad conocida: {formatMoney(broker.known_unrealized_gain)}</span>
+                    <span>Dividendos: {formatMoney(broker.dividends)}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {detailTab === 'planificacion' ? (
           <section className="portfolio-card portfolio-global-card">
             <div className="portfolio-chart-header">
               <div>
@@ -802,8 +969,9 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
             </div>
           </section>
 
-          <h3 className="portfolio-section-title">Gestión de datos</h3>
+          ) : null}
 
+          {detailTab === 'datos' ? (
           <section className="portfolio-card">
             <div className="portfolio-chart-header">
               <h3>Archivos importados</h3>
@@ -826,6 +994,7 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [] }) {
               ))}
             </div>
           </section>
+          ) : null}
         </div>
       )}
     </section>
@@ -1180,14 +1349,84 @@ function formatSnapshotShortLabel(value) {
 function buildPortfolioChart(positions, mode) {
   const total = positions.reduce((acc, position) => acc + Number(position.current_value ?? 0), 0)
   if (!positions.length || !total) return []
-  const groups = positions.reduce((acc, position) => {
+  // Se guardan también los activos de cada grupo para poder desplegarlos desde la leyenda: la
+  // pregunta natural al ver una porción es "¿y esto qué lo compone?".
+  const groups = new Map()
+  for (const position of positions) {
     const label = getChartLabel(position, mode)
-    acc[label] = (acc[label] ?? 0) + Number(position.current_value ?? 0)
-    return acc
-  }, {})
-  return Object.entries(groups)
-    .map(([label, value]) => ({ label, value, weight: (value / total) * 100 }))
+    const group = groups.get(label) ?? { label, value: 0, members: [] }
+    group.value += Number(position.current_value ?? 0)
+    group.members.push(position)
+    groups.set(label, group)
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      weight: (group.value / total) * 100,
+      members: [...group.members].sort((a, b) => Number(b.current_value ?? 0) - Number(a.current_value ?? 0)),
+    }))
     .sort((left, right) => right.value - left.value)
+}
+
+function getPositionLabel(position) {
+  return position.ticker ?? position.name ?? 'Sin nombre'
+}
+
+/** Filas de la tabla de posiciones: los fondos van plegados en una sola fila desplegable, porque
+ * individualmente son pequeños y lo interesante de un indexado es el bloque. El resto va suelto. */
+function buildPositionRows(positions, total) {
+  const funds = positions.filter((position) => position.asset_type === 'fund')
+  const rest = positions.filter((position) => position.asset_type !== 'fund')
+  const share = (value) => (total > 0 ? (Number(value ?? 0) / total) * 100 : 0)
+
+  const rows = rest.map((position) => ({
+    id: getPositionKey(position),
+    kind: 'position',
+    label: getPositionLabel(position),
+    name: position.name,
+    broker: position.broker,
+    sector: position.sector ?? 'Sin clasificar',
+    value: Number(position.current_value ?? 0),
+    weight: share(position.current_value),
+    position,
+  }))
+
+  if (funds.length) {
+    const value = funds.reduce((acc, fund) => acc + Number(fund.current_value ?? 0), 0)
+    const brokers = [...new Set(funds.map((fund) => fund.broker))]
+    rows.push({
+      id: 'grupo-fondos',
+      kind: 'funds',
+      label: `${funds.length} fondos indexados`,
+      name: 'Agrupados: despliega para ver cada fondo con su región y sector',
+      broker: brokers.length === 1 ? brokers[0] : `${brokers.length} brókeres`,
+      sector: 'Varios',
+      value,
+      weight: share(value),
+      members: [...funds]
+        .sort((a, b) => Number(b.current_value ?? 0) - Number(a.current_value ?? 0))
+        .map((fund) => ({
+          id: getPositionKey(fund),
+          label: fund.name,
+          broker: fund.broker,
+          region: fund.region ?? 'Sin clasificar',
+          sector: fund.sector ?? 'Sin clasificar',
+          value: Number(fund.current_value ?? 0),
+          weight: share(fund.current_value),
+          position: fund,
+        })),
+    })
+  }
+  return rows
+}
+
+function sortPositionRows(rows, key, direction) {
+  return [...rows].sort((left, right) => {
+    const a = left[key]
+    const b = right[key]
+    const comparison = typeof a === 'string' ? a.localeCompare(b, 'es') : Number(a) - Number(b)
+    return comparison * direction
+  })
 }
 
 function getChartLabel(position, mode) {
