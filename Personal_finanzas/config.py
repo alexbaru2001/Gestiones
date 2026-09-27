@@ -15,5 +15,6 @@ saldos_iniciales = {
     'Cobee': 0,
     'Metálico': 54.999999999999986,
     'Revolut': 0.0,
-    'Ahorro': 4680.999999999999
+    'Ahorro': 4680.999999999999,
+    'Ibercaja': 0.0
 }
