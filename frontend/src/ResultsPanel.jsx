@@ -1,5 +1,8 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
+import { ChartCrosshair, ChartReadout, PeriodTabs } from './ChartParts'
+import { getSvgCoordinates, linePath } from './chartGeometry'
+import { useChartCrosshair } from './useChartCrosshair'
 import { formatDelta, formatMoney } from './formatters'
 import { aggregateDividendsByCompany, comparisonRows, getDividendPayments } from './resultSelectors'
 
@@ -167,21 +170,6 @@ function movingAverage(values, windowSize = 3) {
     const chunk = values.slice(start, index + 1)
     return chunk.reduce((total, value) => total + value, 0) / chunk.length
   })
-}
-
-function getSvgCoordinates(values, min, max, options = {}) {
-  const width = options.width ?? 640
-  const height = options.height ?? 220
-  const padding = options.padding ?? 18
-  const paddingLeft = options.paddingLeft ?? padding
-  const paddingRight = options.paddingRight ?? padding
-  const paddingTop = options.paddingTop ?? padding
-  const paddingBottom = options.paddingBottom ?? padding
-  const range = max - min || 1
-  return values.map((value, index) => ({
-    x: paddingLeft + (index / Math.max(1, values.length - 1)) * (width - paddingLeft - paddingRight),
-    y: height - paddingBottom - ((value - min) / range) * (height - paddingTop - paddingBottom),
-  }))
 }
 
 function formatMonthLabel(value) {
@@ -359,36 +347,6 @@ function useElementWidth(fallback) {
   return [ref, width]
 }
 
-// Convierte los puntos en una curva suave (Catmull-Rom a Bézier) que pasa
-// exactamente por cada valor real, sin inventar datos entre meses.
-function smoothLinePath(points) {
-  if (points.length < 2) return ''
-  if (points.length === 2) {
-    return `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} L ${points[1].x.toFixed(1)},${points[1].y.toFixed(1)}`
-  }
-  let path = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const p0 = points[index - 1] ?? points[index]
-    const p1 = points[index]
-    const p2 = points[index + 1]
-    const p3 = points[index + 2] ?? p2
-    const c1x = p1.x + (p2.x - p0.x) / 6
-    const c1y = p1.y + (p2.y - p0.y) / 6
-    const c2x = p2.x - (p3.x - p1.x) / 6
-    const c2y = p2.y - (p3.y - p1.y) / 6
-    path += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
-  }
-  return path
-}
-
-function smoothAreaPath(points, baselineY) {
-  const line = smoothLinePath(points)
-  if (!line) return ''
-  const first = points[0]
-  const last = points.at(-1)
-  return `${line} L ${last.x.toFixed(1)},${baselineY.toFixed(1)} L ${first.x.toFixed(1)},${baselineY.toFixed(1)} Z`
-}
-
 function TypologyMiniChart({
   color,
   formatCompact = formatMoneyCompact,
@@ -396,10 +354,9 @@ function TypologyMiniChart({
   height = 64,
   label,
   months,
+  onActiveIndexChange,
   values,
 }) {
-  const [tooltip, setTooltip] = useState(null)
-  const gradientId = useId()
   const [containerRef, width] = useElementWidth(240)
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 1)
@@ -409,28 +366,31 @@ function TypologyMiniChart({
   const paddingBottom = 18
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinates = getSvgCoordinates(values, min, max, chartOptions)
-  const areaPath = smoothAreaPath(coordinates, height - paddingBottom)
-  const linePath = smoothLinePath(coordinates)
   const last = coordinates.at(-1)
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
+  const baselineY = coordinates[0]?.y ?? null
   const plotBottom = height - paddingBottom
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
   const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
 
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    coordinates.map((point) => point.x),
+    width,
+  )
+  // El valor grande de la tarjeta lo pinta el contenedor, así que se le avisa del punto señalado.
+  useEffect(() => {
+    onActiveIndexChange?.(isHovering ? activeIndex : null)
+  }, [activeIndex, isHovering, onActiveIndexChange])
+
   return (
-    <div className="mini-trend" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
+    <div className="mini-trend" ref={containerRef}>
       <svg
         aria-label={`${label}: de ${formatValue(values[0])} a ${formatValue(values.at(-1))} en ${values.length} meses, ${trend}.`}
         className="mini-trend-svg"
         height={height}
-        role="img"
+        ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
         {[0.25, 0.5, 0.75].map((fraction) => (
           <line
             className="mini-grid-line"
@@ -442,21 +402,7 @@ function TypologyMiniChart({
           />
         ))}
         <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
-        <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
-        <path d={linePath} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-        {coordinates.map((point, index) => (
-          <circle
-            cx={point.x}
-            cy={point.y}
-            fill="transparent"
-            key={months[index] ?? index}
-            onFocus={() => setTooltip({ month: months[index], value: values[index], x: point.x, y: point.y })}
-            onMouseEnter={() => setTooltip({ month: months[index], value: values[index], x: point.x, y: point.y })}
-            r="9"
-            tabIndex="0"
-          />
-        ))}
-        <circle cx={last.x} cy={last.y} fill={color} pointerEvents="none" r="3.6" />
+        <path d={linePath(coordinates)} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
           {formatCompact(max)}
         </text>
@@ -469,14 +415,50 @@ function TypologyMiniChart({
         <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
           {formatMonthLabel(months.at(-1))}
         </text>
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={baselineY}
+          handlers={handlers}
+          isHovering={isHovering}
+          label={`Recorrer ${label}`}
+          plot={plot}
+          pointColor={color}
+          points={coordinates}
+        />
       </svg>
-      {tooltip && (
-        <div className="mini-trend-tooltip" style={{ left: `${(tooltip.x / width) * 100}%` }}>
-          <span>{formatMonthLabel(tooltip.month)}</span>
-          <strong>{formatValue(tooltip.value)}</strong>
+      {isHovering && coordinates[activeIndex] ? (
+        <div className="mini-trend-tooltip" style={{ left: `${(coordinates[activeIndex].x / width) * 100}%` }}>
+          <span>{formatMonthLabel(months[activeIndex])}</span>
+          <strong>{formatValue(values[activeIndex])}</strong>
         </div>
-      )}
+      ) : null}
     </div>
+  )
+}
+
+function TypologyMiniCard({ color, label, months, onFeature, values }) {
+  // Cada mini tarjeta lleva su cifra: sin estado propio, señalar una cambiaría el valor de todas.
+  const [activeIndex, setActiveIndex] = useState(null)
+  const shownIndex = activeIndex ?? values.length - 1
+
+  return (
+    <article className="typology-mini">
+      <div className="typology-mini-head">
+        <div className="typology-mini-head-info">
+          <span>{label}</span>
+          <strong>{formatMoney(values[shownIndex])}</strong>
+        </div>
+        <TypologyFeatureButton label={label} onFeature={onFeature} />
+      </div>
+      <TypologyMiniChart
+        color={color}
+        height={72}
+        label={label}
+        months={months}
+        onActiveIndexChange={setActiveIndex}
+        values={values}
+      />
+    </article>
   )
 }
 
@@ -496,7 +478,6 @@ function TypologyCompareChart({
   seriesA,
   seriesB,
 }) {
-  const [tooltip, setTooltip] = useState(null)
   const [containerRef, width] = useElementWidth(560)
   const combined = [...seriesA.values, ...seriesB.values]
   const min = Math.min(...combined, 0)
@@ -508,20 +489,25 @@ function TypologyCompareChart({
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinatesA = getSvgCoordinates(seriesA.values, min, max, chartOptions)
   const coordinatesB = getSvgCoordinates(seriesB.values, min, max, chartOptions)
-  const pathA = smoothLinePath(coordinatesA)
-  const pathB = smoothLinePath(coordinatesB)
+  const pathA = linePath(coordinatesA)
+  const pathB = linePath(coordinatesB)
   const lastA = coordinatesA.at(-1)
   const lastB = coordinatesB.at(-1)
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const plotBottom = height - paddingBottom
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    coordinatesA.map((point) => point.x),
+    width,
+  )
 
   return (
-    <div className="mini-trend compare-trend" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
+    <div className="mini-trend compare-trend" ref={containerRef}>
       <svg
         aria-label={`${seriesA.label} y ${seriesB.label} comparados mes a mes en el mismo eje. Último mes: ${seriesA.label} ${formatValue(seriesA.values.at(-1))}, ${seriesB.label} ${formatValue(seriesB.values.at(-1))}.`}
         className="mini-trend-svg"
         height={height}
-        role="img"
+        ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
         {[0.25, 0.5, 0.75].map((fraction) => (
@@ -545,20 +531,11 @@ function TypologyCompareChart({
           strokeLinejoin="round"
           strokeWidth="2"
         />
-        {coordinatesA.map((point, index) => (
-          <circle
-            cx={point.x}
-            cy={point.y}
-            fill="transparent"
-            key={months[index] ?? index}
-            onFocus={() => setTooltip({ a: seriesA.values[index], b: seriesB.values[index], month: months[index], x: point.x })}
-            onMouseEnter={() => setTooltip({ a: seriesA.values[index], b: seriesB.values[index], month: months[index], x: point.x })}
-            r="10"
-            tabIndex="0"
-          />
-        ))}
         <circle cx={lastA.x} cy={lastA.y} fill={seriesA.color} pointerEvents="none" r="3.6" />
         <circle cx={lastB.x} cy={lastB.y} fill={seriesB.color} pointerEvents="none" r="3.6" />
+        {isHovering && coordinatesB[activeIndex] ? (
+          <circle className="chart-active-point" cx={coordinatesB[activeIndex].x} cy={coordinatesB[activeIndex].y} fill={seriesB.color} r="5" />
+        ) : null}
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
           {formatCompact(max)}
         </text>
@@ -571,17 +548,27 @@ function TypologyCompareChart({
         <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
           {formatMonthLabel(months.at(-1))}
         </text>
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={coordinatesA[0]?.y ?? null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label={`Recorrer ${seriesA.label} y ${seriesB.label}`}
+          plot={plot}
+          pointColor={seriesA.color}
+          points={coordinatesA}
+        />
       </svg>
-      {tooltip && (
-        <div className="mini-trend-tooltip compare-tooltip" style={{ left: `${(tooltip.x / width) * 100}%` }}>
-          <span>{formatMonthLabel(tooltip.month)}</span>
+      {isHovering && coordinatesA[activeIndex] && (
+        <div className="mini-trend-tooltip compare-tooltip" style={{ left: `${(coordinatesA[activeIndex].x / width) * 100}%` }}>
+          <span>{formatMonthLabel(months[activeIndex])}</span>
           <span className="mini-tooltip-row">
             <i style={{ background: seriesA.color }} />
-            {seriesA.label} {formatValue(tooltip.a)}
+            {seriesA.label} {formatValue(seriesA.values[activeIndex])}
           </span>
           <span className="mini-tooltip-row">
             <i style={{ background: seriesB.color }} />
-            {seriesB.label} {formatValue(tooltip.b)}
+            {seriesB.label} {formatValue(seriesB.values[activeIndex])}
           </span>
         </div>
       )}
@@ -623,7 +610,6 @@ function ExpenseCategoryChart({
   rows,
 }) {
   const [containerRef, width] = useElementWidth(720)
-  const [tooltip, setTooltip] = useState(null)
   const height = 240
   const paddingRight = 12
   const paddingTop = 16
@@ -667,12 +653,18 @@ function ExpenseCategoryChart({
 
   const averageValues = movingAverage(netTotals)
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
-  const averagePath = smoothLinePath(averagePoints)
+  const averagePath = linePath(averagePoints)
   const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    bars.map((bar) => bar.barX + barWidth / 2),
+    width,
+  )
+  const activeBar = isHovering ? bars[activeIndex] : null
 
   return (
-    <div className="expense-chart" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
-      <svg aria-label={ariaLabel} className="mini-trend-svg" height={height} role="img" viewBox={`0 0 ${width} ${height}`}>
+    <div className="expense-chart" ref={containerRef}>
+      <svg aria-label={ariaLabel} className="mini-trend-svg" height={height} ref={svgRef} viewBox={`0 0 ${width} ${height}`}>
         {[0.25, 0.5, 0.75].map((fraction) => (
           <line
             className="mini-grid-line"
@@ -695,21 +687,6 @@ function ExpenseCategoryChart({
         {averagePoints.map((point, index) => (
           <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
-        {bars.map((bar) => (
-          <rect
-            aria-label={`${bar.label}: ${formatMoney(bar.segments.reduce((sum, segment) => sum + segment.value, 0))} en total`}
-            fill="transparent"
-            height={plotHeight}
-            key={`hit-${bar.key}`}
-            onFocus={() => setTooltip(bar)}
-            onMouseEnter={() => setTooltip(bar)}
-            role="img"
-            tabIndex="0"
-            width={bar.hitWidth}
-            x={bar.hitX}
-            y={paddingTop}
-          />
-        ))}
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
           {formatMoneyCompact(max)}
         </text>
@@ -723,17 +700,27 @@ function ExpenseCategoryChart({
             </text>
           ) : null,
         )}
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer los gastos por categoría"
+          plot={plot}
+          pointColor="#1c2a22"
+          points={averagePoints}
+        />
       </svg>
-      {tooltip && (
-        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((tooltip.barX + barWidth / 2) / width) * 100}%` }}>
-          <span>{tooltip.label}</span>
-          {tooltip.segments.map((segment) => (
+      {activeBar && (
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((activeBar.barX + barWidth / 2) / width) * 100}%` }}>
+          <span>{activeBar.label}</span>
+          {activeBar.segments.map((segment) => (
             <span className="mini-tooltip-row" key={segment.label}>
               <i style={{ background: segment.color }} />
               {segment.label} {formatMoney(segment.value)}
             </span>
           ))}
-          <strong>Total {formatMoney(tooltip.segments.reduce((sum, segment) => sum + segment.value, 0))}</strong>
+          <strong>Total {formatMoney(activeBar.segments.reduce((sum, segment) => sum + segment.value, 0))}</strong>
         </div>
       )}
     </div>
@@ -742,7 +729,6 @@ function ExpenseCategoryChart({
 
 function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#7a2e2e', rows }) {
   const [containerRef, width] = useElementWidth(720)
-  const [tooltip, setTooltip] = useState(null)
   const height = 220
   const paddingRight = 12
   const paddingTop = 16
@@ -769,16 +755,22 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
 
   const averageValues = movingAverage(values)
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
-  const averagePath = smoothLinePath(averagePoints)
+  const averagePath = linePath(averagePoints)
   const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    bars.map((bar) => bar.barX + barWidth / 2),
+    width,
+  )
+  const activeBar = isHovering ? bars[activeIndex] : null
 
   return (
-    <div className="expense-chart" onMouseLeave={() => setTooltip(null)} ref={containerRef}>
+    <div className="expense-chart" ref={containerRef}>
       <svg
         aria-label="Cantidad ahorrada por bloques de meses anteriores, con media móvil"
         className="mini-trend-svg"
         height={height}
-        role="img"
+        ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
         {[0.25, 0.5, 0.75].map((fraction) => (
@@ -799,21 +791,6 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
         {averagePoints.map((point, index) => (
           <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
-        {bars.map((bar) => (
-          <rect
-            aria-label={`${bar.label}: ${formatMoney(bar.value)}`}
-            fill="transparent"
-            height={plotHeight}
-            key={`hit-${bar.key}`}
-            onFocus={() => setTooltip(bar)}
-            onMouseEnter={() => setTooltip(bar)}
-            role="img"
-            tabIndex="0"
-            width={bar.hitWidth}
-            x={bar.hitX}
-            y={paddingTop}
-          />
-        ))}
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
           {formatMoneyCompact(max)}
         </text>
@@ -827,11 +804,21 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
             </text>
           ) : null,
         )}
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer las cantidades ahorradas"
+          plot={plot}
+          pointColor="#1c2a22"
+          points={averagePoints}
+        />
       </svg>
-      {tooltip && (
-        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((tooltip.barX + barWidth / 2) / width) * 100}%` }}>
-          <span>{tooltip.label}</span>
-          <strong>{formatMoney(tooltip.value)}</strong>
+      {activeBar && (
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((activeBar.barX + barWidth / 2) / width) * 100}%` }}>
+          <span>{activeBar.label}</span>
+          <strong>{formatMoney(activeBar.value)}</strong>
         </div>
       )}
     </div>
@@ -860,6 +847,8 @@ export function ResultsPanel({
   const [activeTab, setActiveTab] = useState('resumen')
   const [typologyPeriod, setTypologyPeriod] = useState('12')
   const [featuredTypology, setFeaturedTypology] = useState(typologyCards[0].field)
+  // Índice que el ratón está señalando en la gráfica grande: gobierna la cifra de cabecera.
+  const [featuredActiveIndex, setFeaturedActiveIndex] = useState(null)
   const [expensePeriod, setExpensePeriod] = useState('6')
   const [activeExpenseCategories, setActiveExpenseCategories] = useState(() => expenseCategoryFields.map((field) => field.field))
   const [savingsPeriod, setSavingsPeriod] = useState('12')
@@ -1245,16 +1234,12 @@ export function ResultsPanel({
                   <div className="expenses-panel">
                     <div className="table-toolbar compact-toolbar">
                       <h3 className="table-title">Gastos por categoría</h3>
-                      <label className="period-selector">
-                        <span>Periodo</span>
-                        <select value={expensePeriod} onChange={(event) => setExpensePeriod(event.target.value)}>
-                          {expensePeriods.map((period) => (
-                            <option key={period.value} value={period.value}>
-                              {period.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <PeriodTabs
+                        ariaLabel="Periodo de gastos"
+                        onChange={setExpensePeriod}
+                        options={expensePeriods}
+                        value={expensePeriod}
+                      />
                     </div>
                     {expensePieGradient ? (
                       <div className="expense-pie-layout">
@@ -1360,16 +1345,12 @@ export function ResultsPanel({
                         <h3 className="table-title">Porcentaje de ahorro</h3>
                         <span className="muted-text">Comparado con la media móvil de 3 meses</span>
                       </div>
-                      <label className="period-selector">
-                        <span>Periodo</span>
-                        <select value={savingsPeriod} onChange={(event) => setSavingsPeriod(event.target.value)}>
-                          {expensePeriods.map((period) => (
-                            <option key={period.value} value={period.value}>
-                              {period.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <PeriodTabs
+                        ariaLabel="Periodo de ahorro"
+                        onChange={setSavingsPeriod}
+                        options={expensePeriods}
+                        value={savingsPeriod}
+                      />
                     </div>
                     <div className="typology-compare">
                       <div className="typology-compare-legend">
@@ -1401,16 +1382,12 @@ export function ResultsPanel({
                           Bloques de {savingsBucketSize} {savingsBucketSize === 1 ? 'mes' : 'meses'}, últimos {savingsBucketedRows.length}
                         </span>
                       </div>
-                      <label className="period-selector">
-                        <span>Periodo</span>
-                        <select value={savingsAmountPeriod} onChange={(event) => setSavingsAmountPeriod(event.target.value)}>
-                          {expensePeriods.map((period) => (
-                            <option key={period.value} value={period.value}>
-                              {period.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <PeriodTabs
+                        ariaLabel="Periodo de importes ahorrados"
+                        onChange={setSavingsAmountPeriod}
+                        options={expensePeriods}
+                        value={savingsAmountPeriod}
+                      />
                     </div>
                     <SavingsAmountChart getLabel={formatExpenseBucketLabel} rows={savingsBucketedRows} />
                     <div className="expense-chart-legend">
@@ -1585,33 +1562,33 @@ export function ResultsPanel({
                           ))}
                         </select>
                       </label>
-                      <label className="period-selector">
-                        <span>Periodo</span>
-                        <select value={typologyPeriod} onChange={(event) => setTypologyPeriod(event.target.value)}>
-                          {typologyPeriods.map((period) => (
-                            <option key={period.value} value={period.value}>
-                              {period.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <PeriodTabs
+                        ariaLabel="Periodo de tipologías"
+                        onChange={setTypologyPeriod}
+                        options={typologyPeriods}
+                        value={typologyPeriod}
+                      />
                     </div>
                   </div>
                   {typologyRows.length > 0 ? (
                     <div className="typology-board">
                       <article className="typology-hero">
-                        <div className="typology-hero-head">
-                          <span className="typology-hero-label">{featuredCard.label}</span>
-                          <strong className="typology-hero-value">{formatMoney(featuredValues.at(-1))}</strong>
-                          <span className="typology-hero-delta">
-                            {formatDelta(featuredValues.at(-1) - featuredValues[0])} en {typologyRows.length} meses
-                          </span>
-                        </div>
+                        <ChartReadout
+                          activeIndex={featuredActiveIndex}
+                          className="typology-hero-head"
+                          formatDelta={formatDelta}
+                          formatValue={formatMoney}
+                          label={featuredCard.label}
+                          labels={typologyMonths.map((month) => formatMonthLabel(month))}
+                          periodLabel={`${typologyRows.length} meses`}
+                          values={featuredValues}
+                        />
                         <TypologyMiniChart
                           color={featuredCard.color}
                           height={200}
                           label={featuredCard.label}
                           months={typologyMonths}
+                          onActiveIndexChange={setFeaturedActiveIndex}
                           values={featuredValues}
                         />
                       </article>
@@ -1644,16 +1621,14 @@ export function ResultsPanel({
                         {otherTypologyCards.map(({ field, label, color }) => {
                           const values = typologyRows.map((row) => asNumber(row[field]))
                           return (
-                            <article className="typology-mini" key={field}>
-                              <div className="typology-mini-head">
-                                <div className="typology-mini-head-info">
-                                  <span>{label}</span>
-                                  <strong>{formatMoney(values.at(-1))}</strong>
-                                </div>
-                                <TypologyFeatureButton label={label} onFeature={() => setFeaturedTypology(field)} />
-                              </div>
-                              <TypologyMiniChart color={color} height={72} label={label} months={typologyMonths} values={values} />
-                            </article>
+                            <TypologyMiniCard
+                              color={color}
+                              key={field}
+                              label={label}
+                              months={typologyMonths}
+                              onFeature={() => setFeaturedTypology(field)}
+                              values={values}
+                            />
                           )
                         })}
                       </div>

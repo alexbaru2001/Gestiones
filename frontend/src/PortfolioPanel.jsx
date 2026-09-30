@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { ChartCrosshair, ChartReadout } from './ChartParts'
+import { polylinePoints } from './chartGeometry'
+import { useChartCrosshair } from './useChartCrosshair'
 import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
 import { aggregateDividendsByCompany } from './resultSelectors'
@@ -22,12 +25,6 @@ function getWeight(value, total) {
 function getAxisTicks(min, max, count = 4) {
   const range = max - min || 1
   return Array.from({ length: count }, (_, index) => min + (range / Math.max(1, count - 1)) * index)
-}
-
-function getAreaPathFromCoordinates(coordinates, baseline) {
-  if (!coordinates.length) return ''
-  const line = coordinates.map(({ x, y }) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
-  return `M ${coordinates[0].x.toFixed(1)} ${baseline.toFixed(1)} ${line} L ${coordinates.at(-1).x.toFixed(1)} ${baseline.toFixed(1)} Z`
 }
 
 const chartModes = [
@@ -1069,9 +1066,9 @@ function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
       </div>
 
       {mode === 'return' ? (
-        <PortfolioReturnChart rows={visibleRows} selectedKey={selectedKey} />
+        <PortfolioReturnChart rows={visibleRows} />
       ) : (
-        <PortfolioAmountChart mode={mode} rows={visibleRows} selectedKey={selectedKey} />
+        <PortfolioAmountChart mode={mode} rows={visibleRows} />
       )}
 
       <div className="portfolio-weight-chart">
@@ -1105,7 +1102,7 @@ function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
   )
 }
 
-function PortfolioAmountChart({ mode, rows, selectedKey }) {
+function PortfolioAmountChart({ mode, rows }) {
   const lineSeries = mode === 'stocks' ? buildStockEvolutionSeries(rows) : buildGlobalEvolutionSeries(rows)
   const valueMax = Math.max(...lineSeries.flatMap((serie) => serie.values), 1)
   const chart = { width: 720, height: 260, paddingLeft: 58, paddingRight: 22, paddingTop: 24, paddingBottom: 46 }
@@ -1115,15 +1112,31 @@ function PortfolioAmountChart({ mode, rows, selectedKey }) {
     chart.height - chart.paddingBottom - (value / valueMax) * (chart.height - chart.paddingTop - chart.paddingBottom)
   const yTicks = getAxisTicks(0, valueMax, 4)
 
+  const leadIndex = Math.max(0, lineSeries.findIndex((serie) => serie.isLead))
+  const leadSeries = lineSeries[leadIndex] ?? lineSeries[0]
+  const mainCoordinates = (leadSeries?.values ?? []).map((value, index) => ({ x: xForIndex(index), y: yForValue(value) }))
+  const plot = {
+    left: chart.paddingLeft,
+    right: chart.width - chart.paddingRight,
+    top: chart.paddingTop,
+    bottom: chart.height - chart.paddingBottom,
+  }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    mainCoordinates.map((point) => point.x),
+    chart.width,
+  )
+
   return (
     <div className="portfolio-line-chart-wrap">
-      <svg className="portfolio-line-chart" viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Evolución de cartera">
-        <defs>
-          <linearGradient id="portfolioMainArea" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#B08D57" stopOpacity="0.24" />
-            <stop offset="100%" stopColor="#B08D57" stopOpacity="0.01" />
-          </linearGradient>
-        </defs>
+      <ChartReadout
+        activeIndex={isHovering ? activeIndex : null}
+        formatDelta={(value) => `${value >= 0 ? '+' : ''}${formatMoney(value)}`}
+        formatValue={formatMoney}
+        label={leadSeries?.label ?? 'Cartera'}
+        labels={rows.map((row) => row.label)}
+        values={leadSeries?.values ?? []}
+      />
+      <svg className="portfolio-line-chart" ref={svgRef} viewBox={`0 0 ${chart.width} ${chart.height}`} aria-label="Evolución de cartera">
         {yTicks.map((tick) => {
           const y = yForValue(tick)
           return (
@@ -1154,35 +1167,27 @@ function PortfolioAmountChart({ mode, rows, selectedKey }) {
           }))
           return (
           <g key={serie.label}>
-            {serieIndex === 0 ? (
-              <path
-                className="portfolio-main-area"
-                d={getAreaPathFromCoordinates(coordinates, chart.height - chart.paddingBottom)}
-              />
-            ) : null}
             <polyline
               fill="none"
-              points={coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+              points={polylinePoints(coordinates)}
               stroke={getChartColor(serieIndex)}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={serieIndex === 0 ? '3.5' : '2.6'}
             />
-            {serie.values.map((value, index) => (
-              <circle
-                className={rows[index]?.key === selectedKey ? 'active' : ''}
-                cx={coordinates[index]?.x}
-                cy={coordinates[index]?.y}
-                fill={getChartColor(serieIndex)}
-                key={`${serie.label}-${rows[index]?.key}`}
-                r={rows[index]?.key === selectedKey ? '5.5' : '3.5'}
-              >
-                <title>{serie.label} · {rows[index]?.label}: {formatMoney(value)}</title>
-              </circle>
-            ))}
           </g>
           )
         })}
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={mainCoordinates[0]?.y ?? null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer la evolución de la cartera"
+          plot={plot}
+          pointColor={getChartColor(leadIndex)}
+          points={mainCoordinates}
+        />
       </svg>
       <div className="portfolio-line-legend">
         {lineSeries.map((serie, index) => (
@@ -1195,7 +1200,7 @@ function PortfolioAmountChart({ mode, rows, selectedKey }) {
   )
 }
 
-function PortfolioReturnChart({ rows, selectedKey }) {
+function PortfolioReturnChart({ rows }) {
   const values = rows.map((row) => (row.cost ? ((row.invested - row.cost + row.dividends) / row.cost) * 100 : 0))
   const min = Math.min(...values, 0)
   const max = Math.max(...values, 1)
@@ -1207,13 +1212,31 @@ function PortfolioReturnChart({ rows, selectedKey }) {
   const yTicks = getAxisTicks(min, max, 4)
   const zeroY = yForValue(0)
   const coordinates = values.map((value, index) => ({ x: xForIndex(index), y: yForValue(value) }))
+  const plot = {
+    left: chart.paddingLeft,
+    right: chart.width - chart.paddingRight,
+    top: chart.paddingTop,
+    bottom: chart.height - chart.paddingBottom,
+  }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    coordinates.map((point) => point.x),
+    chart.width,
+  )
 
   return (
     <div className="portfolio-line-chart-wrap">
+      <ChartReadout
+        activeIndex={isHovering ? activeIndex : null}
+        formatDelta={(value) => `${value >= 0 ? '+' : ''}${formatNumber(value, 'pp')}`}
+        formatValue={(value) => formatNumber(value, '%')}
+        label="Rentabilidad"
+        labels={rows.map((row) => row.label)}
+        values={values}
+      />
       <svg
         aria-label="Rentabilidad de cartera en porcentaje, incluyendo dividendos"
         className="portfolio-line-chart"
-        role="img"
+        ref={svgRef}
         viewBox={`0 0 ${chart.width} ${chart.height}`}
       >
         {yTicks.map((tick) => {
@@ -1242,24 +1265,22 @@ function PortfolioReturnChart({ rows, selectedKey }) {
         })}
         <polyline
           fill="none"
-          points={coordinates.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+          points={polylinePoints(coordinates)}
           stroke="#B08D57"
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth="3"
         />
-        {values.map((value, index) => (
-          <circle
-            className={rows[index]?.key === selectedKey ? 'active' : ''}
-            cx={coordinates[index]?.x}
-            cy={coordinates[index]?.y}
-            fill="#B08D57"
-            key={rows[index]?.key}
-            r={rows[index]?.key === selectedKey ? '5.5' : '3.5'}
-          >
-            <title>{rows[index]?.label}: {formatNumber(value, '%')}</title>
-          </circle>
-        ))}
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={coordinates[0]?.y ?? null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer la rentabilidad de la cartera"
+          plot={plot}
+          pointColor="#B08D57"
+          points={coordinates}
+        />
       </svg>
       <div className="portfolio-line-legend">
         <span style={{ '--legend-color': '#B08D57' }}>Rentabilidad (con dividendos)</span>
@@ -1271,7 +1292,9 @@ function PortfolioReturnChart({ rows, selectedKey }) {
 function buildGlobalEvolutionSeries(rows) {
   return [
     { label: 'Dinero invertido', values: rows.map((row) => row.cost) },
-    { label: 'Valor cartera', values: rows.map((row) => row.invested) },
+    // La serie que manda en la cifra de cabecera: el dinero invertido es casi plano y no dice nada
+    // al recorrer la gráfica.
+    { isLead: true, label: 'Valor cartera', values: rows.map((row) => row.invested) },
   ]
 }
 

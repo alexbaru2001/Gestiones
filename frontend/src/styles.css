@@ -87,23 +87,6 @@ h3,
   overflow: visible;
 }
 
-.chart-area-fill,
-.portfolio-main-area {
-  pointer-events: none;
-}
-
-.savings-area {
-  fill: url("#savingsArea");
-}
-
-.investment-area {
-  fill: url("#investmentArea");
-}
-
-.portfolio-main-area {
-  fill: url("#portfolioMainArea");
-}
-
 .chart-crosshair,
 .economic-crosshair {
   stroke: #7e8b83;
@@ -241,11 +224,6 @@ h3,
   stroke: #436a92;
   stroke-dasharray: 5 7;
   opacity: 0.76;
-}
-
-.economic-hover-point:hover {
-  fill: rgba(21, 122, 92, 0.13);
-  stroke: #157a5c;
 }
 
 @media (max-width: 620px) {
@@ -1900,10 +1878,6 @@ button:disabled {
   stroke-width: 1;
 }
 
-.economic-area {
-  fill: url("#priceArea");
-}
-
 .economic-price-line {
   fill: none;
   stroke: #286b57;
@@ -1924,17 +1898,6 @@ button:disabled {
   fill: #637069;
   font-size: 12px;
   font-weight: 700;
-}
-
-.economic-hover-point {
-  fill: transparent;
-  cursor: crosshair;
-}
-
-.economic-hover-point:hover {
-  fill: rgba(40, 107, 87, 0.16);
-  stroke: #286b57;
-  stroke-width: 2;
 }
 
 .economic-legend {
@@ -3405,11 +3368,6 @@ button:focus-visible {
   stroke: var(--color-blue);
 }
 
-.economic-hover-point:hover {
-  fill: rgba(19, 106, 81, 0.14);
-  stroke: var(--color-primary);
-}
-
 .portfolio-structure {
   padding-top: 4px;
 }
@@ -4402,7 +4360,6 @@ body {
 .portfolio-line-chart,
 .economic-chart-wrap {
   min-height: 0;
-  aspect-ratio: 2.7 / 1;
   border-color: var(--color-line);
   background: var(--color-surface);
 }
@@ -6323,12 +6280,12 @@ tbody tr:hover {
   .ticker-form { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* El SVG heredaba su alto del viewBox (720x320), así que a pantalla ancha crecía ~100 px más que
-   su contenedor y, con overflow visible, tapaba la tarjeta siguiente e interceptaba sus clics. */
-.price-card .economic-chart-wrap { overflow: hidden; }
-
+/* El viewBox del precio ahora sigue al ancho medido, así que el SVG ya no se desborda de su
+   tarjeta: basta con dejar que su propia proporción marque el alto. */
 .price-card .economic-chart {
-  height: 100%;
+  display: block;
+  width: 100%;
+  height: auto;
   min-height: 0;
 }
 
@@ -6482,3 +6439,95 @@ tbody tr:hover {
 
 .universe-picker strong { color: #17201a; font-size: 13.5px; }
 .universe-picker small { color: #7a857d; font-size: 11.5px; }
+
+/* ================= Interacción común de las gráficas ================= */
+
+/* Rectángulo que captura el puntero sobre toda el área de trazado: antes cada gráfica ponía un
+   círculo por dato y solo reaccionaba si acertabas a pasar justo por encima. */
+.chart-capture {
+  fill: transparent;
+  cursor: crosshair;
+  outline: none;
+}
+
+.chart-capture:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.chart-crosshair {
+  stroke: currentColor;
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Valor de partida del periodo: la referencia contra la que se mide la variación de la cabecera. */
+.chart-baseline {
+  stroke: currentColor;
+  stroke-dasharray: 2 6;
+  stroke-width: 1;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.chart-active-point {
+  stroke: #ffffff;
+  stroke-width: 2.2;
+  pointer-events: none;
+  transition: cx 0.06s linear, cy 0.06s linear;
+}
+
+.chart-last-point { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-active-point { transition: none; }
+}
+
+/* Cifra de cabecera gobernada por el cruce */
+.chart-readout {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+}
+
+.chart-readout-label {
+  color: #637069;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chart-readout-value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.chart-readout-change {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: #637069;
+}
+
+.chart-readout-change.is-up { color: #2f6b4f; }
+.chart-readout-change.is-down { color: var(--color-danger); }
+
+.chart-readout-stamp {
+  color: #7a857d;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* La fila de periodo sustituye a los desplegables de Finanzas. */
+.table-toolbar .period-tabs,
+.typology-toolbar-controls .period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.economic-readout { margin-bottom: 10px; }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ListChecks, RefreshCw, Search, Star, Trash2 } from 'lucide-react'
 import { requestJson } from './api'
+import { ChartCrosshair, ChartReadout } from './ChartParts'
+import { polylinePoints } from './chartGeometry'
+import { useChartCrosshair } from './useChartCrosshair'
 import {
   evaluateMetric,
   extractPortfolioTickers,
@@ -1345,68 +1348,86 @@ function AiAnalysis({ analysis }) {
 }
 
 function EconomicPriceChart({ rows, currency }) {
-  const [tooltip, setTooltip] = useState(null)
-  const chart = useMemo(() => buildChart(rows), [rows])
+  // El SVG se estira al ancho del panel: con un viewBox fijo, la cruz se desalineaba del puntero.
+  const [containerRef, width] = useChartWidth(720)
+  const chart = useMemo(() => buildChart(rows, width), [rows, width])
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    chart.coordinates.map((point) => point.x),
+    width,
+  )
 
-  if (!chart.points.length) return <p className="muted-text">Sin histórico de precio disponible.</p>
+  if (!chart.coordinates.length) return <p className="muted-text">Sin histórico de precio disponible.</p>
+
+  const plot = { left: chart.left, right: chart.right, top: PRICE_CHART.top, bottom: PRICE_CHART.bottom }
 
   return (
-    <div className="economic-chart-wrap">
+    <div className="economic-chart-wrap" ref={containerRef}>
+      <ChartReadout
+        activeIndex={isHovering ? activeIndex : null}
+        className="economic-readout"
+        formatDelta={(value) => `${value >= 0 ? '+' : ''}${formatNumber(value, currency)}`}
+        formatValue={(value) => formatNumber(value, currency)}
+        labels={chart.labels.map((date) => new Intl.DateTimeFormat('es-ES').format(new Date(date)))}
+        values={chart.values}
+      />
       <div className="chart-scale">
         <span>{formatNumber(chart.max, currency)}</span>
         <span>{formatNumber(chart.min, currency)}</span>
       </div>
-      <svg className="economic-chart" viewBox="0 0 720 320" role="img" aria-label="Precio histórico">
-        <defs>
-          <linearGradient id="priceArea" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#286b57" stopOpacity="0.24" />
-            <stop offset="100%" stopColor="#286b57" stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-        {[70, 130, 190, 250].map((y) => (
-          <line className="economic-grid-line" key={y} x1="54" x2="690" y1={y} y2={y} />
+      <svg
+        aria-label="Precio histórico"
+        className="economic-chart"
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${PRICE_CHART.height}`}
+      >
+        {[90, 145, 200, 255].map((y) => (
+          <line className="economic-grid-line" key={y} x1={chart.left} x2={chart.right} y1={y} y2={y} />
         ))}
-        <path className="economic-area" d={chart.areaPath} />
-        <polyline className="economic-price-line" points={chart.points.join(' ')} />
-        <polyline className="economic-average-line" points={chart.averagePoints.join(' ')} />
-        {tooltip ? (
-          <>
-            <line className="economic-crosshair" x1={tooltip.x} x2={tooltip.x} y1="42" y2="270" />
-            <circle className="economic-active-point" cx={tooltip.x} cy={tooltip.y} r="5.5" />
-          </>
-        ) : null}
+        <polyline className="economic-price-line" points={polylinePoints(chart.coordinates)} />
+        <polyline className="economic-average-line" points={polylinePoints(chart.averageCoordinates)} />
         {chart.markers.map((marker) => (
           <g key={marker.label}>
-            <line className="economic-axis-tick" x1={marker.x} x2={marker.x} y1="270" y2="276" />
+            <line className="economic-axis-tick" x1={marker.x} x2={marker.x} y1={PRICE_CHART.bottom} y2={PRICE_CHART.bottom + 6} />
             <text className="economic-axis-label" x={marker.x} y="296" textAnchor="middle">
               {marker.label}
             </text>
           </g>
         ))}
-        {chart.pointData.map((point) => (
-          <circle
-            className="economic-hover-point"
-            cx={point.x}
-            cy={point.y}
-            key={`${point.date}-${point.close}`}
-            onMouseEnter={() => setTooltip(point)}
-            onMouseLeave={() => setTooltip(null)}
-            r="8"
-          />
-        ))}
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={chart.coordinates[0]?.y ?? null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer el precio histórico"
+          plot={plot}
+          pointColor="#286b57"
+          points={chart.coordinates}
+        />
       </svg>
       <div className="economic-legend">
         <span>Precio</span>
         <span>Media móvil 30 sesiones</span>
       </div>
-      {tooltip ? (
-        <div className="chart-tooltip investment-tooltip" style={{ left: `${(tooltip.x / 720) * 100}%`, top: `${(tooltip.y / 320) * 100}%` }}>
-          <strong>{new Intl.DateTimeFormat('es-ES').format(new Date(tooltip.date))}</strong>
-          <span>{formatNumber(tooltip.close, currency)}</span>
-        </div>
-      ) : null}
     </div>
   )
+}
+
+// Mide el contenedor para que el viewBox coincida con el tamaño real y la cruz caiga donde el ratón.
+function useChartWidth(fallback) {
+  const ref = useRef(null)
+  const [width, setWidth] = useState(fallback)
+
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return undefined
+    const measure = () => setWidth(Math.round(element.getBoundingClientRect().width || fallback))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [fallback])
+
+  return [ref, width]
 }
 
 function filterPriceRows(rows, period) {
@@ -1421,7 +1442,9 @@ function filterPriceRows(rows, period) {
   return cleanRows.filter((row) => new Date(row.date) >= cutoff)
 }
 
-function buildChart(rows) {
+const PRICE_CHART = { height: 320, paddingLeft: 54, paddingRight: 30, top: 50, bottom: 270 }
+
+function buildChart(rows, width) {
   const sampled = sampleRows(rows, 120)
   const values = sampled.map((row) => Number(row.close))
   const min = Math.min(...values)
@@ -1430,32 +1453,28 @@ function buildChart(rows) {
   const lower = min - padding
   const upper = max + padding
   const range = upper - lower || 1
+  const left = PRICE_CHART.paddingLeft
+  const right = Math.max(left + 1, width - PRICE_CHART.paddingRight)
+  const span = right - left
+  const xForIndex = (index) => (sampled.length === 1 ? left + span / 2 : left + (index / (sampled.length - 1)) * span)
+  const yForValue = (value) => PRICE_CHART.bottom - ((value - lower) / range) * (PRICE_CHART.bottom - PRICE_CHART.top)
 
-  const pointData = sampled.map((row, index) => {
-    const x = sampled.length === 1 ? 372 : 54 + (index / (sampled.length - 1)) * 636
-    const y = 270 - ((Number(row.close) - lower) / range) * 220
-    return { ...row, x, y }
-  })
-  const points = pointData.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+  const pointData = sampled.map((row, index) => ({ ...row, x: xForIndex(index), y: yForValue(Number(row.close)) }))
   const averages = movingAverage(sampled, 30)
-  const averagePoints = averages
-    .map((value, index) => {
-      if (value === null) return null
-      const x = sampled.length === 1 ? 372 : 54 + (index / (sampled.length - 1)) * 636
-      const y = 270 - ((value - lower) / range) * 220
-      return `${x.toFixed(1)},${y.toFixed(1)}`
-    })
+  const averageCoordinates = averages
+    .map((value, index) => (value === null ? null : { x: xForIndex(index), y: yForValue(value) }))
     .filter(Boolean)
-  const areaPath = points.length ? `M ${points[0]} L ${points.slice(1).join(' L ')} L 690 270 L 54 270 Z` : ''
 
   return {
     min,
     max,
-    points,
-    pointData: pointData.filter((_, index) => index % Math.max(1, Math.ceil(pointData.length / 48)) === 0),
-    averagePoints,
-    areaPath,
-    markers: buildMarkers(sampled),
+    left,
+    right,
+    values: sampled.map((row) => Number(row.close)),
+    labels: sampled.map((row) => row.date),
+    coordinates: pointData,
+    averageCoordinates,
+    markers: buildMarkers(sampled, xForIndex),
   }
 }
 
@@ -1473,12 +1492,11 @@ function movingAverage(rows, windowSize) {
   })
 }
 
-function buildMarkers(rows) {
+function buildMarkers(rows, xForIndex) {
   if (!rows.length) return []
   const count = Math.min(5, rows.length)
   return Array.from({ length: count }, (_, index) => {
     const rowIndex = count === 1 ? 0 : Math.round((index / (count - 1)) * (rows.length - 1))
-    const x = count === 1 ? 372 : 54 + (rowIndex / (rows.length - 1)) * 636
-    return { x, label: formatDate(rows[rowIndex].date) }
+    return { x: xForIndex(rowIndex), label: formatDate(rows[rowIndex].date) }
   })
 }
