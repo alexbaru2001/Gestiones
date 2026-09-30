@@ -6531,3 +6531,22 @@ tbody tr:hover {
 }
 
 .economic-readout { margin-bottom: 10px; }
+
+/* La cabecera no debe empujar a la gráfica: si su ancho depende del texto, al recorrer la curva
+   el SVG se reajusta en cada paso y la línea "salta". Ancho fijo y cifras de ancho constante. */
+.typology-hero .chart-readout {
+  flex: 0 0 236px;
+  width: 236px;
+}
+
+.chart-readout-change,
+.chart-readout-stamp {
+  min-height: 1.15em;
+  white-space: nowrap;
+}
+
+.chart-readout-value,
+.chart-readout-change,
+.chart-readout-stamp {
+  font-variant-numeric: tabular-nums;
+}

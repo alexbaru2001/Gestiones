@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
 import { ChartCrosshair, ChartReadout, PeriodTabs } from './ChartParts'
-import { getSvgCoordinates, linePath } from './chartGeometry'
+import { getSvgCoordinates, getValueDomain, linePath } from './chartGeometry'
 import { useChartCrosshair } from './useChartCrosshair'
 import { formatDelta, formatMoney } from './formatters'
 import { aggregateDividendsByCompany, comparisonRows, getDividendPayments } from './resultSelectors'
@@ -347,6 +347,13 @@ function useElementWidth(fallback) {
   return [ref, width]
 }
 
+// El tooltip se ancla al punto, pero en los extremos se saldría del panel (y llegaba a tapar la
+// fila de periodos): se limita para que su centro no pase de los bordes útiles.
+function tooltipLeft(x, width) {
+  if (!width) return '50%'
+  return `${Math.min(92, Math.max(8, (x / width) * 100))}%`
+}
+
 function TypologyMiniChart({
   color,
   formatCompact = formatMoneyCompact,
@@ -358,8 +365,7 @@ function TypologyMiniChart({
   values,
 }) {
   const [containerRef, width] = useElementWidth(240)
-  const min = Math.min(...values, 0)
-  const max = Math.max(...values, 1)
+  const { min, max } = getValueDomain(values)
   const paddingLeft = axisPaddingLeft(min, max, formatCompact)
   const paddingRight = 10
   const paddingTop = 12
@@ -367,6 +373,7 @@ function TypologyMiniChart({
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinates = getSvgCoordinates(values, min, max, chartOptions)
   const last = coordinates.at(-1)
+  const showsZero = min <= 0 && max >= 0
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const baselineY = coordinates[0]?.y ?? null
   const plotBottom = height - paddingBottom
@@ -401,7 +408,9 @@ function TypologyMiniChart({
             y2={paddingTop + (plotBottom - paddingTop) * fraction}
           />
         ))}
-        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        {showsZero ? (
+          <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        ) : null}
         <path d={linePath(coordinates)} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
           {formatCompact(max)}
@@ -427,7 +436,7 @@ function TypologyMiniChart({
         />
       </svg>
       {isHovering && coordinates[activeIndex] ? (
-        <div className="mini-trend-tooltip" style={{ left: `${(coordinates[activeIndex].x / width) * 100}%` }}>
+        <div className="mini-trend-tooltip" style={{ left: tooltipLeft(coordinates[activeIndex].x, width) }}>
           <span>{formatMonthLabel(months[activeIndex])}</span>
           <strong>{formatValue(values[activeIndex])}</strong>
         </div>
@@ -480,8 +489,7 @@ function TypologyCompareChart({
 }) {
   const [containerRef, width] = useElementWidth(560)
   const combined = [...seriesA.values, ...seriesB.values]
-  const min = Math.min(...combined, 0)
-  const max = Math.max(...combined, 1)
+  const { min, max } = getValueDomain(combined)
   const paddingLeft = axisPaddingLeft(min, max, formatCompact)
   const paddingRight = 10
   const paddingTop = 12
@@ -493,6 +501,7 @@ function TypologyCompareChart({
   const pathB = linePath(coordinatesB)
   const lastA = coordinatesA.at(-1)
   const lastB = coordinatesB.at(-1)
+  const showsZero = min <= 0 && max >= 0
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const plotBottom = height - paddingBottom
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
@@ -520,7 +529,9 @@ function TypologyCompareChart({
             y2={paddingTop + (plotBottom - paddingTop) * fraction}
           />
         ))}
-        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        {showsZero ? (
+          <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        ) : null}
         <path d={pathA} fill="none" stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <path
           d={pathB}
@@ -560,7 +571,7 @@ function TypologyCompareChart({
         />
       </svg>
       {isHovering && coordinatesA[activeIndex] && (
-        <div className="mini-trend-tooltip compare-tooltip" style={{ left: `${(coordinatesA[activeIndex].x / width) * 100}%` }}>
+        <div className="mini-trend-tooltip compare-tooltip" style={{ left: tooltipLeft(coordinatesA[activeIndex].x, width) }}>
           <span>{formatMonthLabel(months[activeIndex])}</span>
           <span className="mini-tooltip-row">
             <i style={{ background: seriesA.color }} />
@@ -712,7 +723,7 @@ function ExpenseCategoryChart({
         />
       </svg>
       {activeBar && (
-        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((activeBar.barX + barWidth / 2) / width) * 100}%` }}>
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: tooltipLeft(activeBar.barX + barWidth / 2, width) }}>
           <span>{activeBar.label}</span>
           {activeBar.segments.map((segment) => (
             <span className="mini-tooltip-row" key={segment.label}>
@@ -816,7 +827,7 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
         />
       </svg>
       {activeBar && (
-        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: `${((activeBar.barX + barWidth / 2) / width) * 100}%` }}>
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: tooltipLeft(activeBar.barX + barWidth / 2, width) }}>
           <span>{activeBar.label}</span>
           <strong>{formatMoney(activeBar.value)}</strong>
         </div>

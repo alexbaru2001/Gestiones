@@ -72,9 +72,17 @@ export function ChartReadout({
         <span
           className={`chart-readout-change ${change.delta > 0 ? 'is-up' : change.delta < 0 ? 'is-down' : ''}`.trim()}
         >
-          {formatDelta(change.delta)}
-          {change.percent === null ? '' : ` (${change.percent > 0 ? '+' : ''}${change.percent.toFixed(2).replace('.', ',')} %)`}
-          {periodLabel ? ` · ${periodLabel}` : ''}
+          {/* En el primer punto la variación contra sí mismo es siempre 0: decirlo así informa más
+              que enseñar un "+0,00 € (0,00 %)" que parece un dato. */}
+          {index === 0 ? (
+            'inicio del periodo'
+          ) : (
+            <>
+              {formatDelta(change.delta)}
+              {change.percent === null ? '' : ` (${change.percent > 0 ? '+' : ''}${change.percent.toFixed(2).replace('.', ',')} %)`}
+              {periodLabel ? ` · ${periodLabel}` : ''}
+            </>
+          )}
         </span>
       ) : null}
       {stamp ? <span className="chart-readout-stamp">{stamp}</span> : null}

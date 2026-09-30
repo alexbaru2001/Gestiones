@@ -80,3 +80,42 @@ export function clampIndex(index, length) {
   if (!length) return null
   return Math.max(0, Math.min(length - 1, index))
 }
+
+/**
+ * Rango vertical de una gráfica de nivel (saldos, precios, valor de cartera).
+ *
+ * Forzar el 0 en el eje aplasta la curva: una serie que va de 6.600 € a 9.900 € ocupa un tercio
+ * del alto y parece una recta. El criterio habitual en gráficas financieras es ajustar el eje al
+ * recorrido real de los datos con un margen, y meter el 0 solo cuando la serie lo cruza, porque
+ * ahí el cambio de signo sí es información. Las gráficas de barras son la excepción y siempre
+ * arrancan en 0: la longitud de la barra representa la magnitud y recortarla engaña.
+ */
+export function getValueDomain(values, options = {}) {
+  const padding = options.padding ?? 0.08
+  const numbers = (values ?? []).filter(isNumber).map(Number)
+  if (!numbers.length) return { min: 0, max: 1 }
+
+  let min = Math.min(...numbers)
+  let max = Math.max(...numbers)
+
+  // Si la serie cambia de signo, el cero es una referencia real y se queda dentro.
+  if (min < 0 && max > 0) {
+    // ya está contenido
+  } else if (options.includeZero) {
+    min = Math.min(min, 0)
+    max = Math.max(max, 0)
+  }
+
+  if (min === max) {
+    // Serie plana de verdad: se abre un margen alrededor para que no quede pegada a un borde.
+    const margin = Math.abs(min) * padding || 1
+    return { min: min - margin, max: max + margin }
+  }
+
+  const margin = (max - min) * padding
+  // El margen no debe cruzar el cero cuando el cero es la base de las barras: una barra que
+  // arranca por debajo de su propia línea de cero no representa nada.
+  const floor = options.includeZero && Math.min(...numbers) >= 0 ? 0 : min - margin
+  const ceiling = options.includeZero && Math.max(...numbers) <= 0 ? 0 : max + margin
+  return { min: floor, max: ceiling }
+}

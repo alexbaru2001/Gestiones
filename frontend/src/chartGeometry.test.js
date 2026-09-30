@@ -5,6 +5,7 @@ import {
   clampIndex,
   getSeriesChange,
   getSvgCoordinates,
+  getValueDomain,
   isNumber,
   linePath,
   nearestIndexFromX,
@@ -124,4 +125,41 @@ test('el índice activo nunca se sale de la serie', () => {
   assert.equal(clampIndex(99, 5), 4)
   assert.equal(clampIndex(2, 5), 2)
   assert.equal(clampIndex(0, 0), null)
+})
+
+test('el eje se ajusta al recorrido de los datos en vez de aplastarlos contra el cero', () => {
+  const { min, max } = getValueDomain([6600, 8000, 9900])
+
+  // Sin forzar el 0: el recorrido real ocupa el alto de la gráfica.
+  assert.ok(min > 6000 && min < 6600)
+  assert.ok(max > 9900 && max < 10500)
+})
+
+test('una serie que cruza el cero lo conserva dentro del eje', () => {
+  const { min, max } = getValueDomain([-500, 200])
+
+  assert.ok(min < 0)
+  assert.ok(max > 0)
+})
+
+test('las gráficas de barras sí pueden pedir que el cero entre en el eje', () => {
+  assert.equal(getValueDomain([300, 900], { includeZero: true }).min, 0)
+})
+
+test('una serie completamente plana no colapsa el eje en una línea', () => {
+  const { min, max } = getValueDomain([500, 500, 500])
+
+  assert.ok(min < 500)
+  assert.ok(max > 500)
+})
+
+test('una serie plana en cero tampoco colapsa', () => {
+  const { min, max } = getValueDomain([0, 0])
+
+  assert.ok(max > min)
+})
+
+test('sin datos se devuelve un rango utilizable en vez de infinitos', () => {
+  assert.deepEqual(getValueDomain([]), { min: 0, max: 1 })
+  assert.deepEqual(getValueDomain([null, undefined]), { min: 0, max: 1 })
 })

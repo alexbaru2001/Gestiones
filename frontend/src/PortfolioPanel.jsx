@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChartCrosshair, ChartReadout } from './ChartParts'
-import { polylinePoints } from './chartGeometry'
+import { getValueDomain, polylinePoints } from './chartGeometry'
 import { useChartCrosshair } from './useChartCrosshair'
 import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
@@ -1104,13 +1104,13 @@ function PortfolioEvolutionChart({ mode, onModeChange, rows, selectedKey }) {
 
 function PortfolioAmountChart({ mode, rows }) {
   const lineSeries = mode === 'stocks' ? buildStockEvolutionSeries(rows) : buildGlobalEvolutionSeries(rows)
-  const valueMax = Math.max(...lineSeries.flatMap((serie) => serie.values), 1)
+  const { min: valueMin, max: valueMax } = getValueDomain(lineSeries.flatMap((serie) => serie.values))
   const chart = { width: 720, height: 260, paddingLeft: 58, paddingRight: 22, paddingTop: 24, paddingBottom: 46 }
   const xForIndex = (index) =>
     chart.paddingLeft + (index / Math.max(1, rows.length - 1)) * (chart.width - chart.paddingLeft - chart.paddingRight)
   const yForValue = (value) =>
-    chart.height - chart.paddingBottom - (value / valueMax) * (chart.height - chart.paddingTop - chart.paddingBottom)
-  const yTicks = getAxisTicks(0, valueMax, 4)
+    chart.height - chart.paddingBottom - ((value - valueMin) / (valueMax - valueMin || 1)) * (chart.height - chart.paddingTop - chart.paddingBottom)
+  const yTicks = getAxisTicks(valueMin, valueMax, 4)
 
   const leadIndex = Math.max(0, lineSeries.findIndex((serie) => serie.isLead))
   const leadSeries = lineSeries[leadIndex] ?? lineSeries[0]
@@ -1202,14 +1202,14 @@ function PortfolioAmountChart({ mode, rows }) {
 
 function PortfolioReturnChart({ rows }) {
   const values = rows.map((row) => (row.cost ? ((row.invested - row.cost + row.dividends) / row.cost) * 100 : 0))
-  const min = Math.min(...values, 0)
-  const max = Math.max(...values, 1)
+  const { min, max } = getValueDomain(values)
   const chart = { width: 720, height: 260, paddingLeft: 58, paddingRight: 22, paddingTop: 24, paddingBottom: 46 }
   const xForIndex = (index) =>
     chart.paddingLeft + (index / Math.max(1, rows.length - 1)) * (chart.width - chart.paddingLeft - chart.paddingRight)
   const yForValue = (value) =>
     chart.height - chart.paddingBottom - ((value - min) / (max - min || 1)) * (chart.height - chart.paddingTop - chart.paddingBottom)
   const yTicks = getAxisTicks(min, max, 4)
+  const showsZero = min <= 0 && max >= 0
   const zeroY = yForValue(0)
   const coordinates = values.map((value, index) => ({ x: xForIndex(index), y: yForValue(value) }))
   const plot = {
@@ -1250,7 +1250,9 @@ function PortfolioReturnChart({ rows }) {
             </g>
           )
         })}
-        <line className="portfolio-return-zero" x1={chart.paddingLeft} x2={chart.width - chart.paddingRight} y1={zeroY} y2={zeroY} />
+        {showsZero ? (
+          <line className="portfolio-return-zero" x1={chart.paddingLeft} x2={chart.width - chart.paddingRight} y1={zeroY} y2={zeroY} />
+        ) : null}
         <line className="portfolio-line-axis" x1={chart.paddingLeft} x2={chart.width - chart.paddingRight} y1={chart.height - chart.paddingBottom} y2={chart.height - chart.paddingBottom} />
         {rows.map((row, index) => {
           const x = xForIndex(index)
