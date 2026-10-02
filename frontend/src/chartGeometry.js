@@ -119,3 +119,74 @@ export function getValueDomain(values, options = {}) {
   const ceiling = options.includeZero && Math.max(...numbers) <= 0 ? 0 : max + margin
   return { min: floor, max: ceiling }
 }
+
+export const CHART_ASPECT = 4 / 3
+
+/**
+ * Alto de una gráfica a partir de su ancho.
+ *
+ * Las gráficas recibían un alto fijo y se estiraban a lo ancho, así que acababan con proporciones
+ * de hasta 7:1 y cualquier subida se leía como una recta. El ojo juzga bien una pendiente cuando
+ * ronda los 45°, y para eso la forma tiene que depender del ancho, no del hueco disponible.
+ * Los topes evitan que en una pantalla muy ancha una tarjeta se convierta en una columna gigante.
+ */
+export function getChartHeight(width, aspect = CHART_ASPECT, min = 200, max = 520) {
+  if (!isNumber(width) || Number(width) <= 0 || !isNumber(aspect) || Number(aspect) <= 0) return min
+  return Math.round(Math.max(min, Math.min(max, Number(width) / Number(aspect))))
+}
+
+/**
+ * Marcas del eje vertical en valores redondos.
+ *
+ * Antes solo se escribían el mínimo y el máximo, y las líneas de rejilla caían en fracciones fijas
+ * (un cuarto, la mitad...) que no correspondían a ninguna cifra legible. Con pasos de 1, 2, 2,5 o 5
+ * por década, las marcas caen en números que se leen de un vistazo.
+ */
+export function getNiceTicks(min, max, count = 5) {
+  if (!isNumber(min) || !isNumber(max) || count < 2) return []
+  if (min === max) return [Number(min)]
+
+  const low = Number(min)
+  const high = Number(max)
+  const rawStep = (high - low) / (count - 1)
+  const magnitude = 10 ** Math.floor(Math.log10(Math.abs(rawStep)))
+
+  // Se prueban los pasos legibles de la década y se elige el que deja un número de marcas más
+  // cercano al pedido. Redondear siempre hacia arriba (3,5 → 5) dejaba ejes con solo dos marcas.
+  let best = null
+  for (const factor of [1, 2, 2.5, 5, 10]) {
+    const step = factor * magnitude
+    const ticks = buildTicks(low, high, step)
+    if (ticks.length < 2) continue
+    const distance = Math.abs(ticks.length - count)
+    if (!best || distance < best.distance) best = { distance, ticks }
+  }
+  return best ? best.ticks : []
+}
+
+function buildTicks(min, max, step) {
+  const ticks = []
+  const first = Math.ceil(min / step) * step
+  for (let value = first; value <= max + step * 0.001; value += step) {
+    // El redondeo evita los 0.30000000000000004 que ensucian las etiquetas.
+    ticks.push(Number(value.toFixed(10)))
+  }
+  return ticks
+}
+
+/**
+ * Qué posiciones del eje horizontal llevan etiqueta.
+ *
+ * Se escribían solo la primera y la última, así que no se sabía dónde caía el resto del recorrido.
+ * Se reparten hasta `max` etiquetas, siempre con los extremos incluidos.
+ */
+export function pickLabelIndices(count, max = 5) {
+  if (!count || count < 1) return []
+  if (count <= max) return Array.from({ length: count }, (_, index) => index)
+  const step = (count - 1) / (max - 1)
+  const indices = new Set()
+  for (let position = 0; position < max; position += 1) {
+    indices.add(Math.round(position * step))
+  }
+  return [...indices].sort((left, right) => left - right)
+}

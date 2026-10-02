@@ -1,10 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, Download, FileJson, Maximize2, Table2 } from 'lucide-react'
 import { ChartCrosshair, ChartReadout, PeriodTabs } from './ChartParts'
-import { getSvgCoordinates, getValueDomain, linePath } from './chartGeometry'
+import {
+  CHART_ASPECT,
+  getChartHeight,
+  getNiceTicks,
+  getSvgCoordinates,
+  getValueDomain,
+  linePath,
+  pickLabelIndices,
+} from './chartGeometry'
 import { useChartCrosshair } from './useChartCrosshair'
 import { formatDelta, formatMoney } from './formatters'
-import { aggregateDividendsByCompany, comparisonRows, getDividendPayments } from './resultSelectors'
+import { aggregateDividendsByCompany, comparisonRows, getAdjustedSavings, getDividendPayments } from './resultSelectors'
 
 const moneyFields = [
   'total',
@@ -83,7 +91,7 @@ const historyFields = [
   { label: 'Fondo reserva', field: 'Fondo de reserva cargado', type: 'money' },
   { label: 'Gasto', field: '💳 Gasto del mes', type: 'money' },
   { label: 'Presupuesto', field: '💸 Presupuesto Mes', type: 'money' },
-  { label: 'Disponible', field: '🧾 Presupuesto Disponible', type: 'money' },
+  { label: 'Sobrante del mes', field: '🧾 Presupuesto Disponible', type: 'money' },
   { label: 'Inversiones', field: '📈 Inversiones', type: 'money' },
   { label: 'Invertido', field: 'Dinero Invertido', type: 'money' },
   { label: 'Exceso mes', field: '📉 Deuda Presupuestaria mensual', type: 'money' },
@@ -96,12 +104,14 @@ function asNumber(value) {
 
 function getBudget(selectedRow) {
   const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
-  const availableBudget = asNumber(selectedRow['🧾 Presupuesto Disponible']) || monthBudget
   const spent = asNumber(selectedRow['💳 Gasto del mes'])
   const budgetConsumption = Math.max(0, spent)
   const budgetRefund = Math.max(0, -spent)
   const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
   const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
+  // La columna "🧾 Presupuesto Disponible" guarda el sobrante del cierre, no el presupuesto que
+  // había para gastar: el disponible real es el del mes menos la deuda que arrastra.
+  const availableBudget = Math.max(0, monthBudget - accumulatedDebt)
   const debtReserve = accumulatedDebt > 0 ? Math.min(monthBudget * 0.1, accumulatedDebt) : 0
   const usableBudget = Math.max(0, monthBudget - debtReserve)
   const remaining = Math.max(0, usableBudget - spent)
@@ -154,6 +164,10 @@ function formatDateEs(value) {
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return 's/d'
   return date.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function getInvestmentContributions(result) {
+  return result?.analisis?.aporte_inversion ?? []
 }
 
 function getIncomeAnalysis(result) {
@@ -276,7 +290,13 @@ function getSummaryGroups(row) {
   return {
     patrimony: [
       { label: 'Total', value: row.total },
-      { label: 'Ahorros', value: row['💰 Ahorros'] },
+      {
+        label: 'Ahorros',
+        value: getAdjustedSavings(row),
+        // El sobre de ahorros no se descuenta cuando se invierte por encima de la bolsa, así que
+        // la cifra bruta sale inflada. Con el ajuste, las tarjetas suman exactamente el total.
+        note: `Ahorro ${formatMoney(row['💰 Ahorros'])} ${asNumber(row['📈 Inversiones']) < 0 ? '−' : '+'} bolsa de inversión ${formatMoney(Math.abs(asNumber(row['📈 Inversiones'])))}`,
+      },
       { label: 'Dinero invertido', value: row['Dinero Invertido'] },
       { label: 'Fondo emergencia', value: row['Fondo de reserva cargado'] },
       { label: 'Vacaciones', value: row['💼 Vacaciones'] },
@@ -284,7 +304,7 @@ function getSummaryGroups(row) {
     ],
     budget: [
       { label: 'Presupuesto mes', value: row['💸 Presupuesto Mes'] },
-      { label: 'Presupuesto disponible', value: row['🧾 Presupuesto Disponible'] },
+      { label: 'Sobrante del mes', value: row['🧾 Presupuesto Disponible'] },
       { label: 'Gasto del mes', value: row['💳 Gasto del mes'] },
       { label: 'Deuda presupuestaria', value: row['📉 Deuda Presupuestaria mensual'] },
       { label: 'Deuda acumulada', value: row['📉 Deuda Presupuestaria acumulada'] },
@@ -355,16 +375,19 @@ function tooltipLeft(x, width) {
 }
 
 function TypologyMiniChart({
+  aspect = CHART_ASPECT,
   color,
   formatCompact = formatMoneyCompact,
   formatValue = formatMoney,
-  height = 64,
   label,
+  maxHeight = 520,
+  minHeight = 200,
   months,
   onActiveIndexChange,
   values,
 }) {
-  const [containerRef, width] = useElementWidth(240)
+  const [containerRef, width] = useElementWidth(420)
+  const height = getChartHeight(width, aspect, minHeight, maxHeight)
   const { min, max } = getValueDomain(values)
   const paddingLeft = axisPaddingLeft(min, max, formatCompact)
   const paddingRight = 10
@@ -376,6 +399,8 @@ function TypologyMiniChart({
   const showsZero = min <= 0 && max >= 0
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const baselineY = coordinates[0]?.y ?? null
+  const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
+  const monthLabelIndices = pickLabelIndices(months.length, width > 520 ? 5 : 4)
   const plotBottom = height - paddingBottom
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
   const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
@@ -398,32 +423,33 @@ function TypologyMiniChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            className="mini-grid-line"
-            key={fraction}
-            x1={paddingLeft}
-            x2={width - paddingRight}
-            y1={paddingTop + (plotBottom - paddingTop) * fraction}
-            y2={paddingTop + (plotBottom - paddingTop) * fraction}
-          />
-        ))}
+        {yTicks.map((tick) => {
+          const y = getSvgCoordinates([tick], min, max, chartOptions)[0].y
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
         {showsZero ? (
           <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         ) : null}
-        <path d={linePath(coordinates)} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
-          {formatCompact(max)}
-        </text>
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={plotBottom}>
-          {formatCompact(min)}
-        </text>
-        <text className="mini-axis-month" textAnchor="start" x={paddingLeft} y={height - 4}>
-          {formatMonthLabel(months[0])}
-        </text>
-        <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
-          {formatMonthLabel(months.at(-1))}
-        </text>
+        <path d={linePath(coordinates)} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+        {monthLabelIndices.map((index) => (
+          <text
+            className="mini-axis-month"
+            key={months[index] ?? index}
+            textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
+            x={coordinates[index]?.x}
+            y={height - 4}
+          >
+            {formatMonthLabel(months[index])}
+          </text>
+        ))}
+        <rect className="chart-frame" height={plotBottom - paddingTop} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
         <ChartCrosshair
           activeIndex={activeIndex}
           baselineY={baselineY}
@@ -451,7 +477,7 @@ function TypologyMiniCard({ color, label, months, onFeature, values }) {
   const shownIndex = activeIndex ?? values.length - 1
 
   return (
-    <article className="typology-mini">
+    <article className="chart-card typology-mini">
       <div className="typology-mini-head">
         <div className="typology-mini-head-info">
           <span>{label}</span>
@@ -471,6 +497,140 @@ function TypologyMiniCard({ color, label, months, onFeature, values }) {
   )
 }
 
+// Composición de lo que entra en la bolsa de inversión cada mes. La barra de aportación va
+// apilada por origen (sueldo, intereses, dividendos y el sobrante del presupuesto) y al lado,
+// sin apilar, lo que ese mes salió de la bolsa para invertirse de verdad.
+const contributionParts = [
+  { key: 'sueldo', label: 'Sueldo', color: '#1f4d3d' },
+  { key: 'intereses', label: 'Intereses', color: '#6a9ab5' },
+  { key: 'dividendos', label: 'Dividendos', color: '#b08d57' },
+  { key: 'extra', label: 'Extra por ahorrar', color: '#7fa06f' },
+]
+
+const investedColor = '#1f5c6b'
+
+function InvestmentContributionChart({ aspect = CHART_ASPECT, maxLabels = 8, rows }) {
+  const [containerRef, width] = useElementWidth(640)
+  const height = getChartHeight(width, aspect)
+  const paddingRight = 12
+  const paddingTop = 16
+  const paddingBottom = 26
+
+  const contributions = rows.map((row) => contributionParts.reduce((sum, part) => sum + asNumber(row[part.key]), 0))
+  const invested = rows.map((row) => asNumber(row.invertido))
+  // Las barras siempre arrancan en 0: su longitud representa el importe y recortarla engañaría.
+  const { min, max } = getValueDomain([...contributions, ...invested], { includeZero: true })
+  const paddingLeft = axisPaddingLeft(min, max)
+  const plotWidth = Math.max(0, width - paddingLeft - paddingRight)
+  const plotHeight = height - paddingTop - paddingBottom
+  const slot = rows.length > 0 ? plotWidth / rows.length : 0
+  const groupWidth = Math.max(6, slot - 10)
+  const barWidth = Math.max(3, groupWidth / 2 - 2)
+  const scaleY = (value) => height - paddingBottom - ((value - min) / (max - min || 1)) * plotHeight
+  const zeroY = scaleY(0)
+
+  const groups = rows.map((row, index) => {
+    const slotX = paddingLeft + index * slot
+    const groupX = slotX + (slot - groupWidth) / 2
+    let stackTop = 0
+    const segments = contributionParts
+      .map((part) => {
+        const value = asNumber(row[part.key])
+        if (value <= 0) return null
+        const y = scaleY(stackTop + value)
+        const segment = { ...part, height: Math.abs(scaleY(stackTop) - y), value, y }
+        stackTop += value
+        return segment
+      })
+      .filter(Boolean)
+    return {
+      contribution: contributions[index],
+      contributionX: groupX,
+      invested: invested[index],
+      investedHeight: Math.abs(scaleY(invested[index]) - zeroY),
+      investedX: groupX + barWidth + 4,
+      investedY: scaleY(invested[index]),
+      key: row.Mes,
+      label: formatMonthLabel(row.Mes),
+      segments,
+      x: groupX + groupWidth / 2,
+    }
+  })
+
+  const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
+  const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(groups.map((group) => group.x), width)
+  const active = isHovering ? groups[activeIndex] : null
+
+  return (
+    <div className="expense-chart" ref={containerRef}>
+      <svg
+        aria-label="Aportación mensual a la bolsa de inversión por origen, frente a lo invertido"
+        className="mini-trend-svg"
+        height={height}
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {yTicks.map((tick) => {
+          const y = scaleY(tick)
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatMoneyCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
+        <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
+        {groups.map((group) => (
+          <g key={group.key}>
+            {group.segments.map((segment) => (
+              <rect fill={segment.color} height={segment.height} key={segment.key} rx="1.5" width={barWidth} x={group.contributionX} y={segment.y} />
+            ))}
+            <rect fill={investedColor} height={group.investedHeight} rx="1.5" width={barWidth} x={group.investedX} y={group.investedY} />
+          </g>
+        ))}
+        {groups.map((group, index) =>
+          index % labelStep === 0 ? (
+            <text className="mini-axis-month" key={group.key} textAnchor="middle" x={group.x} y={height - 8}>
+              {group.label}
+            </text>
+          ) : null,
+        )}
+        <rect className="chart-frame" height={plotHeight} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          baselineY={null}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer la aportación a la bolsa de inversión"
+          plot={plot}
+          pointColor={investedColor}
+          points={groups.map((group) => ({ x: group.x, y: zeroY }))}
+        />
+      </svg>
+      {active && (
+        <div className="mini-trend-tooltip expense-chart-tooltip" style={{ left: tooltipLeft(active.x, width) }}>
+          <span>{active.label}</span>
+          {contributionParts.map((part) => (
+            <span className="mini-tooltip-row" key={part.key}>
+              <i style={{ background: part.color }} />
+              {part.label} {formatMoney(asNumber(rows[activeIndex]?.[part.key]))}
+            </span>
+          ))}
+          <strong>Aportado {formatMoney(active.contribution)}</strong>
+          <span className="mini-tooltip-row">
+            <i style={{ background: investedColor }} />
+            Invertido {formatMoney(active.invested)}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TypologyFeatureButton({ label, onFeature }) {
   return (
     <button aria-label={`Mostrar ${label} en grande`} className="typology-expand-button" onClick={onFeature} type="button">
@@ -480,14 +640,17 @@ function TypologyFeatureButton({ label, onFeature }) {
 }
 
 function TypologyCompareChart({
+  aspect = CHART_ASPECT,
   formatCompact = formatMoneyCompact,
   formatValue = formatMoney,
-  height = 100,
+  maxHeight = 520,
+  minHeight = 200,
   months,
   seriesA,
   seriesB,
 }) {
   const [containerRef, width] = useElementWidth(560)
+  const height = getChartHeight(width, aspect, minHeight, maxHeight)
   const combined = [...seriesA.values, ...seriesB.values]
   const { min, max } = getValueDomain(combined)
   const paddingLeft = axisPaddingLeft(min, max, formatCompact)
@@ -505,6 +668,8 @@ function TypologyCompareChart({
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const plotBottom = height - paddingBottom
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
+  const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
+  const monthLabelIndices = pickLabelIndices(months.length, width > 520 ? 5 : 4)
   const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
     coordinatesA.map((point) => point.x),
     width,
@@ -519,20 +684,21 @@ function TypologyCompareChart({
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            className="mini-grid-line"
-            key={fraction}
-            x1={paddingLeft}
-            x2={width - paddingRight}
-            y1={paddingTop + (plotBottom - paddingTop) * fraction}
-            y2={paddingTop + (plotBottom - paddingTop) * fraction}
-          />
-        ))}
+        {yTicks.map((tick) => {
+          const y = getSvgCoordinates([tick], min, max, chartOptions)[0].y
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
         {showsZero ? (
           <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         ) : null}
-        <path d={pathA} fill="none" stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d={pathA} fill="none" stroke={seriesA.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
         <path
           d={pathB}
           fill="none"
@@ -540,25 +706,25 @@ function TypologyCompareChart({
           strokeDasharray="6 4"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="2"
+          strokeWidth="2.6"
         />
         <circle cx={lastA.x} cy={lastA.y} fill={seriesA.color} pointerEvents="none" r="3.6" />
         <circle cx={lastB.x} cy={lastB.y} fill={seriesB.color} pointerEvents="none" r="3.6" />
         {isHovering && coordinatesB[activeIndex] ? (
           <circle className="chart-active-point" cx={coordinatesB[activeIndex].x} cy={coordinatesB[activeIndex].y} fill={seriesB.color} r="5" />
         ) : null}
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
-          {formatCompact(max)}
-        </text>
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={plotBottom}>
-          {formatCompact(min)}
-        </text>
-        <text className="mini-axis-month" textAnchor="start" x={paddingLeft} y={height - 4}>
-          {formatMonthLabel(months[0])}
-        </text>
-        <text className="mini-axis-month" textAnchor="end" x={width - paddingRight} y={height - 4}>
-          {formatMonthLabel(months.at(-1))}
-        </text>
+        {monthLabelIndices.map((index) => (
+          <text
+            className="mini-axis-month"
+            key={months[index] ?? index}
+            textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
+            x={coordinatesA[index]?.x}
+            y={height - 4}
+          >
+            {formatMonthLabel(months[index])}
+          </text>
+        ))}
+        <rect className="chart-frame" height={plotBottom - paddingTop} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
         <ChartCrosshair
           activeIndex={activeIndex}
           baselineY={coordinatesA[0]?.y ?? null}
@@ -666,6 +832,7 @@ function ExpenseCategoryChart({
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
   const averagePath = linePath(averagePoints)
   const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+  const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
   const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
     bars.map((bar) => bar.barX + barWidth / 2),
@@ -676,16 +843,17 @@ function ExpenseCategoryChart({
   return (
     <div className="expense-chart" ref={containerRef}>
       <svg aria-label={ariaLabel} className="mini-trend-svg" height={height} ref={svgRef} viewBox={`0 0 ${width} ${height}`}>
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            className="mini-grid-line"
-            key={fraction}
-            x1={paddingLeft}
-            x2={width - paddingRight}
-            y1={paddingTop + plotHeight * fraction}
-            y2={paddingTop + plotHeight * fraction}
-          />
-        ))}
+        {yTicks.map((tick) => {
+          const y = scaleY(tick)
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatMoneyCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
         <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         {bars.map((bar) => (
           <g key={bar.key}>
@@ -698,12 +866,6 @@ function ExpenseCategoryChart({
         {averagePoints.map((point, index) => (
           <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
-          {formatMoneyCompact(max)}
-        </text>
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={height - paddingBottom}>
-          {formatMoneyCompact(min)}
-        </text>
         {bars.map((bar, index) =>
           index % labelStep === 0 ? (
             <text className="mini-axis-month" key={bar.key} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
@@ -711,6 +873,7 @@ function ExpenseCategoryChart({
             </text>
           ) : null,
         )}
+        <rect className="chart-frame" height={plotHeight} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
         <ChartCrosshair
           activeIndex={activeIndex}
           baselineY={null}
@@ -738,9 +901,9 @@ function ExpenseCategoryChart({
   )
 }
 
-function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#7a2e2e', rows }) {
-  const [containerRef, width] = useElementWidth(720)
-  const height = 220
+function SavingsAmountChart({ aspect = CHART_ASPECT, color = '#1f4d3d', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#7a2e2e', rows }) {
+  const [containerRef, width] = useElementWidth(640)
+  const height = getChartHeight(width, aspect)
   const paddingRight = 12
   const paddingTop = 16
   const paddingBottom = 26
@@ -768,6 +931,7 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
   const averagePoints = bars.map((bar, index) => ({ x: bar.barX + barWidth / 2, y: scaleY(averageValues[index]) }))
   const averagePath = linePath(averagePoints)
   const labelStep = Math.max(1, Math.ceil(rows.length / maxLabels))
+  const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
   const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
     bars.map((bar) => bar.barX + barWidth / 2),
@@ -784,30 +948,25 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
         ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
       >
-        {[0.25, 0.5, 0.75].map((fraction) => (
-          <line
-            className="mini-grid-line"
-            key={fraction}
-            x1={paddingLeft}
-            x2={width - paddingRight}
-            y1={paddingTop + plotHeight * fraction}
-            y2={paddingTop + plotHeight * fraction}
-          />
-        ))}
+        {yTicks.map((tick) => {
+          const y = scaleY(tick)
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatMoneyCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
         <line className="mini-zero-line" x1={paddingLeft} x2={width - paddingRight} y1={zeroY} y2={zeroY} />
         {bars.map((bar) => (
           <rect fill={bar.value >= 0 ? color : negativeColor} height={bar.barHeight} key={bar.key} rx="1.5" width={barWidth} x={bar.barX} y={bar.barY} />
         ))}
-        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
         {averagePoints.map((point, index) => (
           <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={paddingTop + 3}>
-          {formatMoneyCompact(max)}
-        </text>
-        <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 5} y={height - paddingBottom}>
-          {formatMoneyCompact(min)}
-        </text>
         {bars.map((bar, index) =>
           index % labelStep === 0 ? (
             <text className="mini-axis-month" key={bar.key} textAnchor="middle" x={bar.barX + barWidth / 2} y={height - 8}>
@@ -815,6 +974,7 @@ function SavingsAmountChart({ color = '#1f4d3d', getLabel = (row) => formatMonth
             </text>
           ) : null,
         )}
+        <rect className="chart-frame" height={plotHeight} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
         <ChartCrosshair
           activeIndex={activeIndex}
           baselineY={null}
@@ -912,6 +1072,7 @@ export function ResultsPanel({
   const savingsBucketSize =
     savingsAmountPeriod === 'all' ? Math.max(1, Math.ceil(scopedSavingsRows.length / 8)) : Number(savingsAmountPeriod)
   const savingsBucketedRows = bucketSingleValueRows(scopedSavingsRows, 'balance', savingsBucketSize, 8)
+  const investmentContributionRows = getInvestmentContributions(result).slice(-12)
   const investmentRows = rows.slice(-12)
   const investmentMonths = investmentRows.map((row) => row.Mes)
   const investmentReserveValues = investmentRows.map((row) => asNumber(row['📈 Inversiones']))
@@ -1028,6 +1189,7 @@ export function ResultsPanel({
                           <article className={item.label === 'Total' ? 'metric total-metric' : 'metric'} key={item.label}>
                             <span>{item.label}</span>
                             <strong>{formatMoney(item.value)}</strong>
+                            {item.note ? <small className="metric-note">{item.note}</small> : null}
                           </article>
                         ))}
                       </div>
@@ -1350,7 +1512,8 @@ export function ResultsPanel({
                     </article>
                   </div>
 
-                  <section className="typology-chart-panel">
+                  <div className="chart-grid">
+                  <section className="typology-chart-panel chart-card chart-card-lead">
                     <div className="table-toolbar compact-toolbar">
                       <div>
                         <h3 className="table-title">Porcentaje de ahorro</h3>
@@ -1377,7 +1540,6 @@ export function ResultsPanel({
                       <TypologyCompareChart
                         formatCompact={formatPercent}
                         formatValue={formatPercent}
-                        height={160}
                         months={savingsMonths}
                         seriesA={{ color: '#1f4d3d', label: 'Ahorro mensual', values: savingsPercentValues }}
                         seriesB={{ color: '#1c2a22', label: 'Media móvil', values: savingsAverageValues }}
@@ -1385,7 +1547,7 @@ export function ResultsPanel({
                     </div>
                   </section>
 
-                  <section className="expenses-panel">
+                  <section className="expenses-panel chart-card chart-card-lead">
                     <div className="table-toolbar compact-toolbar">
                       <div>
                         <h3 className="table-title">Cantidad ahorrada</h3>
@@ -1416,6 +1578,7 @@ export function ResultsPanel({
                       </span>
                     </div>
                   </section>
+                  </div>
                 </section>
               ) : (
                 <div className="empty-state compact-empty">
@@ -1446,7 +1609,8 @@ export function ResultsPanel({
                   </article>
                 </div>
 
-                <section className="typology-chart-panel">
+                <div className="chart-grid">
+                <section className="typology-chart-panel chart-card chart-card-lead">
                   <div className="table-toolbar compact-toolbar">
                     <div>
                       <h3 className="table-title">Evolución inversiones</h3>
@@ -1465,7 +1629,6 @@ export function ResultsPanel({
                       </span>
                     </div>
                     <TypologyCompareChart
-                      height={200}
                       months={investmentMonths}
                       seriesA={{ color: '#1f5c6b', label: 'Bolsa', values: investmentReserveValues }}
                       seriesB={{ color: '#1f4d3d', label: 'Invertido', values: investmentInvestedValues }}
@@ -1473,7 +1636,38 @@ export function ResultsPanel({
                   </div>
                 </section>
 
-                <section className="typology-chart-panel">
+                <section className="typology-chart-panel chart-card chart-card-lead">
+                  <div className="table-toolbar compact-toolbar">
+                    <div>
+                      <h3 className="table-title">Aportación a la bolsa</h3>
+                      <span className="muted-text">De dónde sale cada mes, frente a lo que se invirtió</span>
+                    </div>
+                  </div>
+                  {investmentContributionRows.length > 0 ? (
+                    <>
+                      <div className="expense-chart-legend">
+                        {contributionParts.map((part) => (
+                          <span key={part.key}>
+                            <i style={{ background: part.color }} />
+                            {part.label}
+                          </span>
+                        ))}
+                        <span>
+                          <i style={{ background: investedColor }} />
+                          Invertido
+                        </span>
+                      </div>
+                      <InvestmentContributionChart rows={investmentContributionRows} />
+                    </>
+                  ) : (
+                    <div className="empty-state compact-empty">
+                      <strong>Sin aportaciones registradas</strong>
+                      <span>Procesa un Excel con ingresos para ver de dónde sale el dinero invertido.</span>
+                    </div>
+                  )}
+                </section>
+
+                <section className="typology-chart-panel chart-card chart-card-lead">
                   <div className="table-toolbar compact-toolbar">
                     <div>
                       <h3 className="table-title">Dividendos por empresa</h3>
@@ -1507,6 +1701,7 @@ export function ResultsPanel({
                     </div>
                   )}
                 </section>
+                </div>
               </section>
             )}
 
@@ -1582,8 +1777,8 @@ export function ResultsPanel({
                     </div>
                   </div>
                   {typologyRows.length > 0 ? (
-                    <div className="typology-board">
-                      <article className="typology-hero">
+                    <div className="chart-grid">
+                      <article className="chart-card chart-card-lead typology-hero">
                         <ChartReadout
                           activeIndex={featuredActiveIndex}
                           className="typology-hero-head"
@@ -1596,7 +1791,6 @@ export function ResultsPanel({
                         />
                         <TypologyMiniChart
                           color={featuredCard.color}
-                          height={200}
                           label={featuredCard.label}
                           months={typologyMonths}
                           onActiveIndexChange={setFeaturedActiveIndex}
@@ -1604,7 +1798,7 @@ export function ResultsPanel({
                         />
                       </article>
 
-                      <article className="typology-compare">
+                      <article className="chart-card chart-card-lead typology-compare">
                         <div className="typology-compare-legend">
                           <span>
                             <i style={{ background: typologyCompareFields[0].color }} />
@@ -1628,21 +1822,19 @@ export function ResultsPanel({
                         />
                       </article>
 
-                      <div className="typology-grid">
-                        {otherTypologyCards.map(({ field, label, color }) => {
-                          const values = typologyRows.map((row) => asNumber(row[field]))
-                          return (
-                            <TypologyMiniCard
-                              color={color}
-                              key={field}
-                              label={label}
-                              months={typologyMonths}
-                              onFeature={() => setFeaturedTypology(field)}
-                              values={values}
-                            />
-                          )
-                        })}
-                      </div>
+                      {otherTypologyCards.map(({ field, label, color }) => {
+                        const values = typologyRows.map((row) => asNumber(row[field]))
+                        return (
+                          <TypologyMiniCard
+                            color={color}
+                            key={field}
+                            label={label}
+                            months={typologyMonths}
+                            onFeature={() => setFeaturedTypology(field)}
+                            values={values}
+                          />
+                        )
+                      })}
                     </div>
                   ) : (
                     <div className="empty-state compact-empty">

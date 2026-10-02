@@ -507,3 +507,88 @@ def test_objectives_reject_duplicate_names(tmp_path, monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Los objetivos deben tener nombres únicos"
+
+
+def _workbook_with_refund_month(gasto: float, reembolso: float, ingreso_mes2: float) -> BytesIO:
+    """Dos meses: el primero se pasa de presupuesto y deja deuda; el segundo recibe un reembolso.
+
+    El segundo mes es el caso que importa: si el reembolso supera al gasto, el gasto neto queda en
+    negativo y la fórmula antigua lo trataba como presupuesto liberado.
+    """
+    workbook = BytesIO()
+    gastos = pd.DataFrame(
+        [
+            # Mes 1: gasto muy por encima del presupuesto, para arrastrar deuda al mes 2.
+            {"Fecha": "2024-10-10", "Categoria": "Otros", "Cuenta": "Principal", "Cantidad": 2500.0, "Etiquetas": "", "Comentario": ""},
+            {"Fecha": "2024-11-10", "Categoria": "Otros", "Cuenta": "Principal", "Cantidad": gasto, "Etiquetas": "", "Comentario": ""},
+        ]
+    )
+    ingresos = pd.DataFrame(
+        [
+            {"Fecha": "2024-10-01", "Categoria": "Salario", "Cuenta": "Principal", "Cantidad": 2000.0, "Etiquetas": "", "Comentario": "Nomina"},
+            {"Fecha": "2024-11-01", "Categoria": "Salario", "Cuenta": "Principal", "Cantidad": ingreso_mes2, "Etiquetas": "", "Comentario": "Nomina"},
+            # Un ingreso en categoría de gasto es un reembolso: se resta del gasto del mes.
+            {"Fecha": "2024-11-20", "Categoria": "Otros", "Cuenta": "Principal", "Cantidad": reembolso, "Etiquetas": "", "Comentario": "Devolucion"},
+        ]
+    )
+    transferencias = pd.DataFrame(columns=["Fecha", "Saliente", "Entrante", "Cantidad", "Comentario"])
+
+    with pd.ExcelWriter(workbook, engine="openpyxl") as writer:
+        gastos.to_excel(writer, sheet_name="Gastos", index=False)
+        ingresos.to_excel(writer, sheet_name="Ingresos", index=False)
+        transferencias.to_excel(writer, sheet_name="Transferencias", index=False)
+
+    workbook.seek(0)
+    return workbook
+
+
+def _process(workbook: BytesIO) -> list[dict]:
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/process",
+        files={"file": ("registro.xlsx", workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        data={"modo": "visualizar"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["result"]["historial"]["resumen"]
+
+
+def test_un_mes_con_mas_reembolsos_que_gasto_no_libera_presupuesto_si_queda_deuda():
+    """El caso real de junio de 2026: el gasto neto era -762,83 € y aparecían 762,83 € de sobrante
+    mientras seguía habiendo deuda acumulada."""
+    filas = _process(_workbook_with_refund_month(gasto=100.0, reembolso=900.0, ingreso_mes2=1000.0))
+    mes = filas[1]
+
+    assert mes["💳 Gasto del mes"] < 0, "el mes debe cerrar con gasto neto negativo"
+    assert mes["📉 Deuda Presupuestaria acumulada"] > 0, "la deuda no se salda del todo"
+    assert mes["🧾 Presupuesto Disponible"] == 0.0
+
+
+def test_el_reembolso_cuenta_para_saldar_la_deuda_y_solo_sobra_lo_que_la_supera():
+    """Regla acordada: presupuesto + reembolso pagan la deuda, y sobra únicamente el exceso."""
+    filas = _process(_workbook_with_refund_month(gasto=0.0, reembolso=4000.0, ingreso_mes2=1000.0))
+    mes = filas[1]
+
+    assert mes["📉 Deuda Presupuestaria acumulada"] == 0.0
+    assert mes["🧾 Presupuesto Disponible"] > 0.0
+
+
+def test_sobrante_y_deuda_acumulada_nunca_conviven_en_el_mismo_mes():
+    """Son la parte negativa y la positiva de la misma resta, así que es imposible por construcción."""
+    for reembolso in (0.0, 500.0, 900.0, 4000.0):
+        for filas in (_process(_workbook_with_refund_month(gasto=200.0, reembolso=reembolso, ingreso_mes2=1000.0)),):
+            for mes in filas:
+                sobrante = float(mes["🧾 Presupuesto Disponible"] or 0.0)
+                deuda = float(mes["📉 Deuda Presupuestaria acumulada"] or 0.0)
+                assert not (sobrante > 0 and deuda > 0), f"{mes['Mes']}: sobrante {sobrante} con deuda {deuda}"
+
+
+def test_un_mes_con_gasto_positivo_y_deuda_sin_cubrir_sigue_sin_sobrante():
+    """Con gasto positivo la fórmula nueva y la antigua coinciden: si el presupuesto del mes no da
+    para saldar la deuda arrastrada, no sobra nada. Es el comportamiento de siempre."""
+    filas = _process(_workbook_with_refund_month(gasto=100.0, reembolso=0.0, ingreso_mes2=20000.0))
+    mes = filas[1]
+
+    assert mes["💳 Gasto del mes"] > 0
+    assert mes["📉 Deuda Presupuestaria acumulada"] > 0
+    assert mes["🧾 Presupuesto Disponible"] == 0.0

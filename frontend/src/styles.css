@@ -6550,3 +6550,110 @@ tbody tr:hover {
 .chart-readout-stamp {
   font-variant-numeric: tabular-nums;
 }
+
+/* ================= Rejilla de tarjetas de gráfica ================= */
+
+/* Base de 6 columnas para poder tener dos tamaños de tarjeta sin inventar una rejilla por pestaña:
+   la principal ocupa 3 (~700 px) y las normales 2 (~450 px), todas con la gráfica en 4:3. */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.chart-grid > * { min-width: 0; }
+
+.chart-card {
+  grid-column: span 2;  /* una décima parte x2: las cinco pequeñas entran en una fila */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chart-card-lead { grid-column: span 5; }
+
+/* Por debajo de este ancho, cinco en fila dejarían cada gráfica en unos 200 px: se reparten de dos
+   en dos y las principales pasan a media fila igual que el resto. */
+@media (max-width: 1240px) {
+  .chart-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .chart-card,
+  .chart-card-lead { grid-column: span 2; }
+}
+
+@media (max-width: 900px) {
+  .chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .chart-card,
+  .chart-card-lead { grid-column: span 1; }
+}
+
+/* La cabecera del valor pasa de ir al lado de la gráfica a ir encima: en una tarjeta estrecha,
+   al lado se comía el ancho que necesita la curva. Con eso sobra el ancho fijo que tenía puesto. */
+.typology-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.typology-hero .chart-readout {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+/* Dentro de una tarjeta estrecha, título y fila de periodos no caben en la misma línea y los
+   periodos se parten en dos filas: se apilan para que la fila disponga del ancho entero. */
+.chart-card .table-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.chart-card .table-toolbar .period-tabs { justify-content: flex-start; }
+
+/* La principal ya no es una banda a ancho completo, sino una tarjeta más: sobra el subrayado
+   que la separaba del resto. */
+.typology-hero {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* Las cinco tarjetas pequeñas se separan entre sí con el hueco de la rejilla. */
+.typology-mini {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* Recuadro del área de trazado: deja claro dónde empieza y acaba la gráfica sin competir con la
+   línea. Trazo fino, sin relleno y con las esquinas suavizadas. */
+.chart-frame {
+  fill: none;
+  stroke: var(--color-line-strong, #d8e2d4);
+  stroke-width: 1;
+  rx: 6;
+  pointer-events: none;
+}
+
+/* Las cinco pequeñas de Tipologías van más apretadas: el texto de los ejes se achica para que las
+   etiquetas no se pisen a 270 px de ancho. */
+.typology-mini .mini-axis-label,
+.typology-mini .mini-axis-month {
+  font-size: 9.5px;
+}
+
+/* Separador heredado de cuando la comparativa era una banda a ancho completo: dentro de una
+   tarjeta recuadrada sobra y se leía como una línea suelta bajo la gráfica. */
+.chart-card.typology-compare {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* Matiz bajo una cifra de Patrimonio: explica de dónde sale cuando no es el dato en bruto. */
+.metric-note {
+  display: block;
+  margin-top: 4px;
+  color: #7a857d;
+  font-size: 11.5px;
+  line-height: 1.35;
+}

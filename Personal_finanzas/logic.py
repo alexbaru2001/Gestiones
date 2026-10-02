@@ -659,10 +659,10 @@ def crear_historial_cuentas_virtuales(
 
         gasto_total_mes_actual -= gastos_objetivos_mes  # clave: ya no cuenta como gasto corriente
 
-        # Presupuesto disponible (tu lógica con deuda, pero usando presupuesto_corriente)
-        presupuesto_disponible = max(0.0, presupuesto_corriente - deuda_acumulada)
-
         deuda_mensual = gasto_total_mes_actual - presupuesto_corriente
+        # exceso_gasto = gasto - presupuesto + deuda arrastrada. La deuda nueva es su parte positiva
+        # y el presupuesto que sobra es su parte negativa: son las dos caras de la misma resta, así
+        # que nunca pueden ser las dos mayores que cero.
         exceso_gasto = deuda_mensual + deuda_acumulada
         deuda_acumulada = max(0.0, exceso_gasto)
 
@@ -689,7 +689,12 @@ def crear_historial_cuentas_virtuales(
         ingreso_total = float(ingresos_reales_mensual.get(mes_actual_str, 0.0))
         gastos_netos_total = float(gastos_netos_por_mes.get(mes_actual_str, pd.Series(dtype=float)).sum())
 
-        presupuesto_efectivo = max(0.0, presupuesto_disponible - gasto_total_mes_actual)
+        # Antes esto se calculaba en dos pasos, topando a cero el presupuesto ya descontada la deuda
+        # antes de restarle el gasto. Con un gasto neto negativo (un mes en el que los reembolsos
+        # superan a lo gastado) restar el gasto sumaba, y fabricaba sobrante sobre un presupuesto que
+        # la deuda había dejado a cero. El reembolso cuenta junto al presupuesto para saldar la deuda
+        # y solo sobra lo que quede después de cubrirla entera.
+        presupuesto_efectivo = max(0.0, -exceso_gasto)
 
         if presupuesto_efectivo > 0:
             ahorro_transaccional = (

@@ -108,3 +108,21 @@ export function getObjectiveTotals(objectiveRows) {
     { aporte: 0, gasto: 0, liquidacion: 0 },
   )
 }
+
+/**
+ * Ahorro ajustado por la bolsa de inversión.
+ *
+ * El total de la app coincide con la suma de los saldos reales de las cuentas, y los "sobres"
+ * (regalos, vacaciones, fondo, ahorros, bolsa) reparten ese dinero. La bolsa queda en negativo
+ * cuando se ha invertido más de lo que tenía apartado: ese dinero salió de los ahorros, pero el
+ * sobre de ahorros no se descuenta, así que la cifra de Ahorros sale inflada.
+ *
+ * Sumarle la bolsa deja el ahorro que de verdad queda libre y, de paso, hace que las tarjetas de
+ * Patrimonio sumen exactamente el total en vez de pasarse.
+ */
+export function getAdjustedSavings(row) {
+  const savings = Number(row?.['💰 Ahorros'])
+  const pot = Number(row?.['📈 Inversiones'])
+  if (!Number.isFinite(savings)) return null
+  return savings + (Number.isFinite(pot) ? pot : 0)
+}

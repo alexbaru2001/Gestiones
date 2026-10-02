@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import get_cors_origins
 from backend.domain.investments import analyze_ticker, compare_tickers, search_tickers
 from backend.domain.exploration import DOWNLOAD_CHUNK, collect_candidates, prescore, screen_chunk
+from backend.domain.investment_contributions import build_investment_contributions, merge_income_rows
 from backend.domain.models import PipelineConfig
 from backend.domain.universes import list_universes, refresh_members
 from backend.domain.portfolio import UploadedInvestmentFile
@@ -378,6 +379,15 @@ async def process_workbook(
     result_dict["historial"]["resumen"] = display_rows
     result_dict["historial"]["meses"] = len(display_rows)
     result_dict["historial"]["ultimo_mes"] = display_rows[-1] if display_rows else None
+
+    # El desglose de la bolsa de inversión se calcula aquí y no en el adaptador porque necesita el
+    # histórico completo (display_rows), que solo existe una vez combinado lo guardado con el tramo
+    # recién calculado; en el adaptador solo se ve el tramo y la gráfica saldría con un único mes.
+    result_dict.setdefault("analisis", {})["aporte_inversion"] = build_investment_contributions(
+        display_rows,
+        merge_income_rows(historical_transactions.get("ingresos"), (result.transacciones or {}).get("ingresos")),
+        config.porcentaje_inversion,
+    )
 
     return {
         "ok": True,

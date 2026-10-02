@@ -4,6 +4,9 @@ import test from 'node:test'
 import {
   clampIndex,
   getSeriesChange,
+  getChartHeight,
+  getNiceTicks,
+  pickLabelIndices,
   getSvgCoordinates,
   getValueDomain,
   isNumber,
@@ -162,4 +165,95 @@ test('una serie plana en cero tampoco colapsa', () => {
 test('sin datos se devuelve un rango utilizable en vez de infinitos', () => {
   assert.deepEqual(getValueDomain([]), { min: 0, max: 1 })
   assert.deepEqual(getValueDomain([null, undefined]), { min: 0, max: 1 })
+})
+
+test('el alto sale del ancho para mantener la proporción en cualquier pantalla', () => {
+  assert.equal(getChartHeight(450, 4 / 3), 338)
+  assert.equal(getChartHeight(700, 4 / 3), 520) // topado: 525 pasaría del máximo
+})
+
+test('la proporción se respeta mientras quepa entre los topes', () => {
+  const alto = getChartHeight(600, 4 / 3)
+
+  assert.ok(Math.abs(600 / alto - 4 / 3) < 0.05)
+})
+
+test('una gráfica muy estrecha no se queda sin alto utilizable', () => {
+  assert.equal(getChartHeight(120, 4 / 3), 200)
+})
+
+test('un ancho aún sin medir devuelve el mínimo en vez de NaN', () => {
+  assert.equal(getChartHeight(0), 200)
+  assert.equal(getChartHeight(null), 200)
+  assert.equal(getChartHeight(undefined), 200)
+})
+
+test('una proporción inválida no rompe el cálculo', () => {
+  assert.equal(getChartHeight(600, 0), 200)
+})
+
+test('los topes se pueden ajustar por gráfica', () => {
+  assert.equal(getChartHeight(450, 4 / 3, 120, 260), 260)
+})
+
+test('las marcas del eje caen en valores redondos, no en fracciones del rango', () => {
+  const ticks = getNiceTicks(0, 1000, 5)
+
+  assert.deepEqual(ticks, [0, 250, 500, 750, 1000])
+})
+
+test('las marcas se adaptan a la escala de los datos', () => {
+  assert.deepEqual(getNiceTicks(0, 10, 5), [0, 2.5, 5, 7.5, 10])
+  assert.deepEqual(getNiceTicks(0, 4, 5), [0, 1, 2, 3, 4])
+})
+
+test('un rango con negativos reparte marcas a ambos lados del cero', () => {
+  const ticks = getNiceTicks(-300, 500, 5)
+
+  assert.ok(ticks.some((tick) => tick < 0))
+  assert.ok(ticks.some((tick) => tick > 0))
+  assert.ok(ticks.includes(0))
+})
+
+test('las marcas nunca se salen del rango de la gráfica', () => {
+  const ticks = getNiceTicks(8773, 21745, 5)
+
+  assert.ok(ticks[0] >= 8773)
+  assert.ok(ticks.at(-1) <= 21745)
+})
+
+test('las etiquetas decimales no arrastran basura de coma flotante', () => {
+  for (const tick of getNiceTicks(0, 0.5, 5)) {
+    assert.ok(String(tick).length < 8, `etiqueta ilegible: ${tick}`)
+  }
+})
+
+test('una serie plana no genera marcas duplicadas', () => {
+  assert.deepEqual(getNiceTicks(500, 500), [500])
+})
+
+test('con pocos meses se etiquetan todos', () => {
+  assert.deepEqual(pickLabelIndices(4, 5), [0, 1, 2, 3])
+})
+
+test('con muchos meses se reparten las etiquetas incluyendo los extremos', () => {
+  const indices = pickLabelIndices(16, 5)
+
+  assert.equal(indices[0], 0)
+  assert.equal(indices.at(-1), 15)
+  assert.ok(indices.length <= 5)
+})
+
+test('sin datos no se etiqueta nada', () => {
+  assert.deepEqual(pickLabelIndices(0), [])
+})
+
+test('un rango irregular no se queda con dos marcas sueltas', () => {
+  // Caso real de la tarjeta de Vacaciones, que daba solo [0, 500].
+  assert.ok(getNiceTicks(-402, 666, 4).length >= 3)
+})
+
+test('el paso elegido es el que más se acerca al número de marcas pedido', () => {
+  assert.equal(getNiceTicks(0, 1000, 5).length, 5)
+  assert.ok(Math.abs(getNiceTicks(310, 1752, 4).length - 4) <= 1)
 })

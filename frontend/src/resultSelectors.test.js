@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   aggregateDividendsByCompany,
+  getAdjustedSavings,
   filterObjectiveRows,
   getDividendPayments,
   getHistoryRows,
@@ -78,4 +79,26 @@ test('aggregateDividendsByCompany accumulates only up to the given cutoff', () =
   assert.deepEqual(untilNov10.map((row) => [row.empresa, row.total]), [['Procter and Gamber', 4.26]])
 
   assert.deepEqual(aggregateDividendsByCompany(payments, { untilDate: '2024-10-01' }), [])
+})
+
+test('el ahorro ajustado descuenta lo invertido por encima de la bolsa', () => {
+  // Caso real de octubre de 2026: la bolsa está sobregirada en 2.869,18 €.
+  const row = { '💰 Ahorros': 31083.38, '📈 Inversiones': -2869.18 }
+
+  assert.ok(Math.abs(getAdjustedSavings(row) - 28214.2) < 0.01)
+})
+
+test('con la bolsa en positivo el ajuste suma lo que hay apartado para invertir', () => {
+  const row = { '💰 Ahorros': 20000, '📈 Inversiones': 511.82 }
+
+  assert.ok(Math.abs(getAdjustedSavings(row) - 20511.82) < 0.01)
+})
+
+test('sin bolsa el ahorro se queda como está', () => {
+  assert.equal(getAdjustedSavings({ '💰 Ahorros': 1000 }), 1000)
+})
+
+test('sin fila o sin ahorros no se inventa una cifra', () => {
+  assert.equal(getAdjustedSavings(null), null)
+  assert.equal(getAdjustedSavings({}), null)
 })
