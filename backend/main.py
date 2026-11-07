@@ -6,7 +6,18 @@ from backend.config import get_cors_origins
 from backend.domain.investments import analyze_ticker, compare_tickers, search_tickers
 from backend.domain.exploration import DOWNLOAD_CHUNK, collect_candidates, prescore, screen_chunk
 from backend.domain.investment_contributions import build_investment_contributions, merge_income_rows
+from backend.domain.fx import convert as convert_to_eur, get_rates
+from backend.domain.market_prices import get_prices, key as price_key
 from backend.domain.models import PipelineConfig
+from backend.domain.myinvestor_movements import extract_contributions, extract_fees
+from backend.domain.portfolio_positions import (
+    accumulate_costs,
+    allocate_fees,
+    derive_movements,
+    months_of,
+    position_value,
+    summarize_load,
+)
 from backend.domain.universes import list_universes, refresh_members
 from backend.domain.portfolio import UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
@@ -18,6 +29,10 @@ from backend.infrastructure.objectives_repository import (
     ObjectivesValidationError,
     parse_objectives_json,
 )
+from backend.infrastructure.portfolio_positions_repository import (
+    ExcelPortfolioPositionsRepository,
+    PositionsStorageError,
+)
 from backend.infrastructure.portfolio_repository import LocalPortfolioRepository
 from backend.infrastructure.transaction_history_repository import CsvTransactionHistoryRepository
 from backend.infrastructure.exploration_repository import JsonExplorationRepository
@@ -27,6 +42,7 @@ from backend.infrastructure.watchlist_repository import JsonWatchlistRepository,
 app = FastAPI(title="Gestiones Backend", version="0.1.0")
 objectives_repository = JsonObjectivesRepository()
 portfolio_repository = LocalPortfolioRepository()
+portfolio_positions_repository = ExcelPortfolioPositionsRepository()
 finance_history_repository = CsvFinanceHistoryRepository()
 finance_checkpoint_repository = JsonFinanceCheckpointRepository()
 transaction_history_repository = CsvTransactionHistoryRepository()
@@ -241,6 +257,105 @@ def save_exploration(payload: dict[str, Any]) -> dict[str, Any]:
 def get_portfolio() -> dict[str, Any]:
     snapshot = portfolio_repository.load()
     return {"ok": True, "result": snapshot}
+
+
+@app.get("/api/v1/portfolio/positions")
+def get_portfolio_positions() -> dict[str, Any]:
+    try:
+        positions = portfolio_positions_repository.load_positions()
+        movements_rows = portfolio_positions_repository.load_movements()
+    except PositionsStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"ok": True, "result": _build_positions_result(positions, movements_rows)}
+
+
+@app.post("/api/v1/portfolio/positions")
+async def upload_portfolio_positions(
+    posiciones: UploadFile = File(...),
+    movimientos: UploadFile | None = File(default=None),
+) -> dict[str, Any]:
+    """Carga incremental: lo que llega se combina con lo guardado, no lo sustituye."""
+    if not (posiciones.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="El archivo de posiciones debe ser Excel (.xlsx).")
+
+    try:
+        stored_positions = portfolio_positions_repository.load_positions()
+        stored_movements = portfolio_positions_repository.load_movements()
+        incoming = ExcelPortfolioPositionsRepository.parse_positions_upload(await posiciones.read())
+        merged_positions = portfolio_positions_repository.save_positions(incoming)
+
+        merged_movements = stored_movements
+        if movimientos is not None and movimientos.filename:
+            incoming_movements = ExcelPortfolioPositionsRepository.parse_movements_upload(await movimientos.read())
+            merged_movements = portfolio_positions_repository.save_movements(incoming_movements)
+    except PositionsStorageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        "resumen": summarize_load(stored_positions, merged_positions, stored_movements, merged_movements),
+        "result": _build_positions_result(merged_positions, merged_movements),
+    }
+
+
+def _build_positions_result(
+    positions: list[dict[str, Any]], movements_rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Lo que la pantalla necesita: posiciones valoradas, movimientos deducidos y comisiones imputadas."""
+    fees = extract_fees(movements_rows)
+
+    # Solo se busca fuera lo que el archivo no resuelve: el resto no gasta ninguna consulta.
+    unresolved = [position for position in positions if position_value(position) is None]
+    rates = get_rates(
+        {
+            (position.get("Moneda", "EUR"), position["Mes"])
+            for position in unresolved
+            if str(position.get("Moneda", "EUR")).upper() != "EUR"
+        }
+    )
+    # Las que además no traen precio (los fondos) necesitan la cotización del mes.
+    market = get_prices(
+        {(position["ISIN"], position["Mes"]) for position in unresolved if not position.get("Precio cierre")}
+    )
+
+    valued = []
+    for position in positions:
+        value = position_value(position)
+        source = "archivo"
+        if value is None:
+            price = position.get("Precio cierre") or market.get(price_key(position["ISIN"], position["Mes"]))
+            if price:
+                amount = float(position.get("Cantidad") or 0) * float(price)
+                value = convert_to_eur(amount, position.get("Moneda"), position["Mes"], rates)
+                source = "mercado" if not position.get("Precio cierre") else "cambio"
+        valued.append(
+            {
+                **position,
+                "valor": value,
+                "origen_valor": source if value is not None else "sin valorar",
+            }
+        )
+
+    # El coste necesita un precio para cada compra: el del archivo cuando está, y si no el de
+    # mercado, que es el caso de los fondos.
+    costs = accumulate_costs(positions, price_of=lambda isin, month: market.get(price_key(isin, month)))
+    for position in valued:
+        position["coste"] = costs.get((position["Mes"], position["Broker"], position["ISIN"]))
+
+    # El reparto a prorrata se hace sobre el valor ya convertido: si no, una posición en divisa
+    # quedaría fuera del reparto y las demás cargarían con su parte de la comisión.
+    allocated = allocate_fees(
+        [{**position, "Valor EUR": position["valor"]} for position in valued], fees
+    )
+    for position in valued:
+        position["comision_imputada"] = allocated.get((position["Mes"], position["Broker"], position["ISIN"]))
+    return {
+        "posiciones": valued,
+        "meses": months_of(positions),
+        "movimientos": derive_movements(positions),
+        "comisiones": fees,
+        "aportaciones": extract_contributions(movements_rows),
+    }
 
 
 @app.get("/api/v1/portfolio/snapshots")

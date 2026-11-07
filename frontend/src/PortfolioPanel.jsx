@@ -2,6 +2,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ChartCrosshair, ChartReadout } from './ChartParts'
 import { getValueDomain, polylinePoints } from './chartGeometry'
 import { useChartCrosshair } from './useChartCrosshair'
+import { PortfolioPreview } from './PortfolioPreview'
+import {
+  findIncompleteMonths,
+  findPositionsWithoutValue,
+  groupByMonth,
+  movementsOfMonth,
+  summarizeMovements,
+} from './portfolioPositions'
 import { CalendarDays, Check, FileUp, Pencil, RefreshCw, X } from 'lucide-react'
 import { requestJson } from './api'
 import { aggregateDividendsByCompany } from './resultSelectors'
@@ -80,6 +88,11 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
   const [expandedAllocation, setExpandedAllocation] = useState('')
   const [showAllAllocation, setShowAllAllocation] = useState(false)
   const [detailTab, setDetailTab] = useState('resumen')
+  const [positionsData, setPositionsData] = useState(null)
+  const [positionsSummary, setPositionsSummary] = useState(null)
+  const [positionsFile, setPositionsFile] = useState(null)
+  const [movementsFile, setMovementsFile] = useState(null)
+  const [isUploadingPositions, setIsUploadingPositions] = useState(false)
 
   const financeByMonth = useMemo(() => buildFinanceByMonth(financeRows), [financeRows])
   const snapshotOptions = useMemo(() => buildSnapshotOptions(snapshot, snapshots, financeByMonth), [financeByMonth, snapshot, snapshots])
@@ -112,6 +125,13 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
       ? `Finanzas solo llega a ${financeSourceMonth}`
       : `Hasta ${formatSnapshotDate(selectedSnapshot?.snapshot_date)}`
   const brokerCost = Number(summary?.known_cost ?? 0)
+  const positionMonths = useMemo(() => groupByMonth(positionsData?.posiciones ?? []), [positionsData])
+  const incompleteMonths = useMemo(() => findIncompleteMonths(positionsData?.posiciones ?? []), [positionsData])
+  const positionsWithoutValue = useMemo(
+    () => findPositionsWithoutValue(positionsData?.posiciones ?? []),
+    [positionsData],
+  )
+  const movementCounts = useMemo(() => summarizeMovements(positionsData?.movimientos ?? []), [positionsData])
   const chartItems = useMemo(() => buildPortfolioChart(investmentPositions, chartMode), [chartMode, investmentPositions])
   const positionRows = useMemo(() => buildPositionRows(investmentPositions, investedTotal), [investedTotal, investmentPositions])
   const sortedPositionRows = useMemo(
@@ -181,6 +201,40 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
       setSelectedSnapshotKey((current) => current || getSnapshotKey(loadedSnapshots.at(-1)))
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  useEffect(() => {
+    requestJson('/api/v1/portfolio/positions', {}, 'No se pudo cargar el archivo de posiciones')
+      .then((data) => setPositionsData(data.result))
+      .catch(() => setPositionsData(null))
+  }, [])
+
+  const uploadPositions = async (event) => {
+    event.preventDefault()
+    if (!positionsFile) {
+      setError('Selecciona el archivo de posiciones (.xlsx).')
+      return
+    }
+    setIsUploadingPositions(true)
+    setError('')
+    const formData = new FormData()
+    formData.append('posiciones', positionsFile)
+    if (movementsFile) formData.append('movimientos', movementsFile)
+    try {
+      const data = await requestJson(
+        '/api/v1/portfolio/positions',
+        { method: 'POST', body: formData },
+        'No se pudo cargar el archivo de posiciones',
+      )
+      setPositionsData(data.result)
+      setPositionsSummary(data.resumen)
+      setPositionsFile(null)
+      setMovementsFile(null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsUploadingPositions(false)
     }
   }
 
@@ -814,6 +868,7 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
               { id: 'resumen', label: 'Resumen por bróker' },
               { id: 'planificacion', label: 'Planificación' },
               { id: 'datos', label: 'Datos e importación' },
+              { id: 'archivo', label: 'Archivo de posiciones' },
             ].map((tab) => (
               <button
                 className={detailTab === tab.id ? 'active' : ''}
@@ -827,6 +882,23 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
               </button>
             ))}
           </div>
+
+          {detailTab === 'archivo' ? (
+            <PositionsFileSection
+              data={positionsData}
+              incompleteMonths={incompleteMonths}
+              isUploading={isUploadingPositions}
+              months={positionMonths}
+              movementCounts={movementCounts}
+              movementsFile={movementsFile}
+              onMovementsFileChange={setMovementsFile}
+              onPositionsFileChange={setPositionsFile}
+              onSubmit={uploadPositions}
+              positionsFile={positionsFile}
+              summary={positionsSummary}
+              withoutValue={positionsWithoutValue}
+            />
+          ) : null}
 
           {detailTab === 'resumen' ? (
             <section className="portfolio-card">
@@ -994,7 +1066,185 @@ export function PortfolioPanel({ financeRows = [], dividendPayments = [], onRevi
           ) : null}
         </div>
       )}
+      <PortfolioPreview data={positionsData} />
     </section>
+  )
+}
+
+
+function PositionsFileSection({
+  data,
+  incompleteMonths,
+  isUploading,
+  months,
+  movementCounts,
+  movementsFile,
+  onMovementsFileChange,
+  onPositionsFileChange,
+  onSubmit,
+  positionsFile,
+  summary,
+  withoutValue,
+}) {
+  const [openMonth, setOpenMonth] = useState('')
+  const movements = data?.movimientos ?? []
+  const fees = data?.comisiones ?? []
+
+  return (
+    <div className="positions-file">
+      <section className="portfolio-card">
+        <div className="portfolio-chart-header">
+          <h3>Cargar posiciones</h3>
+          <span className="muted-text">Cada carga se suma a lo guardado; no lo sustituye</span>
+        </div>
+        <form className="portfolio-import" onSubmit={onSubmit}>
+          <label className="file-input compact-file-input">
+            <input
+              accept=".xlsx,.xlsm"
+              onChange={(event) => onPositionsFileChange(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+            <span>
+              <FileUp aria-hidden="true" size={19} />
+              {positionsFile ? positionsFile.name : 'Archivo de posiciones (.xlsx)'}
+            </span>
+          </label>
+          <label className="file-input compact-file-input">
+            <input
+              accept=".xlsx,.xlsm"
+              onChange={(event) => onMovementsFileChange(event.target.files?.[0] ?? null)}
+              type="file"
+            />
+            <span>
+              <FileUp aria-hidden="true" size={19} />
+              {movementsFile ? movementsFile.name : 'Movimientos de MyInvestor (opcional)'}
+            </span>
+          </label>
+          <button className="primary-button inline-primary" type="submit" disabled={isUploading}>
+            {isUploading ? 'Cargando...' : 'Cargar'}
+          </button>
+        </form>
+
+        {summary ? (
+          <p className="success-text">
+            {summary.posiciones_nuevas > 0
+              ? `Añadidos ${summary.posiciones_nuevas} registros`
+              : 'Sin registros nuevos'}
+            {summary.meses_nuevos?.length ? ` · meses nuevos: ${summary.meses_nuevos.join(', ')}` : ''}
+            {summary.meses_actualizados?.length ? ` · actualizados: ${summary.meses_actualizados.length}` : ''}
+            {summary.movimientos_nuevos > 0 ? ` · ${summary.movimientos_nuevos} movimientos nuevos` : ''}
+          </p>
+        ) : null}
+
+        {incompleteMonths.length ? (
+          <p className="warning-text">
+            {/* La comparación entre meses no inventa ventas, pero el total de un mes incompleto se
+                queda corto y se leería como una caída. */}
+            Hay meses sin todos los brókeres: {incompleteMonths.map((item) => `${item.month} (falta ${item.missing.join(', ')})`).join(' · ')}.
+            Su valor total no es comparable con el de los meses completos.
+          </p>
+        ) : null}
+
+        {withoutValue.length ? (
+          <p className="warning-text">
+            {withoutValue.length} posiciones sin importe en euros (están en divisa): {withoutValue.map((p) => `${p.Nombre} ${p.Mes}`).join(', ')}.
+          </p>
+        ) : null}
+      </section>
+
+      {months.length ? (
+        <section className="portfolio-card">
+          <div className="portfolio-chart-header">
+            <h3>Posiciones por mes</h3>
+            <span className="muted-text">
+              {months.length} meses · {movementCounts.alta} altas, {movementCounts.compra} compras,{' '}
+              {movementCounts.venta} ventas, {movementCounts.cierre} cierres
+            </span>
+          </div>
+          <div className="table-wrap">
+            <table className="positions-table">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>Brókeres</th>
+                  <th className="num">Posiciones</th>
+                  <th className="num">Valor</th>
+                  <th className="num">Comisiones</th>
+                  <th className="num">Movimientos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {months.map((month) => {
+                  const isOpen = openMonth === month.month
+                  const monthMovements = movementsOfMonth(movements, month.month)
+                  return (
+                    <Fragment key={month.month}>
+                      <tr className={isOpen ? 'is-selected' : undefined} onClick={() => setOpenMonth(isOpen ? '' : month.month)}>
+                        <td>{month.month}</td>
+                        <td>{month.brokers.join(' · ')}</td>
+                        <td className="num">{month.positions.length}</td>
+                        <td className="num">{formatMoney(month.value)}</td>
+                        <td className="num">{month.fees ? formatMoney(month.fees) : '—'}</td>
+                        <td className="num">{monthMovements.length || '—'}</td>
+                      </tr>
+                      {isOpen ? (
+                        <tr className="is-child">
+                          <td colSpan={6}>
+                            <ul className="month-detail">
+                              {month.positions.map((position) => (
+                                <li key={`${position.Broker}-${position.ISIN}`}>
+                                  <span>{position.Nombre}</span>
+                                  <span className="muted-text">{position.Broker}</span>
+                                  <strong>{formatMoney(position.valor)}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                            {monthMovements.length ? (
+                              <ul className="month-detail movements">
+                                {monthMovements.map((movement) => (
+                                  <li key={`${movement.Broker}-${movement.ISIN}-${movement.tipo}`}>
+                                    <span>{movement.Nombre}</span>
+                                    <span className={`movement-tag tag-${movement.tipo}`}>{movement.tipo}</span>
+                                    <strong>{formatNumber(movement.cantidad, 'tít.')}</strong>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
+        <div className="empty-state compact-empty">
+          <strong>Sin archivo de posiciones</strong>
+          <span>Carga tu Excel de posiciones a cierre de mes para ver aquí la cartera y sus movimientos.</span>
+        </div>
+      )}
+
+      {fees.length ? (
+        <section className="portfolio-card">
+          <div className="portfolio-chart-header">
+            <h3>Comisiones</h3>
+            <span className="muted-text">Repartidas entre las posiciones de su bróker a prorrata del valor</span>
+          </div>
+          <ul className="month-detail">
+            {fees.map((fee) => (
+              <li key={`${fee.Mes}-${fee.Concepto}`}>
+                <span>{fee.Concepto}</span>
+                <span className="muted-text">{fee.Mes} · {fee.Broker}</span>
+                <strong>{formatMoney(fee.Importe)}</strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
   )
 }
 

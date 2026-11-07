@@ -160,13 +160,22 @@ def _update_cache(path: Path | None, updates: dict[str, dict[str, Any]]) -> None
     save_cache(cache, path)
 
 
+class LookupFailed(RuntimeError):
+    """La consulta no se pudo hacer (red caída, tiempo agotado...).
+
+    Es muy distinto de "este ISIN no existe": un fallo de red no debe cachearse como respuesta
+    negativa, porque dejaría el activo marcado como irresoluble para siempre. Pasó justamente con
+    el Vanguard US 500, que quedó grabado como sin ticker por un corte puntual de Yahoo.
+    """
+
+
 def lookup_ticker_online(isin: str) -> str | None:
     try:
         from yfinance.utils import get_ticker_by_isin  # type: ignore
 
         ticker = get_ticker_by_isin(isin)
-    except Exception:
-        return None
+    except Exception as exc:
+        raise LookupFailed(str(exc)) from exc
     if not ticker or not isinstance(ticker, str):
         return None
     ticker = ticker.strip()
@@ -202,7 +211,15 @@ def resolve_tickers(isins: list[str], path: Path | None = None, allow_network: b
     if not pending or not allow_network:
         return mapping
 
-    updates = {isin: {"ticker": lookup_ticker_online(isin)} for isin in pending}
+    updates = {}
+    for isin in pending:
+        try:
+            updates[isin] = {"ticker": lookup_ticker_online(isin)}
+        except LookupFailed:
+            # Se reintentará en la próxima carga en vez de quedar marcado como irresoluble.
+            continue
+    if not updates:
+        return mapping
     _update_cache(path, updates)
     mapping.update({isin: fields["ticker"] for isin, fields in updates.items() if fields["ticker"]})
     return mapping

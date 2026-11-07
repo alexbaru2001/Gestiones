@@ -19,6 +19,8 @@ DEFAULT_ASSET_CATALOG_PATH = DEFAULT_INVESTMENTS_PATH / "asset_catalog.json"
 DEFAULT_WATCHLIST_PATH = DEFAULT_INVESTMENTS_PATH / "watchlist.json"
 DEFAULT_PORTFOLIO_REVIEW_PATH = DEFAULT_INVESTMENTS_PATH / "portfolio_review.json"
 DEFAULT_UNIVERSES_PATH = DEFAULT_INVESTMENTS_PATH / "universes.json"
+DEFAULT_POSITIONS_PATH = DEFAULT_INVESTMENTS_PATH / "posiciones.xlsx"
+DEFAULT_MOVEMENTS_PATH = DEFAULT_INVESTMENTS_PATH / "movimientos.xlsx"
 DEFAULT_EXPLORATIONS_PATH = DEFAULT_INVESTMENTS_PATH / "exploraciones.json"
 DEFAULT_ANALYSIS_CACHE_PATH = DEFAULT_INVESTMENTS_PATH / "analysis_cache"
 
@@ -97,6 +99,20 @@ def get_universes_path() -> Path:
     configured_path = os.getenv("GESTIONES_UNIVERSES_PATH", "")
     if not configured_path.strip():
         return DEFAULT_UNIVERSES_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_positions_path() -> Path:
+    configured_path = os.getenv("GESTIONES_POSITIONS_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_POSITIONS_PATH
+    return Path(configured_path).expanduser()
+
+
+def get_movements_path() -> Path:
+    configured_path = os.getenv("GESTIONES_MOVEMENTS_PATH", "")
+    if not configured_path.strip():
+        return DEFAULT_MOVEMENTS_PATH
     return Path(configured_path).expanduser()
 
 

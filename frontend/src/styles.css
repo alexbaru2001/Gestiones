@@ -6657,3 +6657,150 @@ tbody tr:hover {
   font-size: 11.5px;
   line-height: 1.35;
 }
+
+/* ================= Archivo de posiciones ================= */
+
+.positions-file { display: grid; gap: 16px; }
+
+.month-detail {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.month-detail li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.month-detail.movements { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--color-line-strong); }
+
+.movement-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tag-alta, .tag-compra { background: #dff0e4; color: #235c40; }
+.tag-venta, .tag-cierre { background: #f6dedb; color: var(--color-danger); }
+
+/* Vista nueva de cartera, al final de la pantalla mientras convive con la anterior. */
+.portfolio-preview {
+  display: grid;
+  gap: 18px;
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 2px solid var(--color-line-strong, #2a2f38);
+}
+
+.origen-tag {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.origen-archivo { background: #dff0e4; color: #235c40; }
+.origen-cambio { background: #e8eff6; color: #1f5c6b; }
+.origen-mercado { background: #f6eddc; color: #7a5c1f; }
+
+.portfolio-preview tfoot td {
+  border-top: 2px solid var(--color-line-strong, #2a2f38);
+  padding-top: 10px;
+  font-weight: 700;
+}
+
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+/* La gráfica de la vista nueva comparte fila con la asignación del mes. Estirada a todo el ancho
+   se quedaba en una proporción de 2:1 y cualquier subida se leía como una recta; acotándola a una
+   columna, mantiene el 4:3 y el hueco de la derecha se aprovecha en vez de quedar vacío. */
+.chart-card-wide {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1000px) {
+  .chart-card-wide {
+    /* La columna de la derecha se lleva el hueco que deja la gráfica al cuadrarse. Con un tope
+       no crece sin medida en pantallas muy anchas y deja de parecer media pantalla vacía. */
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+    align-items: start;
+  }
+}
+
+/* Los ejes de esta gráfica se leen de lejos: 9px era legible pegado a la pantalla y poco más. */
+.preview-chart-svg .mini-axis-label,
+.preview-chart-svg .mini-axis-month {
+  font-size: 12px;
+}
+
+.preview-allocation {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.preview-allocation-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preview-allocation-head h4 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.preview-allocation-month {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+/* Mientras el ratón manda, el mes se resalta: deja claro que la columna ya no es la foto final. */
+.preview-allocation-month.is-live {
+  color: var(--color-primary-strong);
+  font-weight: 700;
+}
+
+.preview-allocation-list article {
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.preview-allocation-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.preview-allocation-row i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.preview-allocation .portfolio-bar { height: 6px; }
+
+.portfolio-line-legend span.is-dashed::before { border-top-style: dashed; }
