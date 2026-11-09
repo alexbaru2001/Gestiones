@@ -10,16 +10,19 @@ from backend.domain.fx import convert as convert_to_eur, get_rates
 from backend.domain.market_prices import get_prices, key as price_key
 from backend.domain.models import PipelineConfig
 from backend.domain.myinvestor_movements import extract_contributions, extract_fees
+from backend.domain.asset_catalog import known_metadata, known_tickers
 from backend.domain.portfolio_positions import (
     accumulate_costs,
     allocate_fees,
+    classify,
     derive_movements,
     months_of,
     position_value,
     summarize_load,
 )
+from backend.adapters.legacy_pipeline_adapter import read_workbook_first_month
 from backend.domain.universes import list_universes, refresh_members
-from backend.domain.portfolio import UploadedInvestmentFile
+from backend.domain.portfolio import FUND_NAME_MAP, UploadedInvestmentFile
 from backend.infrastructure.container import build_process_finance_workbook_use_case
 from backend.infrastructure.finance_checkpoint_repository import JsonFinanceCheckpointRepository
 from backend.infrastructure.finance_history_repository import CsvFinanceHistoryRepository
@@ -293,7 +296,7 @@ async def upload_portfolio_positions(
 
     return {
         "ok": True,
-        "resumen": summarize_load(stored_positions, merged_positions, stored_movements, merged_movements),
+        "resumen": summarize_load(stored_positions, merged_positions, stored_movements, merged_movements, incoming),
         "result": _build_positions_result(merged_positions, merged_movements),
     }
 
@@ -318,6 +321,12 @@ def _build_positions_result(
         {(position["ISIN"], position["Mes"]) for position in unresolved if not position.get("Precio cierre")}
     )
 
+    # La clasificación sale del mismo catálogo que la vista anterior, sin red: abrir Cartera no
+    # puede depender de que Yahoo responda.
+    catalog = known_metadata()
+    tickers = known_tickers()
+    fund_isins = set(FUND_NAME_MAP.values())
+
     valued = []
     for position in positions:
         value = position_value(position)
@@ -331,6 +340,8 @@ def _build_positions_result(
         valued.append(
             {
                 **position,
+                **classify(position, catalog, fund_isins),
+                "ticker": tickers.get(position["ISIN"]),
                 "valor": value,
                 "origen_valor": source if value is not None else "sin valorar",
             }
@@ -431,18 +442,29 @@ async def process_workbook(
     checkpoint_as_of = checkpoint.get("as_of_month") if checkpoint else None
     fecha_inicio_month = fecha_inicio[:7]
 
-    recalculado_desde_cero = bool(checkpoint_as_of and fecha_inicio_month <= checkpoint_as_of)
+    # El tramo que se va a calcular empieza donde empiecen a la vez el parámetro y los datos: pedir
+    # desde 2024-10 un Excel que solo trae 2026 no procesa 2024.
+    workbook_start = read_workbook_first_month(content)
+    tramo_inicio = max(fecha_inicio_month, workbook_start) if workbook_start else fecha_inicio_month
+
+    recalculado_desde_cero = bool(checkpoint_as_of and tramo_inicio <= checkpoint_as_of)
     if recalculado_desde_cero:
         # Repetir o solapar el tramo ya cerrado no necesita continuar los acumuladores desde el
         # checkpoint: se recalcula igual que si nunca hubiera existido. El paso de guardado más abajo
         # ya se encarga de no duplicar los meses que ya estén en el histórico (o de sincronizar el
         # checkpoint si el Excel completo coincide con lo ya guardado, sin escribir nada nuevo).
+        #
+        # Lo que NO puede pasar es llegar aquí porque `fecha_inicio` venga con su valor por defecto:
+        # entonces se tiraba el checkpoint y se recalculaba desde cero con un Excel que solo tiene
+        # el año en curso, y los acumulados se desplomaban en su primer mes.
         checkpoint = None
 
     historical_transactions = {
         "gastos": transaction_history_repository.load_gastos(),
         "ingresos": transaction_history_repository.load_ingresos(),
     }
+
+    checkpoint = _seed_reserve_average(checkpoint, finance_history_repository.load())
 
     use_case = build_process_finance_workbook_use_case()
     try:
@@ -512,6 +534,32 @@ async def process_workbook(
         "meses_ya_guardados": meses_ya_guardados,
         "recalculado_desde_cero": recalculado_desde_cero,
     }
+
+
+def _seed_reserve_average(checkpoint: dict[str, Any] | None, stored_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Rellena la media de gasto del fondo en checkpoints guardados antes de que existiera.
+
+    El objetivo del fondo son seis meses de gasto medio, y esa media se arrastra de tramo en tramo
+    dentro del checkpoint. Un checkpoint escrito por una versión anterior no la trae, y sin ella el
+    siguiente tramo calcularía la media solo con los meses del Excel que se suba, olvidando todo lo
+    vivido antes. Aquí se reconstruye una única vez a partir del histórico ya guardado.
+    """
+    if not checkpoint:
+        return checkpoint
+    snapshot = dict(checkpoint.get("fondo_reserva_snapshot") or {})
+    if snapshot.get("Meses contados"):
+        return checkpoint
+    hasta = checkpoint.get("as_of_month")
+    gastos = [
+        float(row.get("💳 Gasto del mes") or 0.0)
+        for row in stored_rows
+        if row.get("Mes") and (not hasta or str(row["Mes"]) <= str(hasta))
+    ]
+    if not gastos:
+        return checkpoint
+    snapshot["Gasto acumulado"] = sum(gastos)
+    snapshot["Meses contados"] = len(gastos)
+    return {**checkpoint, "fondo_reserva_snapshot": snapshot}
 
 
 @app.get("/api/v1/process/checkpoint")

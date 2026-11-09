@@ -126,3 +126,58 @@ export function getAdjustedSavings(row) {
   if (!Number.isFinite(savings)) return null
   return savings + (Number.isFinite(pot) ? pot : 0)
 }
+
+function asNumber(value) {
+  return Number(value) || 0
+}
+
+/**
+ * Reparto del presupuesto de un mes entre deuda arrastrada, gasto y lo que queda libre.
+ *
+ * La deuda presupuestaria acumulada es dinero ya gastado de más en meses anteriores. Se cobra
+ * entera contra el presupuesto del mes antes de considerar nada disponible; si no cabe, el resto
+ * sigue pendiente para los siguientes.
+ */
+export function getBudget(selectedRow) {
+  const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
+  const spent = asNumber(selectedRow['💳 Gasto del mes'])
+  const budgetConsumption = Math.max(0, spent)
+  const budgetRefund = Math.max(0, -spent)
+  const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
+  const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
+  // La deuda acumulada se cobra entera contra el presupuesto del mes, no por una fracción: lo que
+  // se arrastra ya se gastó, así que no vuelve a estar disponible. Antes se reservaba un 10 % del
+  // presupuesto como mucho, de modo que con 2.293 € de deuda y 1.047 € de presupuesto la pantalla
+  // decía que quedaban 942 € libres cuando en realidad no quedaba nada.
+  const debtCharge = Math.min(Math.max(0, accumulatedDebt), monthBudget)
+  // Lo que la deuda no cabe en el presupuesto de este mes sigue pendiente para los siguientes.
+  const debtCarried = Math.max(0, accumulatedDebt - debtCharge)
+  const availableBudget = Math.max(0, monthBudget - debtCharge)
+  const remaining = Math.max(0, availableBudget - spent)
+  const overrun = Math.max(monthlyDebt, spent - availableBudget, 0)
+  const totalForBar = Math.max(monthBudget, debtCharge + budgetConsumption + remaining, 1)
+  // Con la deuda comiéndose el presupuesto no queda nada por ejecutar: gastar un euro ya es
+  // consumirlo entero. Dividir por cero dejaba el indicador en 0 % justo cuando más se había gastado.
+  const execution =
+    availableBudget > 0
+      ? (Math.min(budgetConsumption, availableBudget) / availableBudget) * 100
+      : budgetConsumption > 0
+        ? 100
+        : 0
+
+  return {
+    accumulatedDebt,
+    availableBudget,
+    budgetConsumption,
+    budgetRefund,
+    debtCarried,
+    debtCharge,
+    execution,
+    monthBudget,
+    monthlyDebt,
+    overrun,
+    remaining,
+    spent,
+    totalForBar,
+  }
+}

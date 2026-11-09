@@ -232,12 +232,23 @@ def summarize_load(
     merged_positions: list[dict[str, Any]],
     stored_movements: list[dict[str, Any]],
     merged_movements: list[dict[str, Any]],
+    incoming_positions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Qué ha cambiado en esta carga, para no tener que fiarse a ciegas de que entró lo que se quería."""
+    """Qué ha cambiado en esta carga, para no tener que fiarse a ciegas de que entró lo que se quería.
+
+    Actualizado es lo que venía en el archivo y además ya estaba guardado. Antes se cruzaba todo lo
+    guardado con todo lo resultante, así que una carga de un solo mes decía haber actualizado el
+    histórico entero: justo lo contrario de lo que este resumen sirve para comprobar.
+    """
     before = {(position["Mes"], position["Broker"]) for position in read_positions(stored_positions)}
     after = {(position["Mes"], position["Broker"]) for position in merged_positions}
-    new_months = sorted({month for month, _ in after - before})
-    updated = sorted({f"{month} ({broker})" for month, broker in after & before})
+    llegan = (
+        {(position["Mes"], position["Broker"]) for position in read_positions(incoming_positions)}
+        if incoming_positions is not None
+        else after
+    )
+    new_months = sorted({month for month, _ in llegan - before})
+    updated = sorted({f"{month} ({broker})" for month, broker in llegan & before})
     return {
         "posiciones": len(merged_positions),
         "posiciones_nuevas": len(merged_positions) - len(read_positions(stored_positions)),
@@ -269,6 +280,42 @@ def _optional_number(value: Any) -> float | None:
     except ValueError:
         return None
     return None if number != number else number  # descarta NaN
+
+
+UNCLASSIFIED = "Sin clasificar"
+
+# Los fondos no se distinguen por el ISIN: se reconocen porque están en el mapa de fondos conocidos
+# o porque su ISIN de Yahoo es uno de los `0P…`. Todo lo demás que no sea cripto es una acción.
+CRYPTO_SECTOR = "Criptoactivo"
+
+
+def classify(position: dict[str, Any], catalog: dict[str, dict[str, str]], fund_isins=()) -> dict[str, str]:
+    """Región, sector, foco y tipo de una posición.
+
+    El archivo del usuario solo dice qué tiene y cuánto; la clasificación vive en el catálogo de
+    activos, que es el mismo que usa la vista anterior. Así un activo cae en el mismo grupo en las
+    dos y los desgloses se pueden comparar.
+    """
+    isin = (position.get("ISIN") or "").upper()
+    metadata = catalog.get(isin, {})
+    # La cripto no siempre llega con un ISIN: en el archivo del usuario Bitcoin se apunta como
+    # "BTC". Se reconoce por el nombre, igual que hace la vista anterior con el producto.
+    if not metadata and "BITCOIN" in (position.get("Nombre") or "").upper():
+        metadata = {"region": "Global", "sector": CRYPTO_SECTOR, "focus": "Alternativos"}
+
+    sector = metadata.get("sector") or UNCLASSIFIED
+    if isin in set(fund_isins):
+        kind = "fund"
+    elif sector == CRYPTO_SECTOR:
+        kind = "crypto"
+    else:
+        kind = "stock"
+    return {
+        "region": metadata.get("region") or UNCLASSIFIED,
+        "sector": sector,
+        "foco": metadata.get("focus") or UNCLASSIFIED,
+        "tipo": kind,
+    }
 
 
 def accumulate_costs(

@@ -7,7 +7,34 @@ from typing import Any
 
 import pandas as pd
 from backend.domain.models import PipelineConfig
+from backend.domain.reserve_fund import ReserveFundStatus
 from backend.domain.results import HistoryResult, MovementSummary, PipelineResult
+
+
+def read_workbook_first_month(excel_bytes: bytes) -> str | None:
+    """Primer mes con movimientos del Excel subido, como `AAAA-MM`.
+
+    Hace falta para saber si una subida pisa el tramo que el checkpoint ya dio por cerrado. El
+    parámetro `fecha_inicio` no sirve para eso: vale 2024-10 por defecto aunque el Excel solo traiga
+    el año en curso, y entonces se descartaba el checkpoint y se recalculaba todo desde cero a
+    partir de un Excel que no tiene el histórico. El resultado era un desplome de los acumulados en
+    el primer mes del archivo.
+    """
+    earliest = None
+    for sheet in (0, 1, 2):
+        try:
+            frame = pd.read_excel(io.BytesIO(excel_bytes), sheet_name=sheet)
+        except Exception:
+            continue
+        if frame.empty:
+            continue
+        dates = pd.to_datetime(frame.iloc[:, 0], errors="coerce").dropna()
+        if dates.empty:
+            continue
+        candidate = dates.min()
+        if earliest is None or candidate < earliest:
+            earliest = candidate
+    return None if earliest is None else earliest.strftime("%Y-%m")
 
 
 class LegacyPipelineAdapter:
@@ -36,11 +63,30 @@ class LegacyPipelineAdapter:
             excel=io.BytesIO(excel_bytes),
             params=parsed,
             objetivos=objetivos_con_checkpoint,
-            fondo_reserva_snapshot=None,
+            fondo_reserva_snapshot=self._reserve_snapshot(checkpoint or {}),
             output_path=None,
             checkpoint=checkpoint,
         )
         return self._to_response(result, checkpoint or {}, historical_transactions or {})
+
+    def _reserve_snapshot(self, checkpoint: dict[str, Any]) -> dict[str, float] | None:
+        """Punto de partida del fondo de reserva para este tramo.
+
+        Además de lo ya acumulado, arrastra la media de gasto (suma y número de meses) con la que
+        el pipeline recalcula el objetivo. Sin ella, un tramo que continúa un histórico calcularía
+        su objetivo solo con los meses del Excel recién subido y no coincidiría con haber
+        procesado todo de una vez.
+        """
+        previo = checkpoint.get("fondo_reserva_snapshot") or {}
+        if not previo:
+            return None
+        return {
+            "Cantidad cargada": float(previo.get("Cantidad cargada", 0.0) or 0.0),
+            "Cantidad del fondo": float(previo.get("Cantidad del fondo", 0.0) or 0.0),
+            "Porcentaje": float(previo.get("Porcentaje", 0.0) or 0.0),
+            "Gasto acumulado": float(previo.get("Gasto acumulado", 0.0) or 0.0),
+            "Meses contados": int(previo.get("Meses contados", 0) or 0),
+        }
 
     def _apply_objetivo_checkpoint(self, objetivos: list[dict], checkpoint: dict[str, Any]) -> list[dict]:
         """Sustituye el saldo_inicial de cada objetivo todavía abierto por el saldo con el que cerró
@@ -172,15 +218,28 @@ class LegacyPipelineAdapter:
             "vacaciones": float(estado_cierre.get("vacaciones", 0.0) or 0.0),
             "inversiones": float(estado_cierre.get("inversiones", 0.0) or 0.0),
             "ahorro": float(estado_cierre.get("ahorro", 0.0) or 0.0),
-            "fondo_reserva_snapshot": {
-                "Cantidad cargada": float(estado_cierre.get("fondo_cargado", 0.0) or 0.0),
-                "Cantidad del fondo": 0.0,
-                "Porcentaje": 0.0,
-            },
+            "fondo_reserva_snapshot": self._closing_reserve_snapshot(estado_cierre),
             "dividendos_acumulado": float(last.get("Dividendos", 0.0) or 0.0),
             "comisiones_acumulado": float(last.get("Comisiones", 0.0) or 0.0),
             "ingreso_mes_anterior": self._real_income_for_month(result.get("ingresos"), mes),
             "objetivos_saldos": self._objetivos_saldos_abiertos(objetivos_df, mes),
+        }
+
+    def _closing_reserve_snapshot(self, estado_cierre: dict[str, Any]) -> dict[str, float]:
+        """Cómo queda el fondo al cerrar el tramo, para que el siguiente continúe desde aquí.
+
+        Antes aquí se escribía un objetivo fijo de 0, así que el fondo nunca tenía meta y acumulaba
+        sin tope. Ahora se guarda el objetivo que el pipeline ha usado de verdad, junto con la media
+        de gasto con la que lo calculó.
+        """
+        cargada = float(estado_cierre.get("fondo_cargado", 0.0) or 0.0)
+        objetivo = float(estado_cierre.get("fondo_objetivo", 0.0) or 0.0)
+        return {
+            "Cantidad cargada": cargada,
+            "Cantidad del fondo": objetivo,
+            "Porcentaje": min(cargada / objetivo, 1.0) if objetivo > 0 else 0.0,
+            "Gasto acumulado": float(estado_cierre.get("fondo_gasto_acumulado", 0.0) or 0.0),
+            "Meses contados": int(estado_cierre.get("fondo_meses_contados", 0) or 0),
         }
 
     def _objetivos_saldos_abiertos(self, objetivos_df: Any, mes: str) -> dict[str, float]:
@@ -368,7 +427,23 @@ class LegacyPipelineAdapter:
             analysis["ahorro"] = self._build_savings_analysis(gastos, ingresos, resumen)
             analysis["ingresos"] = self._build_income_analysis(ingresos)
             analysis["dividendos_pagos"] = self._build_dividend_payments(ingresos)
+        fondo = self._build_reserve_fund(result)
+        if fondo is not None:
+            analysis["fondo_reserva"] = fondo
         return analysis
+
+    def _build_reserve_fund(self, result: dict[str, Any]) -> dict[str, Any] | None:
+        """Situación del fondo de reserva al cerrar el tramo, tal y como la ha calculado el
+        pipeline: el objetivo que se enseña es el mismo contra el que se han topado los aportes."""
+        estado_cierre = result.get("estado_cierre") or {}
+        if "fondo_objetivo" not in estado_cierre:
+            return None
+        return ReserveFundStatus(
+            objetivo=float(estado_cierre.get("fondo_objetivo", 0.0) or 0.0),
+            cargado=float(estado_cierre.get("fondo_cargado", 0.0) or 0.0),
+            meses_de_cobertura=int(estado_cierre.get("fondo_meses_de_cobertura", 6) or 6),
+            cuota_mensual=float(estado_cierre.get("fondo_cuota_mensual", 0.0) or 0.0),
+        ).to_dict()
 
     def _build_income_analysis(self, ingresos: pd.DataFrame) -> dict[str, Any]:
         required = {"fecha", "categoria", "cantidad"}

@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import { Eye, FileSpreadsheet, History, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
-import { formatPercent } from './formatters'
+import { Eye, FileSpreadsheet, History, MoreHorizontal, Plus, RefreshCw, Save, Trash2 } from 'lucide-react'
 
 export function InputPanel({
   file,
@@ -30,107 +29,148 @@ export function InputPanel({
 }) {
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
 
+  // El reparto se escribe en enteros (30, 10, 5); por dentro sigue siendo una fracción.
+  const toPercentField = (fraction) => Math.round(Number(fraction) * 1000) / 10
+  const assigned =
+    Number(params.porcentaje_gasto) + Number(params.porcentaje_inversion) + Number(params.porcentaje_vacaciones)
+  const assignedPercent = Math.round(assigned * 1000) / 10
+  const unassignedPercent = Math.round((1 - assigned) * 1000) / 10
+
   return (
     <form className="panel" onSubmit={onVisualize}>
-      <div className="panel-header">
-        <div>
-          <span className="section-kicker">Configuración</span>
-          <h2>Datos financieros</h2>
-        </div>
-        <span className={file ? 'file-status selected' : 'file-status'}>{file ? file.name : 'Sin archivo'}</span>
-      </div>
-
-      <p className="checkpoint-status">
-        {checkpoint?.as_of_month
-          ? `Histórico guardado hasta ${checkpoint.as_of_month}. La fecha de inicio debe ser posterior.`
-          : 'Todavía no hay histórico guardado: la primera vez que añadas al histórico se registra desde la fecha de inicio.'}
-      </p>
-
-      {isConfirmingDelete ? (
-        <div className="delete-historico-confirm" role="alert">
-          <p>
-            Esto borra <strong>todo</strong> el histórico guardado (resumen mensual, checkpoint y el detalle de
-            gastos/ingresos). No se puede deshacer. Tendrás que volver a subir el Excel completo desde el principio.
-          </p>
-          <div className="process-actions">
-            <button className="secondary-button" type="button" onClick={() => setIsConfirmingDelete(false)}>
-              Cancelar
-            </button>
-            <button
-              className="danger-button"
-              type="button"
-              disabled={isDeletingHistorico}
-              onClick={() => {
-                setIsConfirmingDelete(false)
-                onDeleteHistorico()
-              }}
-            >
-              <Trash2 aria-hidden="true" size={16} />
-              {isDeletingHistorico ? 'Borrando...' : 'Sí, borrar todo'}
-            </button>
+      <ol className="input-steps">
+        <li className="input-step">
+          <div className="input-step-head">
+            <span className="input-step-number" aria-hidden="true">1</span>
+            <h2>Excel del mes</h2>
           </div>
-        </div>
-      ) : (
-        <button className="text-button danger" type="button" onClick={() => setIsConfirmingDelete(true)}>
-          <Trash2 aria-hidden="true" size={15} />
-          Borrar histórico completo
-        </button>
-      )}
+          <label className="file-input">
+            <input type="file" accept=".xlsx,.xlsm,.xls" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
+            <span>
+              <FileSpreadsheet aria-hidden="true" size={18} />
+              {file ? 'Cambiar Excel' : 'Seleccionar Excel'}
+            </span>
+          </label>
+          {file ? <p className="file-status selected">{file.name}</p> : null}
+          <div className="input-step-note">
+            <p className="checkpoint-status">
+              {checkpoint?.as_of_month
+                ? `Histórico guardado hasta ${checkpoint.as_of_month}. La fecha de inicio debe ser posterior.`
+                : 'Todavía no hay histórico guardado: la primera vez que añadas al histórico se registra desde la fecha de inicio.'}
+            </p>
+            <details className="danger-menu">
+              <summary aria-label="Más acciones del histórico">
+                <MoreHorizontal aria-hidden="true" size={16} />
+              </summary>
+              <div className="danger-menu-body">
+                {isConfirmingDelete ? (
+                  <div className="delete-historico-confirm" role="alert">
+                    <p>
+                      Esto borra <strong>todo</strong> el histórico guardado (resumen mensual, checkpoint y el detalle de
+                      gastos/ingresos). No se puede deshacer. Tendrás que volver a subir el Excel completo desde el principio.
+                    </p>
+                    <div className="process-actions">
+                      <button className="secondary-button" type="button" onClick={() => setIsConfirmingDelete(false)}>
+                        Cancelar
+                      </button>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={isDeletingHistorico}
+                        onClick={() => {
+                          setIsConfirmingDelete(false)
+                          onDeleteHistorico()
+                        }}
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                        {isDeletingHistorico ? 'Borrando...' : 'Sí, borrar todo'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="text-button danger" type="button" onClick={() => setIsConfirmingDelete(true)}>
+                    <Trash2 aria-hidden="true" size={15} />
+                    Borrar histórico completo
+                  </button>
+                )}
+              </div>
+            </details>
+          </div>
+        </li>
 
-      <label className="file-input">
-        <input type="file" accept=".xlsx,.xlsm,.xls" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} />
-        <span>
-          <FileSpreadsheet aria-hidden="true" size={19} />
-          Seleccionar Excel
-        </span>
-      </label>
+        <li className="input-step">
+          <div className="input-step-head">
+            <span className="input-step-number" aria-hidden="true">2</span>
+            <h2>Periodo y reparto</h2>
+          </div>
+          <label className="field-row">
+            <span>Fecha de inicio</span>
+            <input type="date" value={params.fecha_inicio} onChange={(event) => onParamChange('fecha_inicio', event.target.value)} />
+          </label>
+          <label className="field-row split-row">
+            <span>
+              <i className="split-dot split-gasto" aria-hidden="true" />
+              Gasto
+            </span>
+            <span className="percent-field">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={toPercentField(params.porcentaje_gasto)}
+                onChange={(event) => onParamChange('porcentaje_gasto', Number(event.target.value) / 100)}
+              />
+              <em>%</em>
+            </span>
+          </label>
+          <label className="field-row split-row">
+            <span>
+              <i className="split-dot split-inversion" aria-hidden="true" />
+              Inversión
+            </span>
+            <span className="percent-field">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={toPercentField(params.porcentaje_inversion)}
+                onChange={(event) => onParamChange('porcentaje_inversion', Number(event.target.value) / 100)}
+              />
+              <em>%</em>
+            </span>
+          </label>
+          <label className="field-row split-row">
+            <span>
+              <i className="split-dot split-vacaciones" aria-hidden="true" />
+              Vacaciones
+            </span>
+            <span className="percent-field">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={toPercentField(params.porcentaje_vacaciones)}
+                onChange={(event) => onParamChange('porcentaje_vacaciones', Number(event.target.value) / 100)}
+              />
+              <em>%</em>
+            </span>
+          </label>
+          <p className={unassignedPercent < 0 ? 'split-summary is-over' : 'split-summary'}>
+            {unassignedPercent < 0
+              ? `Asignado ${assignedPercent} %: te pasas del 100 %.`
+              : `Asignado ${assignedPercent} %. Sin asignar ${unassignedPercent} %.`}
+          </p>
+        </li>
 
-      <div className="field-grid">
-        <label>
-          Fecha inicio
-          <input type="date" value={params.fecha_inicio} onChange={(event) => onParamChange('fecha_inicio', event.target.value)} />
-        </label>
-        <label>
-          Gasto
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            value={params.porcentaje_gasto}
-            onChange={(event) => onParamChange('porcentaje_gasto', event.target.value)}
-          />
-          <strong>{formatPercent(params.porcentaje_gasto)}</strong>
-        </label>
-        <label>
-          Inversión
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            value={params.porcentaje_inversion}
-            onChange={(event) => onParamChange('porcentaje_inversion', event.target.value)}
-          />
-          <strong>{formatPercent(params.porcentaje_inversion)}</strong>
-        </label>
-        <label>
-          Vacaciones
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.01"
-            value={params.porcentaje_vacaciones}
-            onChange={(event) => onParamChange('porcentaje_vacaciones', event.target.value)}
-          />
-          <strong>{formatPercent(params.porcentaje_vacaciones)}</strong>
-        </label>
-      </div>
-
-      <div className="objectives-section">
+        <li className="input-step objectives-section">
         <div className="section-heading">
-          <h3>Objetivos</h3>
+          <div className="input-step-head">
+            <span className="input-step-number" aria-hidden="true">3</span>
+            <h2>Objetivos</h2>
+          </div>
           <div className="button-row">
             <button className="text-button" type="button" onClick={onObjectivesLoad} disabled={isLoadingObjectives}>
               <RefreshCw aria-hidden="true" size={15} />
@@ -215,20 +255,21 @@ export function InputPanel({
             {objectivesStatus}
           </p>
         )}
-      </div>
+        </li>
+      </ol>
 
       <div className="process-actions">
-        <button className="secondary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
+        <button className="primary-button" type="submit" disabled={isProcessing || hasValidationErrors}>
           <Eye aria-hidden="true" size={18} />
           {isProcessing ? 'Procesando...' : 'Visualizar'}
         </button>
-        <button className="primary-button" type="button" onClick={onAddToHistory} disabled={isProcessing || hasValidationErrors}>
+        <button className="secondary-button" type="button" onClick={onAddToHistory} disabled={isProcessing || hasValidationErrors}>
           <History aria-hidden="true" size={18} />
           {isProcessing ? 'Procesando...' : 'Añadir al histórico'}
         </button>
       </div>
       <p className="process-actions-hint muted-text">
-        "Visualizar" solo muestra el resultado. "Añadir al histórico" lo guarda de forma permanente y no admite meses ya guardados.
+Visualizar solo muestra el resultado. Añadir al histórico lo guarda de forma permanente y no admite meses ya guardados.
       </p>
 
       {processStatus && !error && (

@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   aggregateDividendsByCompany,
   getAdjustedSavings,
+  getBudget,
   filterObjectiveRows,
   getDividendPayments,
   getHistoryRows,
@@ -101,4 +102,87 @@ test('sin bolsa el ahorro se queda como está', () => {
 test('sin fila o sin ahorros no se inventa una cifra', () => {
   assert.equal(getAdjustedSavings(null), null)
   assert.equal(getAdjustedSavings({}), null)
+})
+
+// --- Presupuesto frente a la deuda acumulada ---------------------------------------------------
+
+function fila({ presupuesto = 0, gasto = 0, deudaMes = 0, deudaAcumulada = 0 } = {}) {
+  return {
+    '💸 Presupuesto Mes': presupuesto,
+    '💳 Gasto del mes': gasto,
+    '📉 Deuda Presupuestaria mensual': deudaMes,
+    '📉 Deuda Presupuestaria acumulada': deudaAcumulada,
+  }
+}
+
+test('sin deuda, todo el presupuesto menos el gasto queda disponible', () => {
+  const budget = getBudget(fila({ presupuesto: 500, gasto: 200 }))
+
+  assert.equal(budget.availableBudget, 500)
+  assert.equal(budget.remaining, 300)
+  assert.equal(budget.debtCharge, 0)
+})
+
+test('la deuda acumulada se descuenta entera del presupuesto, no una fracción', () => {
+  // La regla del usuario: 600 € de deuda contra 500 € de presupuesto no deja nada disponible.
+  const budget = getBudget(fila({ presupuesto: 500, deudaAcumulada: 600 }))
+
+  assert.equal(budget.debtCharge, 500)
+  assert.equal(budget.availableBudget, 0)
+  assert.equal(budget.remaining, 0)
+})
+
+test('lo que la deuda no cabe este mes queda señalado como pendiente', () => {
+  const budget = getBudget(fila({ presupuesto: 500, deudaAcumulada: 600 }))
+
+  assert.equal(budget.debtCarried, 100)
+})
+
+test('una deuda menor que el presupuesto deja libre la diferencia', () => {
+  const budget = getBudget(fila({ presupuesto: 500, deudaAcumulada: 200 }))
+
+  assert.equal(budget.availableBudget, 300)
+  assert.equal(budget.debtCarried, 0)
+})
+
+test('el caso real que motivó el cambio: 2.293 € de deuda y 1.047 € de presupuesto', () => {
+  const budget = getBudget(fila({ presupuesto: 1046.84, gasto: 1468.04, deudaAcumulada: 2293.39 }))
+
+  // Antes se reservaba el 10 % (104,68 €) y la pantalla daba 942 € por libres.
+  assert.equal(budget.availableBudget, 0)
+  assert.equal(budget.remaining, 0)
+  assert.ok(budget.overrun > 0, 'todo el gasto del mes es exceso')
+})
+
+test('gastar por encima de lo disponible se cuenta como exceso, no como resto negativo', () => {
+  const budget = getBudget(fila({ presupuesto: 500, gasto: 700, deudaAcumulada: 100 }))
+
+  assert.equal(budget.availableBudget, 400)
+  assert.equal(budget.remaining, 0)
+  assert.equal(budget.overrun, 300)
+})
+
+test('un gasto negativo del mes es un reembolso, no un gasto', () => {
+  const budget = getBudget(fila({ presupuesto: 500, gasto: -120 }))
+
+  assert.equal(budget.budgetRefund, 120)
+  assert.equal(budget.budgetConsumption, 0)
+})
+
+test('sin presupuesto, cualquier gasto cuenta como presupuesto agotado', () => {
+  const budget = getBudget(fila({ gasto: 80 }))
+
+  assert.equal(budget.execution, 100, 'agotado, no 0 % ni infinito')
+  assert.equal(budget.overrun, 80)
+})
+
+test('si la deuda deja el presupuesto a cero, gastar cuenta como ejecutarlo entero', () => {
+  const budget = getBudget(fila({ presupuesto: 500, gasto: 300, deudaAcumulada: 900 }))
+
+  // Dividir entre un disponible de 0 dejaba el indicador en 0 % con 300 € gastados.
+  assert.equal(budget.execution, 100)
+})
+
+test('sin disponible y sin gasto el ejecutado es cero, no cien', () => {
+  assert.equal(getBudget(fila({ presupuesto: 500, deudaAcumulada: 900 })).execution, 0)
 })

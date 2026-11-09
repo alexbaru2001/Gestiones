@@ -4,7 +4,15 @@ import test from 'node:test'
 import { formatDelta, formatMoney, formatPercent } from './formatters.js'
 
 test('formatMoney formats euro amounts for Spanish locale', () => {
-  assert.equal(formatMoney(1234.5), '1234,50\u00a0€')
+  assert.equal(formatMoney(1234.5), '1.234,50 €')
+})
+
+test('formatMoney groups thousands in four digit amounts', () => {
+  assert.equal(formatMoney(9798.34), '9.798,34 €')
+})
+
+test('formatMoney uses the real minus sign', () => {
+  assert.equal(formatMoney(-12), '−12,00 €')
 })
 
 test('formatMoney returns dash for non numeric values', () => {
@@ -17,7 +25,7 @@ test('formatPercent rounds decimal fractions', () => {
 })
 
 test('formatDelta prefixes positive values', () => {
-  assert.equal(formatDelta(12), '+12,00\u00a0€')
-  assert.equal(formatDelta(-12), '-12,00\u00a0€')
+  assert.equal(formatDelta(12), '+12,00 €')
+  assert.equal(formatDelta(-12), '−12,00 €')
   assert.equal(formatDelta(undefined), '-')
 })

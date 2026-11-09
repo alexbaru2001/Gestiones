@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BriefcaseBusiness, ChartNoAxesCombined, PanelLeftClose, PanelLeftOpen, Server, WalletCards } from 'lucide-react'
+import { BookOpenText, BriefcaseBusiness, ChartNoAxesCombined, PanelLeftClose, PanelLeftOpen, Server, WalletCards } from 'lucide-react'
 import { requestJson } from './api'
 import { downloadJson, downloadText, toCsv } from './exporters'
 import { InputPanel } from './InputPanel'
@@ -73,13 +73,6 @@ export function App() {
   const activeObjectives = useMemo(() => objectives.filter((objective) => objective.nombre.trim()), [objectives])
   const validationMessages = useMemo(() => validateFinanceInput(params, activeObjectives), [activeObjectives, params])
   const hasValidationErrors = validationMessages.length > 0
-  const areaSubtitle =
-    activeArea === 'finanzas'
-      ? 'Procesado de finanzas personales'
-      : activeArea === 'invertir'
-        ? 'Análisis de inversión por dividendos'
-        : 'Cartera local de inversión'
-
   useEffect(() => {
     loadObjectives({ silent: true })
     requestJson('/api/v1/process/checkpoint', {}, '')
@@ -316,16 +309,14 @@ export function App() {
       <header className="topbar">
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">
-            <WalletCards size={22} strokeWidth={1.9} />
+            <BookOpenText size={19} strokeWidth={2} />
           </span>
           <div>
-            <span className="brand-eyebrow">Panel personal</span>
             <h1>Gestiones</h1>
-            <p>{areaSubtitle}</p>
+            <p>Finanzas personales</p>
           </div>
         </div>
-        <div className="topbar-actions">
-          <nav className="area-switch" aria-label="Área de trabajo">
+        <nav className="area-switch" aria-label="Área de trabajo">
             <button
               className={activeArea === 'finanzas' ? 'active' : ''}
               type="button"
@@ -350,7 +341,8 @@ export function App() {
               <WalletCards aria-hidden="true" size={17} />
               Cartera
             </button>
-          </nav>
+        </nav>
+        <div className="topbar-actions">
           {activeArea === 'finanzas' && (
             <button
               aria-expanded={isInputOpen}
@@ -371,7 +363,15 @@ export function App() {
             title="Comprobar conexión con el backend"
           >
             <Server aria-hidden="true" size={16} />
-            <span>{isChecking ? 'Comprobando' : health}</span>
+            <span>
+              {isChecking
+                ? 'Comprobando'
+                : health === 'ok'
+                  ? 'Conectado'
+                  : health === 'error'
+                    ? 'Sin conexión'
+                    : 'Pendiente'}
+            </span>
           </button>
         </div>
       </header>
@@ -423,6 +423,8 @@ export function App() {
             filteredObjectiveRows={filteredObjectiveRows}
             objectiveTotals={objectiveTotals}
             onMonthChange={setSelectedMonth}
+            onOpenInput={() => setIsInputOpen(true)}
+            params={params}
             onObjectiveFilterChange={setSelectedObjective}
             onExportResult={exportResult}
             onExportHistoryCsv={exportHistoryCsv}

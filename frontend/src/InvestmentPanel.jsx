@@ -49,7 +49,10 @@ function formatNumber(value, suffix = '') {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return 's/d'
   const formatted = new Intl.NumberFormat('es-ES', {
     maximumFractionDigits: Math.abs(Number(value)) >= 100 ? 0 : 2,
-  }).format(Number(value))
+    useGrouping: 'always',
+  })
+    .format(Number(value))
+    .replace('-', '\u2212')
   return suffix ? `${formatted} ${suffix}` : formatted
 }
 
@@ -416,7 +419,6 @@ export function InvestmentPanel({ autoStartReview = false, onReviewStarted }) {
     <section className="panel investment-panel">
       <div className="panel-header dashboard-header">
         <div>
-          <span className="section-kicker">Análisis de activos</span>
           <h2>Invertir</h2>
           <p>Dividendos, valoración y solidez por ticker</p>
         </div>
@@ -1400,7 +1402,7 @@ function EconomicPriceChart({ rows, currency }) {
           isHovering={isHovering}
           label="Recorrer el precio histórico"
           plot={plot}
-          pointColor="#286b57"
+          pointColor="#0b6b63"
           points={chart.coordinates}
         />
       </svg>

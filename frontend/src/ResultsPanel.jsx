@@ -12,7 +12,7 @@ import {
 } from './chartGeometry'
 import { useChartCrosshair } from './useChartCrosshair'
 import { formatDelta, formatMoney } from './formatters'
-import { aggregateDividendsByCompany, comparisonRows, getAdjustedSavings, getDividendPayments } from './resultSelectors'
+import { aggregateDividendsByCompany, comparisonRows, getAdjustedSavings, getBudget, getDividendPayments } from './resultSelectors'
 
 const moneyFields = [
   'total',
@@ -42,17 +42,17 @@ const tabs = [
 ]
 
 const typologyCompareFields = [
-  { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#2e4057' },
-  { field: '💳 Gasto del mes', label: 'Gasto del mes', color: '#7a2e2e' },
+  { field: '💸 Presupuesto Mes', label: 'Presupuesto mensual', color: '#1d3f9a' },
+  { field: '💳 Gasto del mes', label: 'Gasto del mes', color: '#b3261e' },
 ]
 
 const typologyCards = [
-  { field: '💰 Ahorros', label: 'Ahorros', color: '#1f4d3d' },
-  { field: '💼 Vacaciones', label: 'Vacaciones', color: '#b8863b' },
-  { field: '📈 Inversiones', label: 'Reserva inversión', color: '#1f5c6b' },
-  { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#6e7a3a' },
-  { field: '📉 Deuda Presupuestaria acumulada', label: 'Deuda acumulada', color: '#b15a2e' },
-  { field: '🎁 Regalos', label: 'Regalos', color: '#8a6a2b' },
+  { field: '💰 Ahorros', label: 'Ahorros', color: '#0b6b63' },
+  { field: '💼 Vacaciones', label: 'Vacaciones', color: '#b45309' },
+  { field: '📈 Inversiones', label: 'Reserva inversión', color: '#0b6b63' },
+  { field: 'Fondo de reserva cargado', label: 'Fondo reserva', color: '#0b6b63' },
+  { field: '📉 Deuda Presupuestaria acumulada', label: 'Deuda acumulada', color: '#b45309' },
+  { field: '🎁 Regalos', label: 'Regalos', color: '#b45309' },
 ]
 
 const typologyFields = [typologyCards[0], ...typologyCompareFields, ...typologyCards.slice(1)]
@@ -75,11 +75,11 @@ const expensePeriods = [
 ]
 
 const expenseCategoryFields = [
-  { field: 'alimentacion', label: 'Alimentación', color: '#6a9ab5' },
-  { field: 'transporte', label: 'Transporte', color: '#1d3557' },
-  { field: 'hosteleria', label: 'Hostelería', color: '#7fa06f' },
-  { field: 'entretenimiento', label: 'Entretenimiento', color: '#7a2e2e' },
-  { field: 'otros', label: 'Otros', color: '#6e7a6c' },
+  { field: 'alimentacion', label: 'Alimentación', color: '#7a9cc6' },
+  { field: 'transporte', label: 'Transporte', color: '#1d3f9a' },
+  { field: 'hosteleria', label: 'Hostelería', color: '#0b6b63' },
+  { field: 'entretenimiento', label: 'Entretenimiento', color: '#b45309' },
+  { field: 'otros', label: 'Otros', color: '#8a93a3' },
 ]
 
 const historyFields = [
@@ -102,39 +102,6 @@ function asNumber(value) {
   return Number(value) || 0
 }
 
-function getBudget(selectedRow) {
-  const monthBudget = asNumber(selectedRow['💸 Presupuesto Mes'])
-  const spent = asNumber(selectedRow['💳 Gasto del mes'])
-  const budgetConsumption = Math.max(0, spent)
-  const budgetRefund = Math.max(0, -spent)
-  const monthlyDebt = asNumber(selectedRow['📉 Deuda Presupuestaria mensual'])
-  const accumulatedDebt = asNumber(selectedRow['📉 Deuda Presupuestaria acumulada'])
-  // La columna "🧾 Presupuesto Disponible" guarda el sobrante del cierre, no el presupuesto que
-  // había para gastar: el disponible real es el del mes menos la deuda que arrastra.
-  const availableBudget = Math.max(0, monthBudget - accumulatedDebt)
-  const debtReserve = accumulatedDebt > 0 ? Math.min(monthBudget * 0.1, accumulatedDebt) : 0
-  const usableBudget = Math.max(0, monthBudget - debtReserve)
-  const remaining = Math.max(0, usableBudget - spent)
-  const overrun = Math.max(monthlyDebt, spent - usableBudget, 0)
-  const totalForBar = Math.max(monthBudget, debtReserve + budgetConsumption + remaining, 1)
-  const execution = usableBudget > 0 ? (Math.min(budgetConsumption, usableBudget) / usableBudget) * 100 : 0
-
-  return {
-    accumulatedDebt,
-    availableBudget,
-    budgetConsumption,
-    budgetRefund,
-    debtReserve,
-    execution,
-    monthBudget,
-    monthlyDebt,
-    overrun,
-    remaining,
-    spent,
-    totalForBar,
-    usableBudget,
-  }
-}
 
 function getSegmentWidth(value, total) {
   if (value <= 0 || total <= 0) {
@@ -149,6 +116,22 @@ function getExpenseAnalysis(result) {
     mensual: [],
     totales_categoria: [],
     ultimo_mes: null,
+  }
+}
+
+/**
+ * Situación del fondo de reserva tal y como la calcula el backend: objetivo (seis meses de gasto
+ * medio), lo ya cargado y el porcentaje cubierto. Sin objetivo no hay progreso que enseñar, así
+ * que el valor por defecto deja la barra fuera en vez de inventarse una meta.
+ */
+function getReserveFund(result) {
+  const fondo = result?.analisis?.fondo_reserva
+  return {
+    cargado: asNumber(fondo?.cargado),
+    objetivo: asNumber(fondo?.objetivo),
+    pendiente: asNumber(fondo?.pendiente),
+    porcentaje: asNumber(fondo?.porcentaje),
+    mesesDeCobertura: asNumber(fondo?.meses_de_cobertura) || 6,
   }
 }
 
@@ -193,7 +176,14 @@ function formatMonthLabel(value) {
 }
 
 function formatMoneyCompact(value) {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 0,
+    useGrouping: 'always',
+  })
+    .format(value)
+    .replace('-', '\u2212')
 }
 
 function formatMonthLong(value) {
@@ -286,7 +276,13 @@ function bucketSingleValueRows(rows, valueField, bucketSize, maxBuckets) {
     }))
 }
 
-function getSummaryGroups(row) {
+/** Porcentaje del objetivo cubierto por el fondo del mes indicado, topado al 100 %. */
+function reserveCoverage(row, reserveFund) {
+  if (!(reserveFund?.objetivo > 0)) return 0
+  return Math.min(100, (asNumber(row['Fondo de reserva cargado']) / reserveFund.objetivo) * 100)
+}
+
+function getSummaryGroups(row, reserveFund) {
   return {
     patrimony: [
       { label: 'Total', value: row.total },
@@ -298,7 +294,18 @@ function getSummaryGroups(row) {
         note: `Ahorro ${formatMoney(row['💰 Ahorros'])} ${asNumber(row['📈 Inversiones']) < 0 ? '−' : '+'} bolsa de inversión ${formatMoney(Math.abs(asNumber(row['📈 Inversiones'])))}`,
       },
       { label: 'Dinero invertido', value: row['Dinero Invertido'] },
-      { label: 'Fondo emergencia', value: row['Fondo de reserva cargado'] },
+      {
+        label: 'Fondo emergencia',
+        value: row['Fondo de reserva cargado'],
+        // El objetivo son seis meses de gasto medio; sin histórico suficiente no hay meta que medir.
+        // El porcentaje se calcula con el mes que estás mirando, no con el último del histórico.
+        ...(reserveFund?.objetivo > 0
+          ? {
+              note: `${formatPercent(reserveCoverage(row, reserveFund))} de ${formatMoney(reserveFund.objetivo)}, ${reserveFund.mesesDeCobertura} meses de gasto`,
+              progress: reserveCoverage(row, reserveFund),
+            }
+          : {}),
+      },
       { label: 'Vacaciones', value: row['💼 Vacaciones'] },
       { label: 'Regalos', value: row['🎁 Regalos'] },
     ],
@@ -337,14 +344,35 @@ function getCategoryTotalUntilMonth(analysis, month, categories) {
     }, 0)
 }
 
-function formatPercent(value) {
-  if (!Number.isFinite(value)) return '0,0%'
-  return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%`
+function formatPoints(value) {
+  if (!Number.isFinite(value)) return '0,0 pp'
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} pp`.replace(
+    '-',
+    '\u2212',
+  )
 }
 
-function axisPaddingLeft(min, max, formatCompact = formatMoneyCompact) {
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return '0,0 %'
+  return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} %`.replace('-', '\u2212')
+}
+
+// En una tarjeta de 180 px, "2.750 €" se come la mitad del ancho y la curva se queda sin sitio.
+function formatMoneyTiny(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return ''
+  const text =
+    Math.abs(number) >= 1000
+      ? `${new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 }).format(number / 1000)}k`
+      : new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(number)
+  return text.replace('-', '\u2212')
+}
+
+function axisPaddingLeft(min, max, formatCompact = formatMoneyCompact, minPadding = 42) {
+  // Se mide por caracteres porque el eje usa tipografía monoespaciada; a 12px cada uno ocupa ~7,5px.
   const chars = Math.max(formatCompact(min).length, formatCompact(max).length)
-  return Math.min(70, Math.max(34, chars * 6 + 8))
+  return Math.min(86, Math.max(minPadding, chars * 7.5 + 10))
 }
 
 // Mide el ancho real del contenedor: el viewBox debe coincidir con el tamaño
@@ -389,10 +417,12 @@ function TypologyMiniChart({
   const [containerRef, width] = useElementWidth(420)
   const height = getChartHeight(width, aspect, minHeight, maxHeight)
   const { min, max } = getValueDomain(values)
-  const paddingLeft = axisPaddingLeft(min, max, formatCompact)
-  const paddingRight = 10
+  const isNarrow = width < 360
+  const axisFormat = isNarrow ? formatMoneyTiny : formatCompact
+  const paddingLeft = axisPaddingLeft(min, max, axisFormat, isNarrow ? 24 : 42)
+  const paddingRight = isNarrow ? 8 : 10
   const paddingTop = 12
-  const paddingBottom = 18
+  const paddingBottom = 26
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinates = getSvgCoordinates(values, min, max, chartOptions)
   const last = coordinates.at(-1)
@@ -400,7 +430,7 @@ function TypologyMiniChart({
   const zeroY = getSvgCoordinates([0], min, max, chartOptions)[0].y
   const baselineY = coordinates[0]?.y ?? null
   const yTicks = getNiceTicks(min, max, height > 260 ? 5 : 4)
-  const monthLabelIndices = pickLabelIndices(months.length, width > 520 ? 5 : 4)
+  const monthLabelIndices = pickLabelIndices(months.length, width > 520 ? 5 : width > 320 ? 3 : 2)
   const plotBottom = height - paddingBottom
   const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
   const trend = values.at(-1) >= values[0] ? 'tendencia ascendente' : 'tendencia descendente'
@@ -429,7 +459,7 @@ function TypologyMiniChart({
             <g key={tick}>
               <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
               <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
-                {formatCompact(tick)}
+                {axisFormat(tick)}
               </text>
             </g>
           )
@@ -444,7 +474,7 @@ function TypologyMiniChart({
             key={months[index] ?? index}
             textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
             x={coordinates[index]?.x}
-            y={height - 4}
+            y={height - 7}
           >
             {formatMonthLabel(months[index])}
           </text>
@@ -501,20 +531,20 @@ function TypologyMiniCard({ color, label, months, onFeature, values }) {
 // apilada por origen (sueldo, intereses, dividendos y el sobrante del presupuesto) y al lado,
 // sin apilar, lo que ese mes salió de la bolsa para invertirse de verdad.
 const contributionParts = [
-  { key: 'sueldo', label: 'Sueldo', color: '#1f4d3d' },
-  { key: 'intereses', label: 'Intereses', color: '#6a9ab5' },
-  { key: 'dividendos', label: 'Dividendos', color: '#b08d57' },
-  { key: 'extra', label: 'Extra por ahorrar', color: '#7fa06f' },
+  { key: 'sueldo', label: 'Sueldo', color: '#1d3f9a' },
+  { key: 'intereses', label: 'Intereses', color: '#7a9cc6' },
+  { key: 'dividendos', label: 'Dividendos', color: '#b45309' },
+  { key: 'extra', label: 'Extra por ahorrar', color: '#8a93a3' },
 ]
 
-const investedColor = '#1f5c6b'
+const investedColor = '#0b6b63'
 
 function InvestmentContributionChart({ aspect = CHART_ASPECT, maxLabels = 8, rows }) {
   const [containerRef, width] = useElementWidth(640)
   const height = getChartHeight(width, aspect)
   const paddingRight = 12
   const paddingTop = 16
-  const paddingBottom = 26
+  const paddingBottom = 32
 
   const contributions = rows.map((row) => contributionParts.reduce((sum, part) => sum + asNumber(row[part.key]), 0))
   const invested = rows.map((row) => asNumber(row.invertido))
@@ -646,6 +676,7 @@ function TypologyCompareChart({
   maxHeight = 520,
   minHeight = 200,
   months,
+  onActiveIndexChange,
   seriesA,
   seriesB,
 }) {
@@ -656,7 +687,7 @@ function TypologyCompareChart({
   const paddingLeft = axisPaddingLeft(min, max, formatCompact)
   const paddingRight = 10
   const paddingTop = 12
-  const paddingBottom = 18
+  const paddingBottom = 26
   const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
   const coordinatesA = getSvgCoordinates(seriesA.values, min, max, chartOptions)
   const coordinatesB = getSvgCoordinates(seriesB.values, min, max, chartOptions)
@@ -674,6 +705,10 @@ function TypologyCompareChart({
     coordinatesA.map((point) => point.x),
     width,
   )
+  // La cifra de cabecera la pinta la tarjeta, igual que en las gráficas de tipología.
+  useEffect(() => {
+    onActiveIndexChange?.(isHovering ? activeIndex : null)
+  }, [activeIndex, isHovering, onActiveIndexChange])
 
   return (
     <div className="mini-trend compare-trend" ref={containerRef}>
@@ -719,7 +754,7 @@ function TypologyCompareChart({
             key={months[index] ?? index}
             textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
             x={coordinatesA[index]?.x}
-            y={height - 4}
+            y={height - 7}
           >
             {formatMonthLabel(months[index])}
           </text>
@@ -753,7 +788,128 @@ function TypologyCompareChart({
   )
 }
 
-function ExpenseCategoryLegend({ activeFields, categoryFields, onToggle }) {
+/**
+ * Reservas en una sola gráfica: una línea por reserva y la cifra final etiquetada junto a su
+ * línea. Sustituye a las doce filas de tres barras, que obligaban a comparar de memoria.
+ */
+function ReserveLinesChart({ aspect = 2.6, maxHeight = 420, minHeight = 240, months, series }) {
+  const [containerRef, width] = useElementWidth(720)
+  const height = getChartHeight(width, aspect, minHeight, maxHeight)
+  const combined = series.flatMap((item) => item.values)
+  const { min, max } = getValueDomain(combined)
+  const paddingLeft = axisPaddingLeft(min, max)
+  const paddingRight = 104
+  const paddingTop = 14
+  const paddingBottom = 28
+  const chartOptions = { height, paddingBottom, paddingLeft, paddingRight, paddingTop, width }
+  const drawn = series.map((item) => ({ ...item, points: getSvgCoordinates(item.values, min, max, chartOptions) }))
+  const plotBottom = height - paddingBottom
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: plotBottom }
+  const yTicks = getNiceTicks(min, max, height > 300 ? 5 : 4)
+  const monthLabelIndices = pickLabelIndices(months.length, width > 620 ? 6 : 4)
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(
+    (drawn[0]?.points ?? []).map((point) => point.x),
+    width,
+  )
+
+  // Dos reservas con cifras parecidas acaban a la misma altura: las etiquetas se separan lo justo
+  // para que ninguna tape a la otra.
+  const endLabels = (() => {
+    const items = drawn
+      .map((item) => {
+        const last = item.points.at(-1)
+        return last ? { color: item.color, label: item.label, value: item.values.at(-1), x: last.x, y: last.y } : null
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.y - b.y)
+    let previous = -Infinity
+    return items.map((item) => {
+      const labelY = Math.max(item.y + 4, previous + 16)
+      previous = labelY
+      return { ...item, labelY }
+    })
+  })()
+
+  return (
+    <div className="mini-trend reserve-trend" ref={containerRef}>
+      <svg
+        aria-label={`Evolución de las reservas mes a mes. ${series
+          .map((item) => `${item.label} ${formatMoney(item.values.at(-1))}`)
+          .join('. ')}.`}
+        className="mini-trend-svg"
+        height={height}
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {yTicks.map((tick) => {
+          const y = getSvgCoordinates([tick], min, max, chartOptions)[0].y
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 6} y={y + 3}>
+                {formatMoneyCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
+        {drawn.map((item) => (
+          <path
+            d={linePath(item.points)}
+            fill="none"
+            key={item.label}
+            stroke={item.color}
+            strokeDasharray={item.dashed ? '6 4' : undefined}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2.5"
+          />
+        ))}
+        {endLabels.map((item) => (
+          <g key={`${item.label}-fin`}>
+            <circle cx={item.x} cy={item.y} fill={item.color} pointerEvents="none" r="3.6" />
+            <text className="reserve-end-label" fill={item.color} x={item.x + 8} y={item.labelY}>
+              {formatMoney(item.value)}
+            </text>
+          </g>
+        ))}
+        {monthLabelIndices.map((index) => (
+          <text
+            className="mini-axis-month"
+            key={months[index] ?? index}
+            textAnchor={index === 0 ? 'start' : index === months.length - 1 ? 'end' : 'middle'}
+            x={drawn[0]?.points[index]?.x}
+            y={height - 7}
+          >
+            {formatMonthLabel(months[index])}
+          </text>
+        ))}
+        <rect className="chart-frame" height={plotBottom - paddingTop} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
+        <ChartCrosshair
+          activeIndex={activeIndex}
+          handlers={handlers}
+          isHovering={isHovering}
+          label="Recorrer la evolución de las reservas"
+          plot={plot}
+          pointColor={drawn[0]?.color}
+          points={drawn[0]?.points ?? []}
+        />
+      </svg>
+      {isHovering && drawn[0]?.points[activeIndex] && (
+        <div className="mini-trend-tooltip" style={{ left: tooltipLeft(drawn[0].points[activeIndex].x, width) }}>
+          <span>{formatMonthLabel(months[activeIndex])}</span>
+          {drawn.map((item) => (
+            <span className="mini-tooltip-row" key={item.label}>
+              <i style={{ background: item.color }} />
+              {item.label} {formatMoney(item.values[activeIndex])}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExpenseCategoryLegend({ activeFields, categoryFields, onToggle, showAverage = true }) {
   return (
     <div className="expense-chart-legend">
       {categoryFields.map((field) => {
@@ -771,10 +927,85 @@ function ExpenseCategoryLegend({ activeFields, categoryFields, onToggle }) {
           </button>
         )
       })}
-      <span className="expense-avg-legend">
-        <i />
-        Media móvil
-      </span>
+      {showAverage ? (
+        <span className="expense-avg-legend">
+          <i />
+          Media móvil
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Comparativa por bloques en barras horizontales apiladas.
+ *
+ * Cada fila reparte el 100 % del gasto de su bloque entre las categorías, así que lo que se
+ * compara de un bloque a otro es la composición. La magnitud absoluta no cabe en el ancho sin
+ * aplastar los bloques pequeños, de modo que va aparte, como cifra a la derecha de la barra.
+ */
+function ExpenseBlocksChart({ ariaLabel, categoryFields, getLabel, rows }) {
+  const [active, setActive] = useState(null)
+
+  const blocks = rows.map((row, index) => {
+    const segments = categoryFields
+      .map((field) => ({ color: field.color, label: field.label, value: Math.max(0, asNumber(row[field.field])) }))
+      .filter((segment) => segment.value > 0)
+    const total = segments.reduce((sum, segment) => sum + segment.value, 0)
+    let cursor = 0
+    const placed = segments.map((segment) => {
+      const share = total > 0 ? (segment.value / total) * 100 : 0
+      const mid = cursor + share / 2
+      cursor += share
+      return { ...segment, mid, share }
+    })
+    return { index, key: `${row.Mes}-${row.MesFin ?? ''}`, label: getLabel(row), segments: placed, total }
+  })
+
+  return (
+    <div aria-label={ariaLabel} className="block-compare" role="group">
+      {blocks.map((block) => (
+        <div
+          className={[
+            'block-compare-row',
+            block.index === 0 ? 'is-first' : '',
+            block.index === blocks.length - 1 ? 'is-current' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          key={block.key}
+        >
+          <span className="block-compare-label">{block.label}</span>
+          <div className="block-compare-track">
+            <div className="block-compare-bar">
+              {block.segments.map((segment) => (
+                <button
+                  aria-label={`${segment.label} en ${block.label}: ${formatMoney(segment.value)}, ${formatPercent(segment.share)} del bloque`}
+                  key={segment.label}
+                  onBlur={() => setActive(null)}
+                  onFocus={() => setActive({ ...segment, block: block.label, key: block.key })}
+                  onMouseEnter={() => setActive({ ...segment, block: block.label, key: block.key })}
+                  onMouseLeave={() => setActive(null)}
+                  style={{ background: segment.color, width: `${segment.share}%` }}
+                  type="button"
+                />
+              ))}
+              {block.total === 0 ? <span className="block-compare-rest" /> : null}
+            </div>
+            {active && active.key === block.key ? (
+              <div className="mini-trend-tooltip block-compare-tip" style={{ left: `${active.mid}%` }}>
+                <span>{active.block}</span>
+                <span className="mini-tooltip-row">
+                  <i style={{ background: active.color }} />
+                  {active.label} {formatMoney(active.value)}
+                </span>
+                <strong>{formatPercent(active.share)} del bloque</strong>
+              </div>
+            ) : null}
+          </div>
+          <strong className="block-compare-total">{formatMoney(block.total)}</strong>
+        </div>
+      ))}
     </div>
   )
 }
@@ -790,7 +1021,7 @@ function ExpenseCategoryChart({
   const height = 240
   const paddingRight = 12
   const paddingTop = 16
-  const paddingBottom = 26
+  const paddingBottom = 32
 
   const positiveTotals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.max(0, asNumber(row[field.field])), 0))
   const negativeTotals = rows.map((row) => categoryFields.reduce((sum, field) => sum + Math.min(0, asNumber(row[field.field])), 0))
@@ -862,9 +1093,9 @@ function ExpenseCategoryChart({
             ))}
           </g>
         ))}
-        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d={averagePath} fill="none" stroke="#14213d" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         {averagePoints.map((point, index) => (
-          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
+          <circle cx={point.x} cy={point.y} fill="#14213d" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
         {bars.map((bar, index) =>
           index % labelStep === 0 ? (
@@ -881,7 +1112,7 @@ function ExpenseCategoryChart({
           isHovering={isHovering}
           label="Recorrer los gastos por categoría"
           plot={plot}
-          pointColor="#1c2a22"
+          pointColor="#14213d"
           points={averagePoints}
         />
       </svg>
@@ -901,12 +1132,157 @@ function ExpenseCategoryChart({
   )
 }
 
-function SavingsAmountChart({ aspect = CHART_ASPECT, color = '#1f4d3d', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#7a2e2e', rows }) {
+/**
+ * Velas mensuales del ahorro acumulado.
+ *
+ * El cuerpo va del saldo con el que se abre el mes al saldo con el que se cierra, y se pinta en
+ * verde o rojo según suba o baje. Las mechas son las **cotas reales del recorrido del mes**: si
+ * todos los ingresos hubieran entrado antes de gastar nada, el saldo habría tocado
+ * `apertura + ingresos`; si se hubiera gastado todo primero, `apertura − gastos`. No son máximos
+ * y mínimos observados día a día —el detalle diario no llega a esta pantalla—, sino los límites
+ * entre los que el saldo se movió con seguridad. Una vela de cuerpo corto y mechas largas es un
+ * mes de mucho movimiento que acabó casi donde empezó.
+ */
+function buildSavingsCandles(rows) {
+  let running = 0
+  return rows.map((row) => {
+    const open = running
+    const income = asNumber(row.ingresos)
+    const spend = asNumber(row.gastos)
+    const close = open + asNumber(row.balance)
+    running = close
+    return {
+      Mes: row.Mes,
+      close,
+      high: Math.max(open, close, open + income),
+      income,
+      low: Math.min(open, close, open - spend),
+      open,
+      spend,
+    }
+  })
+}
+
+function SavingsCandleChart({ candles }) {
+  const [containerRef, width] = useElementWidth(640)
+  const height = getChartHeight(width, CHART_ASPECT, 240, 560)
+  const paddingRight = 14
+  const paddingTop = 18
+  const paddingBottom = 34
+
+  const lows = candles.map((candle) => candle.low)
+  const highs = candles.map((candle) => candle.high)
+  const { min, max } = getValueDomain([...lows, ...highs])
+  const paddingLeft = axisPaddingLeft(min, max)
+  const plotWidth = Math.max(0, width - paddingLeft - paddingRight)
+  const plotHeight = height - paddingTop - paddingBottom
+  const slot = candles.length > 0 ? plotWidth / candles.length : 0
+  const bodyWidth = Math.max(3, Math.min(26, slot - 8))
+  const scaleY = (value) => height - paddingBottom - ((value - min) / (max - min || 1)) * plotHeight
+
+  const drawn = candles.map((candle, index) => {
+    const center = paddingLeft + index * slot + slot / 2
+    const top = scaleY(Math.max(candle.open, candle.close))
+    const bottom = scaleY(Math.min(candle.open, candle.close))
+    return {
+      ...candle,
+      bodyHeight: Math.max(1.5, bottom - top),
+      bodyTop: top,
+      center,
+      // Una vela de un mes sin cambio sería invisible: se le deja el grosor mínimo de una línea.
+      isUp: candle.close >= candle.open,
+      wickBottom: scaleY(candle.low),
+      wickTop: scaleY(candle.high),
+    }
+  })
+
+  const yTicks = getNiceTicks(min, max, height > 300 ? 6 : 4)
+  const labelIndices = pickLabelIndices(candles.length, width > 640 ? 8 : 5)
+  const plot = { left: paddingLeft, right: width - paddingRight, top: paddingTop, bottom: paddingTop + plotHeight }
+  const { activeIndex, handlers, isHovering, svgRef } = useChartCrosshair(drawn.map((candle) => candle.center), width)
+  const active = drawn[isHovering ? activeIndex : drawn.length - 1] ?? null
+
+  return (
+    <div className="expense-chart" ref={containerRef}>
+      {active ? (
+        <div className="chart-readout">
+          <span className="chart-readout-label">Ahorro acumulado</span>
+          <strong className="chart-readout-value">{formatMoney(active.close)}</strong>
+          <span className={`chart-readout-change ${active.isUp ? 'is-up' : 'is-down'}`}>
+            {`${active.close - active.open >= 0 ? '+' : ''}${formatMoney(active.close - active.open)}`}
+          </span>
+          <span className="chart-readout-stamp">{formatMonthLabel(active.Mes)}</span>
+        </div>
+      ) : null}
+      <svg
+        aria-label="Velas mensuales del ahorro acumulado"
+        className="mini-trend-svg candle-chart-svg"
+        height={height}
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {yTicks.map((tick) => {
+          const y = scaleY(tick)
+          return (
+            <g key={tick}>
+              <line className="mini-grid-line" x1={paddingLeft} x2={width - paddingRight} y1={y} y2={y} />
+              <text className="mini-axis-label" textAnchor="end" x={paddingLeft - 8} y={y + 4}>
+                {formatMoneyCompact(tick)}
+              </text>
+            </g>
+          )
+        })}
+        {drawn.map((candle) => (
+          <g className={candle.isUp ? 'candle is-up' : 'candle is-down'} key={candle.Mes}>
+            <line x1={candle.center} x2={candle.center} y1={candle.wickTop} y2={candle.wickBottom} />
+            <rect
+              height={candle.bodyHeight}
+              rx="1.5"
+              width={bodyWidth}
+              x={candle.center - bodyWidth / 2}
+              y={candle.bodyTop}
+            />
+          </g>
+        ))}
+        {labelIndices.map((index) => (
+          <text className="mini-axis-month" key={drawn[index]?.Mes ?? index} textAnchor="middle" x={drawn[index]?.center} y={height - 10}>
+            {formatMonthLabel(drawn[index]?.Mes)}
+          </text>
+        ))}
+        <rect className="chart-frame" height={plotHeight} width={width - paddingLeft - paddingRight} x={paddingLeft} y={paddingTop} />
+        {isHovering && active ? (
+          <line className="chart-crosshair" x1={active.center} x2={active.center} y1={plot.top} y2={plot.bottom} />
+        ) : null}
+        <rect
+          aria-label="Recorrer las velas del ahorro"
+          className="chart-capture"
+          height={Math.max(0, plot.bottom - plot.top)}
+          role="application"
+          tabIndex={0}
+          width={Math.max(0, plot.right - plot.left)}
+          x={plot.left}
+          y={plot.top}
+          {...handlers}
+        />
+      </svg>
+      {active ? (
+        <div className="candle-detail">
+          <span>Apertura <strong>{formatMoney(active.open)}</strong></span>
+          <span>Cierre <strong>{formatMoney(active.close)}</strong></span>
+          <span>Ingresos <strong>{formatMoney(active.income)}</strong></span>
+          <span>Gastos <strong>{formatMoney(active.spend)}</strong></span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function SavingsAmountChart({ aspect = CHART_ASPECT, color = '#0b6b63', getLabel = (row) => formatMonthLabel(row.Mes), maxLabels = 8, negativeColor = '#b3261e', rows }) {
   const [containerRef, width] = useElementWidth(640)
   const height = getChartHeight(width, aspect)
   const paddingRight = 12
   const paddingTop = 16
-  const paddingBottom = 26
+  const paddingBottom = 32
 
   const values = rows.map((row) => asNumber(row.value))
   const min = Math.min(...values, 0)
@@ -963,9 +1339,9 @@ function SavingsAmountChart({ aspect = CHART_ASPECT, color = '#1f4d3d', getLabel
         {bars.map((bar) => (
           <rect fill={bar.value >= 0 ? color : negativeColor} height={bar.barHeight} key={bar.key} rx="1.5" width={barWidth} x={bar.barX} y={bar.barY} />
         ))}
-        <path d={averagePath} fill="none" stroke="#1c2a22" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
+        <path d={averagePath} fill="none" stroke="#14213d" strokeDasharray="5 4" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6" />
         {averagePoints.map((point, index) => (
-          <circle cx={point.x} cy={point.y} fill="#1c2a22" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
+          <circle cx={point.x} cy={point.y} fill="#14213d" key={bars[index]?.key ?? index} pointerEvents="none" r="2.6" />
         ))}
         {bars.map((bar, index) =>
           index % labelStep === 0 ? (
@@ -982,7 +1358,7 @@ function SavingsAmountChart({ aspect = CHART_ASPECT, color = '#1f4d3d', getLabel
           isHovering={isHovering}
           label="Recorrer las cantidades ahorradas"
           plot={plot}
-          pointColor="#1c2a22"
+          pointColor="#14213d"
           points={averagePoints}
         />
       </svg>
@@ -1010,6 +1386,8 @@ export function ResultsPanel({
   filteredObjectiveRows,
   objectiveTotals,
   onMonthChange,
+  onOpenInput,
+  params,
   onObjectiveFilterChange,
   onExportResult,
   onExportHistoryCsv,
@@ -1024,6 +1402,10 @@ export function ResultsPanel({
   const [activeExpenseCategories, setActiveExpenseCategories] = useState(() => expenseCategoryFields.map((field) => field.field))
   const [savingsPeriod, setSavingsPeriod] = useState('12')
   const [savingsAmountPeriod, setSavingsAmountPeriod] = useState('6')
+  const [savingsCandlePeriod, setSavingsCandlePeriod] = useState('12')
+  const [savingsPercentActiveIndex, setSavingsPercentActiveIndex] = useState(null)
+  const [typologyCompareActiveIndex, setTypologyCompareActiveIndex] = useState(null)
+  const [yieldActiveIndex, setYieldActiveIndex] = useState(null)
   const [budgetTooltip, setBudgetTooltip] = useState(null)
   const budget = selectedRow ? getBudget(selectedRow) : null
   const expenseAnalysis = getExpenseAnalysis(result)
@@ -1036,7 +1418,7 @@ export function ResultsPanel({
     const field = expenseCategoryFields.find((item) => item.field === row.categoria)
     const pct = expensePieTotal > 0 ? (asNumber(row.total) / expensePieTotal) * 100 : 0
     const segment = {
-      color: field?.color ?? '#8a8a78',
+      color: field?.color ?? '#9aa3b2',
       end: expensePieCursor + pct,
       label: field?.label ?? row.categoria,
       pct,
@@ -1072,27 +1454,43 @@ export function ResultsPanel({
   const savingsBucketSize =
     savingsAmountPeriod === 'all' ? Math.max(1, Math.ceil(scopedSavingsRows.length / 8)) : Number(savingsAmountPeriod)
   const savingsBucketedRows = bucketSingleValueRows(scopedSavingsRows, 'balance', savingsBucketSize, 8)
+  // Las velas se construyen sobre TODO el histórico y se recorta después: si se recortara antes,
+  // la primera vela abriría en cero y el acumulado saldría mal.
+  const savingsCandles = getPeriodRows(buildSavingsCandles(scopedSavingsRows), savingsCandlePeriod)
   const investmentContributionRows = getInvestmentContributions(result).slice(-12)
   const investmentRows = rows.slice(-12)
   const investmentMonths = investmentRows.map((row) => row.Mes)
   const investmentReserveValues = investmentRows.map((row) => asNumber(row['📈 Inversiones']))
   const investmentInvestedValues = investmentRows.map((row) => asNumber(row['Dinero Invertido']))
-  const reserveMax = Math.max(
-    ...rows.map((row) =>
-      Math.max(
-        Math.abs(asNumber(row['🎁 Regalos'])),
-        Math.abs(asNumber(row['💼 Vacaciones'])),
-        Math.abs(asNumber(row['Fondo de reserva cargado'])),
-      ),
-    ),
-    1,
-  )
+  // Rendimiento acumulado sobre lo invertido: qué parte del dinero puesto han devuelto ya los
+  // intereses y los dividendos. Se mide sobre el invertido de cada mes, así que baja cuando se
+  // aporta dinero nuevo aunque el cobro siga creciendo.
+  const investmentYieldRows = investmentRows.map((row) => {
+    const invested = asNumber(row['Dinero Invertido'])
+    const dividends = asNumber(row.Dividendos)
+    const interestTotal = Math.abs(getCategoryTotalUntilMonth(incomeAnalysis, row.Mes, ['interes', 'intereses']))
+    const interestOnly = Math.max(0, interestTotal - dividends)
+    return {
+      dividends: invested > 0 ? (dividends / invested) * 100 : 0,
+      interests: invested > 0 ? (interestOnly / invested) * 100 : 0,
+    }
+  })
+  const investmentInterestPctValues = investmentYieldRows.map((row) => row.interests)
+  const investmentDividendPctValues = investmentYieldRows.map((row) => row.dividends)
+  const reserveRows = rows.slice(-12)
+  const reserveMonths = reserveRows.map((row) => row.Mes)
+  const reserveSeries = [
+    { color: '#0b6b63', label: 'Fondo de reserva', values: reserveRows.map((row) => asNumber(row['Fondo de reserva cargado'])) },
+    { color: '#b45309', label: 'Vacaciones', values: reserveRows.map((row) => asNumber(row['💼 Vacaciones'])) },
+    { color: '#1d3f9a', dashed: true, label: 'Regalos', values: reserveRows.map((row) => asNumber(row['🎁 Regalos'])) },
+  ]
   const typologyRows = getPeriodRows(rows, typologyPeriod)
   const typologyMonths = typologyRows.map((row) => row.Mes)
   const featuredCard = typologyCards.find((card) => card.field === featuredTypology) ?? typologyCards[0]
   const featuredValues = typologyRows.map((row) => asNumber(row[featuredCard.field]))
   const otherTypologyCards = typologyCards.filter((card) => card.field !== featuredCard.field)
-  const summaryGroups = selectedRow ? getSummaryGroups(selectedRow) : null
+  const reserveFund = getReserveFund(result)
+  const summaryGroups = selectedRow ? getSummaryGroups(selectedRow, reserveFund) : null
   const totalMoney = asNumber(selectedRow?.total)
   const investedMoney = asNumber(selectedRow?.['Dinero Invertido'])
   const investedPct = totalMoney > 0 ? (investedMoney / totalMoney) * 100 : 0
@@ -1107,7 +1505,6 @@ export function ResultsPanel({
     <section className="panel result-panel" aria-busy={isProcessing}>
       <div className="panel-header dashboard-header">
         <div>
-          <span className="section-kicker">Vista mensual</span>
           <h2>Finanzas</h2>
           <p>{selectedRow ? `Lectura consolidada de ${formatMonthLong(selectedRow.Mes)}` : 'Procesa un Excel para consultar tus datos'}</p>
         </div>
@@ -1189,6 +1586,11 @@ export function ResultsPanel({
                           <article className={item.label === 'Total' ? 'metric total-metric' : 'metric'} key={item.label}>
                             <span>{item.label}</span>
                             <strong>{formatMoney(item.value)}</strong>
+                            {typeof item.progress === 'number' ? (
+                              <div className="ratio-bar metric-progress">
+                                <span style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }} />
+                              </div>
+                            ) : null}
                             {item.note ? <small className="metric-note">{item.note}</small> : null}
                           </article>
                         ))}
@@ -1233,6 +1635,31 @@ export function ResultsPanel({
                         <strong>{formatMoney(Math.abs(interestAmount))}</strong>
                       </div>
                     </article>
+                    <div className="data-list month-data">
+                      <h3 className="table-title">Datos del mes</h3>
+                      <dl>
+                        <div>
+                          <dt>Gastos</dt>
+                          <dd>{result.movimientos.gastos}</dd>
+                        </div>
+                        <div>
+                          <dt>Ingresos</dt>
+                          <dd>{result.movimientos.ingresos}</dd>
+                        </div>
+                        <div>
+                          <dt>Transferencias</dt>
+                          <dd>{result.movimientos.transferencias}</dd>
+                        </div>
+                        <div>
+                          <dt>Cuentas</dt>
+                          <dd>{result.movimientos.cuentas}</dd>
+                        </div>
+                        <div>
+                          <dt>Objetivos</dt>
+                          <dd>{result.historial.objetivos.length}</dd>
+                        </div>
+                      </dl>
+                    </div>
                   </aside>
                 </section>
 
@@ -1252,39 +1679,21 @@ export function ResultsPanel({
                   </div>
                 )}
 
-                <div className="movement-strip">
-                  <span>{result.movimientos.gastos} gastos</span>
-                  <span>{result.movimientos.ingresos} ingresos</span>
-                  <span>{result.movimientos.transferencias} transferencias</span>
-                  <span>{result.movimientos.cuentas} cuentas</span>
-                  <span>{result.historial.objetivos.length} objetivos</span>
-                </div>
-
                 <section className="trend-panel">
-                  <h3 className="table-title">Tendencia</h3>
+                  <h3 className="table-title">Tendencia del patrimonio</h3>
                   <div className="trend-list">
-                    {recentRows.map((row) => (
-                      <article className="trend-row" key={row.Mes}>
+                    {recentRows.map((row, index) => (
+                      <article
+                        className={index === recentRows.length - 1 ? 'trend-row is-current' : 'trend-row'}
+                        key={row.Mes}
+                      >
                         <span className="trend-month">{row.Mes}</span>
-                        <div className="trend-bars">
-                          <div className="trend-bar total">
-                            <span style={{ width: `${Math.max(3, (Math.abs(asNumber(row.total)) / trendMax) * 100)}%` }} />
-                          </div>
-                          <div className="trend-bar gasto">
-                            <span style={{ width: `${Math.max(3, (Math.abs(asNumber(row['💳 Gasto del mes'])) / trendMax) * 100)}%` }} />
-                          </div>
-                          <div className="trend-bar presupuesto">
-                            <span style={{ width: `${Math.max(3, (Math.abs(asNumber(row['💸 Presupuesto Mes'])) / trendMax) * 100)}%` }} />
-                          </div>
+                        <div className="trend-bar total">
+                          <span style={{ width: `${Math.max(3, (Math.abs(asNumber(row.total)) / trendMax) * 100)}%` }} />
                         </div>
                         <strong>{formatMoney(row.total)}</strong>
                       </article>
                     ))}
-                  </div>
-                  <div className="trend-legend">
-                    <span>Total</span>
-                    <span>Gasto</span>
-                    <span>Presupuesto</span>
                   </div>
                 </section>
               </>
@@ -1293,26 +1702,31 @@ export function ResultsPanel({
             {activeTab === 'presupuesto' && budget && (
               <section className="budget-layout">
                 <div className="budget-card budget-visual">
-                  <div>
+                  <div className="budget-hero">
                     <h3 className="table-title">Presupuesto de {selectedRow.Mes}</h3>
-                    <p className="muted-text">
+                    <p className="budget-hero-value">
+                      {budget.overrun > 0 ? `Te has pasado ${formatMoney(budget.overrun)}` : `Quedan ${formatMoney(budget.remaining)}`}
+                    </p>
+                    <p className="budget-hero-note">
                       {budget.overrun > 0
-                        ? `Exceso de ${formatMoney(budget.overrun)} sobre el presupuesto disponible.`
-                        : `Quedan ${formatMoney(budget.remaining)} disponibles este mes.`}
+                        ? `sobre el presupuesto disponible de ${formatMoney(budget.availableBudget)}`
+                        : budget.availableBudget === 0 && budget.accumulatedDebt > 0
+                          ? `la deuda acumulada se lleva todo el presupuesto de ${formatMoney(budget.monthBudget)}`
+                          : `disponibles este mes, de un presupuesto de ${formatMoney(budget.monthBudget)}`}
                     </p>
                   </div>
                   <div className="budget-bar-wrap">
                     <div className="budget-bar" aria-label="Distribución del presupuesto mensual">
-                      {budget.debtReserve > 0 && (
+                      {budget.debtCharge > 0 && (
                         <span
-                          aria-label={`Reserva deuda: ${formatMoney(budget.debtReserve)}`}
+                          aria-label={`Deuda cubierta: ${formatMoney(budget.debtCharge)}`}
                           className="budget-segment reserved"
                           onBlur={() => setBudgetTooltip(null)}
-                          onFocus={() => setBudgetTooltip({ label: 'Reserva deuda', value: budget.debtReserve })}
-                          onMouseEnter={() => setBudgetTooltip({ label: 'Reserva deuda', value: budget.debtReserve })}
+                          onFocus={() => setBudgetTooltip({ label: 'Deuda cubierta', value: budget.debtCharge })}
+                          onMouseEnter={() => setBudgetTooltip({ label: 'Deuda cubierta', value: budget.debtCharge })}
                           onMouseLeave={() => setBudgetTooltip(null)}
                           role="img"
-                          style={{ width: getSegmentWidth(budget.debtReserve, budget.totalForBar) }}
+                          style={{ width: getSegmentWidth(budget.debtCharge, budget.totalForBar) }}
                           tabIndex="0"
                         />
                       )}
@@ -1350,53 +1764,80 @@ export function ResultsPanel({
                       </div>
                     )}
                   </div>
-                  <div className="budget-bar-values">
-                    {budget.debtReserve > 0 ? <span>Reserva deuda {formatMoney(budget.debtReserve)}</span> : null}
-                    <span>Gasto neto {formatMoney(budget.spent)}</span>
-                    {budget.budgetRefund > 0 ? <span>Ajuste a favor {formatMoney(budget.budgetRefund)}</span> : null}
-                    <span>Disponible {formatMoney(budget.remaining)}</span>
-                  </div>
                   <div className="budget-legend">
-                    <span>Reserva deuda</span>
-                    <span>Gasto</span>
-                    <span>Disponible</span>
+                    <span className="legend-spent">
+                      <i aria-hidden="true" />
+                      Gasto neto
+                      <strong>{formatMoney(budget.spent)}</strong>
+                    </span>
+                    <span className="legend-remaining">
+                      <i aria-hidden="true" />
+                      Disponible
+                      <strong>{formatMoney(budget.remaining)}</strong>
+                    </span>
+                    <span className="legend-debt">
+                      <i aria-hidden="true" />
+                      Deuda cubierta
+                      <strong>{formatMoney(budget.debtCharge)}</strong>
+                    </span>
+                    {budget.budgetRefund > 0 ? (
+                      <span className="legend-refund">
+                        <i aria-hidden="true" />
+                        Ajuste a favor
+                        <strong>{formatMoney(budget.budgetRefund)}</strong>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="budget-execution">
+                    <div className="budget-execution-head">
+                      <span>Ejecutado</span>
+                      <strong>{formatPercent(budget.execution)}</strong>
+                    </div>
+                    <div className="ratio-bar">
+                      <span style={{ width: `${Math.max(0, Math.min(100, budget.execution))}%` }} />
+                    </div>
                   </div>
                 </div>
 
                 <div className="budget-summary">
-                  <p className="budget-summary-heading">Presupuesto</p>
-                  <article>
-                    <span>Presupuesto mes</span>
-                    <strong>{formatMoney(budget.monthBudget)}</strong>
-                  </article>
-                  <article>
-                    <span>Gasto neto</span>
-                    <strong>{formatMoney(budget.spent)}</strong>
-                  </article>
-                  <article>
-                    <span>Disponible visual</span>
-                    <strong>{formatMoney(budget.remaining)}</strong>
-                  </article>
-                  <article>
-                    <span>Ejecutado</span>
-                    <strong>{budget.execution.toFixed(1)}%</strong>
-                    <div className="ratio-bar">
-                      <span style={{ width: `${Math.max(0, Math.min(100, budget.execution))}%` }} />
-                    </div>
-                  </article>
-                  <p className="budget-summary-heading">Deuda</p>
-                  <article>
-                    <span>Reserva deuda</span>
-                    <strong>{formatMoney(budget.debtReserve)}</strong>
-                  </article>
-                  <article>
-                    <span>Exceso mes</span>
-                    <strong>{formatMoney(budget.monthlyDebt)}</strong>
-                  </article>
-                  <article>
-                    <span>Exceso acumulado</span>
-                    <strong>{formatMoney(budget.accumulatedDebt)}</strong>
-                  </article>
+                  <div className="data-list">
+                    <h3 className="table-title">Presupuesto</h3>
+                    <dl>
+                      <div>
+                        <dt>Presupuesto mes</dt>
+                        <dd>{formatMoney(budget.monthBudget)}</dd>
+                      </div>
+                      <div>
+                        <dt>Gasto neto</dt>
+                        <dd>{formatMoney(budget.spent)}</dd>
+                      </div>
+                      <div>
+                        <dt>Disponible tras la deuda</dt>
+                        <dd>{formatMoney(budget.remaining)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="data-list">
+                    <h3 className="table-title">Deuda y exceso</h3>
+                    <dl>
+                      <div>
+                        <dt>Deuda cubierta</dt>
+                        <dd>{formatMoney(budget.debtCharge)}</dd>
+                      </div>
+                      <div>
+                        <dt>Deuda que sigue pendiente</dt>
+                        <dd>{formatMoney(budget.debtCarried)}</dd>
+                      </div>
+                      <div>
+                        <dt>Exceso del mes</dt>
+                        <dd>{formatMoney(budget.monthlyDebt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Exceso acumulado</dt>
+                        <dd>{formatMoney(budget.accumulatedDebt)}</dd>
+                      </div>
+                    </dl>
+                  </div>
                 </div>
               </section>
             )}
@@ -1463,18 +1904,21 @@ export function ResultsPanel({
                         Bloques de {expenseBucketSize} {expenseBucketSize === 1 ? 'mes' : 'meses'}, últimos {expenseBucketedRows.length}
                       </span>
                     </div>
-                    <ExpenseCategoryChart
-                      ariaLabel="Gastos por categoría agrupados en bloques de meses anteriores, con media móvil"
+                    <ExpenseBlocksChart
+                      ariaLabel="Reparto del gasto por categoría en cada bloque de meses"
                       categoryFields={visibleExpenseCategoryFields}
                       getLabel={formatExpenseBucketLabel}
-                      maxLabels={8}
                       rows={expenseBucketedRows}
                     />
                     <ExpenseCategoryLegend
                       activeFields={activeExpenseCategories}
                       categoryFields={expenseCategoryFields}
                       onToggle={toggleExpenseCategory}
+                      showAverage={false}
                     />
+                    <p className="muted-text">
+                      Cada barra reparte el 100 % del gasto de su bloque. La cifra de la derecha es el total del bloque.
+                    </p>
                   </div>
                 </section>
               ) : (
@@ -1503,7 +1947,7 @@ export function ResultsPanel({
                     </article>
                     <article className="tone-savings">
                       <span>Ahorro</span>
-                      <strong>{asNumber(selectedSavingsRow?.porcentaje_ahorro).toFixed(1)}%</strong>
+                      <strong>{formatPercent(asNumber(selectedSavingsRow?.porcentaje_ahorro))}</strong>
                       <small>
                         {asNumber(selectedSavingsRow?.gastos) === 0 && asNumber(selectedSavingsRow?.ingresos) > 0
                           ? 'Sin gastos registrados'
@@ -1526,14 +1970,23 @@ export function ResultsPanel({
                         value={savingsPeriod}
                       />
                     </div>
+                    <ChartReadout
+                      activeIndex={savingsPercentActiveIndex}
+                      formatDelta={formatPoints}
+                      formatValue={formatPercent}
+                      label="Ahorro del mes"
+                      labels={savingsMonths.map((month) => formatMonthLabel(month))}
+                      showRelative={false}
+                      values={savingsPercentValues}
+                    />
                     <div className="typology-compare">
                       <div className="typology-compare-legend">
                         <span>
-                          <i style={{ background: '#1f4d3d' }} />
+                          <i style={{ background: '#0b6b63' }} />
                           Ahorro mensual
                         </span>
                         <span>
-                          <i className="dashed" style={{ borderColor: '#1c2a22' }} />
+                          <i className="dashed" style={{ borderColor: '#14213d' }} />
                           Media móvil
                         </span>
                       </div>
@@ -1541,9 +1994,39 @@ export function ResultsPanel({
                         formatCompact={formatPercent}
                         formatValue={formatPercent}
                         months={savingsMonths}
-                        seriesA={{ color: '#1f4d3d', label: 'Ahorro mensual', values: savingsPercentValues }}
-                        seriesB={{ color: '#1c2a22', label: 'Media móvil', values: savingsAverageValues }}
+                        onActiveIndexChange={setSavingsPercentActiveIndex}
+                        seriesA={{ color: '#0b6b63', label: 'Ahorro mensual', values: savingsPercentValues }}
+                        seriesB={{ color: '#14213d', label: 'Media móvil', values: savingsAverageValues }}
                       />
+                    </div>
+                  </section>
+
+                  <section className="expenses-panel chart-card chart-card-lead">
+                    <div className="table-toolbar compact-toolbar">
+                      <div>
+                        <h3 className="table-title">Ahorro acumulado, mes a mes</h3>
+                        <span className="muted-text">Cada vela va de la apertura al cierre del mes</span>
+                      </div>
+                      <PeriodTabs
+                        ariaLabel="Periodo de las velas de ahorro"
+                        onChange={setSavingsCandlePeriod}
+                        options={expensePeriods}
+                        value={savingsCandlePeriod}
+                      />
+                    </div>
+                    <SavingsCandleChart candles={savingsCandles} />
+                    <div className="expense-chart-legend">
+                      <span>
+                        <i style={{ background: '#0b6b63' }} />
+                        Mes al alza
+                      </span>
+                      <span>
+                        <i style={{ background: '#b3261e' }} />
+                        Mes a la baja
+                      </span>
+                      <span className="expense-avg-legend">
+                        Mecha arriba: apertura + ingresos · Mecha abajo: apertura − gastos
+                      </span>
                     </div>
                   </section>
 
@@ -1565,11 +2048,11 @@ export function ResultsPanel({
                     <SavingsAmountChart getLabel={formatExpenseBucketLabel} rows={savingsBucketedRows} />
                     <div className="expense-chart-legend">
                       <span>
-                        <i style={{ background: '#1f4d3d' }} />
+                        <i style={{ background: '#0b6b63' }} />
                         Ahorro positivo
                       </span>
                       <span>
-                        <i style={{ background: '#7a2e2e' }} />
+                        <i style={{ background: '#b3261e' }} />
                         Ahorro negativo
                       </span>
                       <span className="expense-avg-legend">
@@ -1620,18 +2103,18 @@ export function ResultsPanel({
                   <div className="typology-compare">
                     <div className="typology-compare-legend">
                       <span>
-                        <i style={{ background: '#1f5c6b' }} />
+                        <i style={{ background: '#0b6b63' }} />
                         Bolsa
                       </span>
                       <span>
-                        <i className="dashed" style={{ borderColor: '#1f4d3d' }} />
+                        <i className="dashed" style={{ borderColor: '#0b6b63' }} />
                         Invertido
                       </span>
                     </div>
                     <TypologyCompareChart
                       months={investmentMonths}
-                      seriesA={{ color: '#1f5c6b', label: 'Bolsa', values: investmentReserveValues }}
-                      seriesB={{ color: '#1f4d3d', label: 'Invertido', values: investmentInvestedValues }}
+                      seriesA={{ color: '#0b6b63', label: 'Bolsa', values: investmentReserveValues }}
+                      seriesB={{ color: '#0b6b63', label: 'Invertido', values: investmentInvestedValues }}
                     />
                   </div>
                 </section>
@@ -1665,6 +2148,44 @@ export function ResultsPanel({
                       <span>Procesa un Excel con ingresos para ver de dónde sale el dinero invertido.</span>
                     </div>
                   )}
+                </section>
+
+                <section className="typology-chart-panel chart-card chart-card-lead">
+                  <div className="table-toolbar compact-toolbar">
+                    <div>
+                      <h3 className="table-title">Rendimiento sobre lo invertido</h3>
+                      <span className="muted-text">Qué porcentaje del dinero invertido han devuelto ya intereses y dividendos</span>
+                    </div>
+                  </div>
+                  <ChartReadout
+                    activeIndex={yieldActiveIndex}
+                    formatDelta={formatPoints}
+                    formatValue={formatPercent}
+                    label="Intereses sobre lo invertido"
+                    labels={investmentMonths.map((month) => formatMonthLabel(month))}
+                    showRelative={false}
+                    values={investmentInterestPctValues}
+                  />
+                  <div className="typology-compare">
+                    <div className="typology-compare-legend">
+                      <span>
+                        <i style={{ background: '#0b6b63' }} />
+                        Intereses
+                      </span>
+                      <span>
+                        <i className="dashed" style={{ borderColor: '#b45309' }} />
+                        Dividendos
+                      </span>
+                    </div>
+                    <TypologyCompareChart
+                      formatCompact={formatPercent}
+                      formatValue={formatPercent}
+                      months={investmentMonths}
+                      onActiveIndexChange={setYieldActiveIndex}
+                      seriesA={{ color: '#0b6b63', label: 'Intereses', values: investmentInterestPctValues }}
+                      seriesB={{ color: '#b45309', label: 'Dividendos', values: investmentDividendPctValues }}
+                    />
+                  </div>
                 </section>
 
                 <section className="typology-chart-panel chart-card chart-card-lead">
@@ -1722,31 +2243,19 @@ export function ResultsPanel({
                   </article>
                 </div>
 
-                <section className="trend-panel compact-trend">
-                  <h3 className="table-title">Evolución reservas</h3>
-                  <div className="trend-list">
-                    {rows.slice(-12).map((row) => (
-                      <article className="reserve-row" key={row.Mes}>
-                        <span className="trend-month">{row.Mes}</span>
-                        <div className="reserve-bars">
-                          <div className="reserve-bar gifts">
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['🎁 Regalos'])) / reserveMax) * 100)}%` }} />
-                          </div>
-                          <div className="reserve-bar holidays">
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['💼 Vacaciones'])) / reserveMax) * 100)}%` }} />
-                          </div>
-                          <div className="reserve-bar emergency">
-                            <span style={{ width: `${Math.max(4, (Math.abs(asNumber(row['Fondo de reserva cargado'])) / reserveMax) * 100)}%` }} />
-                          </div>
-                        </div>
-                        <strong>{formatMoney(asNumber(row['🎁 Regalos']) + asNumber(row['💼 Vacaciones']) + asNumber(row['Fondo de reserva cargado']))}</strong>
-                      </article>
-                    ))}
+                <section className="trend-panel reserve-chart-panel">
+                  <div className="chart-header">
+                    <h3 className="table-title">Evolución de las reservas</h3>
+                    <span>{reserveMonths.length > 0 ? `De ${formatMonthLong(reserveMonths[0])} a ${formatMonthLong(reserveMonths.at(-1))}` : ''}</span>
                   </div>
-                  <div className="reserve-legend">
-                    <span>Regalos</span>
-                    <span>Vacaciones</span>
-                    <span>Fondo reserva</span>
+                  <ReserveLinesChart months={reserveMonths} series={reserveSeries} />
+                  <div className="chart-legend-row">
+                    {reserveSeries.map((item) => (
+                      <span key={item.label}>
+                        <i aria-hidden="true" style={{ background: item.color }} />
+                        {item.label}
+                      </span>
+                    ))}
                   </div>
                 </section>
               </section>
@@ -1799,6 +2308,16 @@ export function ResultsPanel({
                       </article>
 
                       <article className="chart-card chart-card-lead typology-compare">
+                        <ChartReadout
+                          activeIndex={typologyCompareActiveIndex}
+                          className="typology-hero-head"
+                          formatDelta={formatDelta}
+                          formatValue={formatMoney}
+                          label={typologyCompareFields[1].label}
+                          labels={typologyMonths.map((month) => formatMonthLabel(month))}
+                          periodLabel={`${typologyRows.length} meses`}
+                          values={typologyRows.map((row) => asNumber(row[typologyCompareFields[1].field]))}
+                        />
                         <div className="typology-compare-legend">
                           <span>
                             <i style={{ background: typologyCompareFields[0].color }} />
@@ -1811,6 +2330,7 @@ export function ResultsPanel({
                         </div>
                         <TypologyCompareChart
                           months={typologyMonths}
+                          onActiveIndexChange={setTypologyCompareActiveIndex}
                           seriesA={{
                             ...typologyCompareFields[0],
                             values: typologyRows.map((row) => asNumber(row[typologyCompareFields[0].field])),
@@ -1846,18 +2366,30 @@ export function ResultsPanel({
 
                 <div className="typology-predictions">
                   <h3 className="table-title">Predicción a 6 meses</h3>
-                  <div className="prediction-grid">
-                    {typologyFields.map(({ field, label, color }) => {
-                      const prediction = predictTypology(typologyRows, field)
-                      return (
-                        <article className="prediction-card" key={field} style={{ '--prediction-color': color }}>
-                          <strong>{label}</strong>
-                          <span>Base {formatMoney(prediction.base)}</span>
-                          <span>Conservadora {formatMoney(prediction.conservative)}</span>
-                          <span>Optimista {formatMoney(prediction.optimistic)}</span>
-                        </article>
-                      )
-                    })}
+                  <div className="prediction-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col">Tipología</th>
+                          <th scope="col">Conservadora</th>
+                          <th scope="col">Base</th>
+                          <th scope="col">Optimista</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {typologyFields.map(({ field, label }) => {
+                          const prediction = predictTypology(typologyRows, field)
+                          return (
+                            <tr key={field}>
+                              <th scope="row">{label}</th>
+                              <td>{formatMoney(prediction.conservative)}</td>
+                              <td className="is-base">{formatMoney(prediction.base)}</td>
+                              <td>{formatMoney(prediction.optimistic)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </section>
@@ -1918,9 +2450,32 @@ export function ResultsPanel({
                   </table>
                 </div>
               ) : (
-                <div className="empty-state compact-empty">
-                  <strong>Sin objetivos calculados</strong>
-                  <span>Añade objetivos en la entrada y procesa el Excel para ver su evolución.</span>
+                <div className="empty-state objectives-empty">
+                  <div className="empty-state-copy">
+                    <strong>Aún no hay objetivos calculados</strong>
+                    <span>Añade un objetivo en Datos Excel y procesa el Excel. Aquí verás cuánto llevas y cuándo lo alcanzarás.</span>
+                    <button className="primary-button" onClick={onOpenInput} type="button">
+                      Ir a Datos Excel
+                    </button>
+                  </div>
+                  {reserveFund.objetivo > 0 ? (
+                    <div className="objective-example">
+                      <span>Tu fondo de reserva ya funciona así</span>
+                      <strong>
+                        Fondo de emergencia <em>{formatMoney(reserveFund.cargado)} de {formatMoney(reserveFund.objetivo)}</em>
+                      </strong>
+                      <div className="ratio-bar">
+                        <span style={{ width: `${Math.max(0, Math.min(100, reserveFund.porcentaje * 100))}%` }} />
+                      </div>
+                      <span>
+                        {reserveFund.pendiente > 0
+                          ? `Te faltan ${formatMoney(reserveFund.pendiente)}.`
+                          : 'Fondo completo: ya cubre el objetivo.'}{' '}
+                        El objetivo son {reserveFund.mesesDeCobertura} meses de tu gasto medio, y se recalcula con cada
+                        Excel.
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               )
             )}
@@ -1934,7 +2489,10 @@ export function ResultsPanel({
                   <span>{objectiveRows.length} filas de objetivos</span>
                 </div>
                 <div className="table-wrap compact-table-wrap">
-                  <h3 className="table-title">Historial</h3>
+                  <div className="table-toolbar">
+                    <h3 className="table-title">Historial</h3>
+                    <span className="muted-text">Del mes más reciente al más antiguo. Desliza para ver más columnas.</span>
+                  </div>
                   <table>
                     <thead>
                       <tr>
@@ -1944,15 +2502,25 @@ export function ResultsPanel({
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.slice(-24).map((row) => (
-                        <tr key={row.Mes}>
-                          {historyFields.map((field) => (
-                            <td key={field.field}>
-                              {field.type === 'money' ? formatMoney(row[field.field]) : row[field.field]}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
+                      {rows
+                        .slice(-24)
+                        .slice()
+                        .reverse()
+                        .map((row) => (
+                          <tr className={row.Mes === selectedRow.Mes ? 'is-current' : ''} key={row.Mes}>
+                            {historyFields.map((field) => {
+                              const value = row[field.field]
+                              const amount = asNumber(value)
+                              const tone =
+                                field.type !== 'money' ? '' : amount === 0 ? 'is-zero' : amount < 0 ? 'is-negative' : ''
+                              return (
+                                <td className={tone} key={field.field}>
+                                  {field.type === 'money' ? formatMoney(value) : value}
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -1961,9 +2529,56 @@ export function ResultsPanel({
           </div>
         </>
       ) : (
-        <div className="empty-state">
-          <strong>Sin cálculo cargado</strong>
-          <span>Cuando proceses un Excel aparecerán aquí el último mes y el historial reciente.</span>
+        <div className="landing-grid">
+          <section className="panel split-preview">
+            <div className="chart-header">
+              <h3 className="table-title">Tu reparto de ingresos</h3>
+              <span>Según los porcentajes de la izquierda</span>
+            </div>
+            <div className="split-bar" role="img" aria-label="Reparto configurado de los ingresos">
+              <span className="split-seg split-gasto" style={{ width: `${Math.max(0, Number(params?.porcentaje_gasto ?? 0) * 100)}%` }} />
+              <span className="split-seg split-inversion" style={{ width: `${Math.max(0, Number(params?.porcentaje_inversion ?? 0) * 100)}%` }} />
+              <span className="split-seg split-vacaciones" style={{ width: `${Math.max(0, Number(params?.porcentaje_vacaciones ?? 0) * 100)}%` }} />
+              <span className="split-seg split-free" />
+            </div>
+            <div className="split-legend">
+              {[
+                { key: 'gasto', label: 'Gasto', value: Number(params?.porcentaje_gasto ?? 0) },
+                { key: 'inversion', label: 'Inversión', value: Number(params?.porcentaje_inversion ?? 0) },
+                { key: 'vacaciones', label: 'Vacaciones', value: Number(params?.porcentaje_vacaciones ?? 0) },
+                {
+                  key: 'free',
+                  label: 'Sin asignar',
+                  value: Math.max(
+                    0,
+                    1 -
+                      Number(params?.porcentaje_gasto ?? 0) -
+                      Number(params?.porcentaje_inversion ?? 0) -
+                      Number(params?.porcentaje_vacaciones ?? 0),
+                  ),
+                },
+              ].map((item) => (
+                <span key={item.key}>
+                  <i className={`split-dot split-${item.key}`} aria-hidden="true" />
+                  {item.label}
+                  <strong>{formatPercent(item.value * 100)}</strong>
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel landing-dropzone">
+            <h3 className="table-title">Carga el Excel del mes</h3>
+            <p>Al procesarlo verás el último mes, cómo se reparte frente a tus porcentajes y cuánto llevas cumplido de cada objetivo.</p>
+            <ul className="landing-list">
+              <li>Resumen del último mes</li>
+              <li>Real frente a objetivo</li>
+              <li>Historial de los últimos meses</li>
+            </ul>
+            <button className="primary-button" onClick={onOpenInput} type="button">
+              Seleccionar Excel
+            </button>
+          </section>
         </div>
       )}
     </section>

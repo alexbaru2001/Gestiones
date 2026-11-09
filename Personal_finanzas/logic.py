@@ -60,6 +60,13 @@ def procesar_ingresos(df_ingresos):
     return df_ingresos
 
 
+# Cuánto del ahorro de cada mes se aparta mientras el fondo de reserva no esté lleno.
+CUOTA_FONDO_RESERVA = 0.20
+
+# Meses de gasto corriente que debe cubrir el fondo de reserva.
+MESES_FONDO_RESERVA = 6
+
+
 def calcular_gastos_netos(df_gastos, df_ingresos):
     gastos_por_cat = df_gastos.groupby("categoria")["cantidad"].sum()
     reembolsos = df_ingresos[df_ingresos["tipo_logico"].str.startswith("Reembolso")].copy()
@@ -509,10 +516,18 @@ def crear_historial_cuentas_virtuales(
         fondo_cargado_inicial = 0.0
         fondo_reserva = 0.0
         porcentaje = 0.0
+        gasto_acumulado = 0.0
+        meses_contados = 0
     else:
         fondo_cargado_inicial = float(fondo_reserva_snapshot.get("Cantidad cargada", 0.0))
         fondo_reserva = float(fondo_reserva_snapshot.get("Cantidad del fondo", 0.0))
         porcentaje = float(fondo_reserva_snapshot.get("Porcentaje", 0.0))
+        # Media de gasto arrastrada de los tramos anteriores. El objetivo del fondo se recalcula
+        # mes a mes con ella, así que tiene que contar todos los meses vividos y no solo los del
+        # Excel que se acaba de subir: si no, partir el histórico en dos tramos daría otro objetivo
+        # (y otro tope de aportes) que procesarlo de una vez.
+        gasto_acumulado = float(fondo_reserva_snapshot.get("Gasto acumulado", 0.0))
+        meses_contados = int(fondo_reserva_snapshot.get("Meses contados", 0) or 0)
 
     if fecha_inicio.to_period("M") == pd.Timestamp("2024-10-01").to_period("M"):
         fondo_cargado = 0.0
@@ -696,17 +711,22 @@ def crear_historial_cuentas_virtuales(
         # y solo sobra lo que quede después de cubrirla entera.
         presupuesto_efectivo = max(0.0, -exceso_gasto)
 
+        # Los gastos de vacaciones, regalos y fondo de reserva ya vienen dentro de gastos_netos_total,
+        # pero cada uno sale de su propia hucha, no de Ahorros: sin devolverlos aquí, el gasto se
+        # restaría dos veces del patrimonio (una de Ahorros y otra de la hucha).
+        gasto_de_huchas = gasto_vacaciones + gasto_regalos + gasto_fondo_reserva
+
         if presupuesto_efectivo > 0:
             ahorro_transaccional = (
                 ingreso_total - gastos_netos_total - (presupuesto_efectivo * 2 / 3) - inv_mensual - vacaciones_mensual
-                + gasto_vacaciones + gasto_regalos
+                + gasto_de_huchas
             )
             vacaciones += presupuesto_efectivo / 3
             inversiones += presupuesto_efectivo / 3
         else:
             ahorro_transaccional = (
                 ingreso_total - gastos_netos_total - presupuesto_efectivo - inv_mensual - vacaciones_mensual
-                + gasto_vacaciones + gasto_regalos
+                + gasto_de_huchas
             )
 
         # -------------------------
@@ -782,18 +802,28 @@ def crear_historial_cuentas_virtuales(
         # -------------------------
         # FONDO RESERVA (igual, sin IO)
         # -------------------------
+        # El objetivo son seis meses del gasto corriente medio, recalculado con todos los meses
+        # vividos hasta este (los de tramos anteriores llegan en la semilla del snapshot). Al
+        # depender solo del pasado, el objetivo de un mes es el mismo se procese el histórico de
+        # una vez o troceado en varios tramos.
+        gasto_acumulado += gasto_total_mes_actual
+        meses_contados += 1
+        fondo_reserva = max(0.0, (gasto_acumulado / meses_contados) * MESES_FONDO_RESERVA)
+
         if mes_actual == pd.Timestamp("2024-10-01").to_period("M"):
-            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
+            # El primer mes del histórico solo fija el punto de partida: no aporta todavía.
+            ahorro_emergencia = 0.0
         else:
-            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
-            if porcentaje < 1.0:
-                ahorro_emergencia = max(0.0, ahorro_transaccional * 0.1)
-                fondo_cargado += ahorro_emergencia - gasto_fondo_reserva
-                fondo_cargado = max(0.0, fondo_cargado)
-            else:
-                fondo_cargado = max(0.0, fondo_reserva - gasto_fondo_reserva)
-                ahorro_emergencia = 0.0
-            porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
+            # Se aparta la cuota del ahorro del mes, nunca más de lo que falte por cubrir: el
+            # sobrante del último aporte se queda en Ahorros en vez de pasarse del objetivo.
+            pendiente = max(0.0, fondo_reserva - fondo_cargado) if fondo_reserva > 0 else float("inf")
+            ahorro_emergencia = min(max(0.0, ahorro_transaccional * CUOTA_FONDO_RESERVA), pendiente)
+            # Un único camino: se suma lo apartado y se resta lo gastado del fondo. Antes, con el
+            # fondo lleno, esta línea reasignaba el fondo al objetivo cada mes, así que el dinero
+            # sacado del fondo se reponía solo, sin salir de ningún sitio.
+            fondo_cargado = max(0.0, fondo_cargado + ahorro_emergencia - gasto_fondo_reserva)
+
+        porcentaje = 0.0 if fondo_reserva == 0 else min(fondo_cargado / fondo_reserva, 1.0)
 
         ahorro += ahorro_transaccional - ahorro_emergencia
 
@@ -850,6 +880,14 @@ def crear_historial_cuentas_virtuales(
         "inversiones": inversiones,
         "ahorro": ahorro,
         "fondo_cargado": fondo_cargado,
+        "fondo_objetivo": fondo_reserva,
+        "fondo_porcentaje": porcentaje,
+        # Semilla de la media de gasto para el siguiente tramo.
+        "fondo_gasto_acumulado": gasto_acumulado,
+        "fondo_meses_contados": meses_contados,
+        # La regla con la que se ha calculado, para que quien la enseñe no la repita por su cuenta.
+        "fondo_meses_de_cobertura": MESES_FONDO_RESERVA,
+        "fondo_cuota_mensual": CUOTA_FONDO_RESERVA,
     }
 
     return df_resumen, objetivos_df, estado_cierre

@@ -3,6 +3,7 @@ import pytest
 from backend.domain.portfolio_positions import (
     accumulate_costs,
     allocate_fees,
+    classify,
     derive_movements,
     merge_movements,
     merge_positions,
@@ -212,12 +213,39 @@ def test_el_resumen_dice_que_meses_entran_y_cuales_se_actualizan():
     nuevas = [pos("2026-01", "TR", "A", "Alfa", 4), pos("2026-02", "TR", "A", "Alfa", 5)]
     combinadas = merge_positions(guardadas, nuevas)
 
-    resumen = summarize_load(guardadas, combinadas, [], [])
+    resumen = summarize_load(guardadas, combinadas, [], [], nuevas)
 
     assert resumen["meses_nuevos"] == ["2026-02"]
     assert resumen["meses_actualizados"] == ["2026-01 (TR)"]
     assert resumen["posiciones"] == 2
     assert resumen["posiciones_nuevas"] == 1
+
+
+def test_anadir_un_mes_no_dice_haber_actualizado_todo_el_historico():
+    """Cargar solo octubre listaba como actualizados los 14 meses ya guardados."""
+    guardadas = [
+        pos("2026-01", "TR", "A", "Alfa", 3),
+        pos("2026-02", "TR", "A", "Alfa", 4),
+        pos("2026-02", "MI", "B", "Beta", 9),
+    ]
+    nuevas = [pos("2026-03", "TR", "A", "Alfa", 5)]
+
+    resumen = summarize_load(guardadas, merge_positions(guardadas, nuevas), [], [], nuevas)
+
+    assert resumen["meses_nuevos"] == ["2026-03"]
+    assert resumen["meses_actualizados"] == []
+    assert resumen["posiciones_nuevas"] == 1
+
+
+def test_un_mes_nuevo_para_un_broker_y_repetido_para_otro_se_separan():
+    guardadas = [pos("2026-02", "TR", "A", "Alfa", 3)]
+    nuevas = [pos("2026-02", "TR", "A", "Alfa", 6), pos("2026-02", "MI", "B", "Beta", 2)]
+
+    resumen = summarize_load(guardadas, merge_positions(guardadas, nuevas), [], [], nuevas)
+
+    # El mes ya existía para TR, pero para MI entra por primera vez.
+    assert resumen["meses_nuevos"] == ["2026-02"]
+    assert resumen["meses_actualizados"] == ["2026-02 (TR)"]
 
 
 # --- Coste acumulado ------------------------------------------------------------------------------
@@ -324,3 +352,37 @@ def test_el_coste_de_cada_broker_va_por_su_cuenta():
 
     assert costes[("2026-01", "TR", "A")] == 10.0
     assert costes[("2026-01", "Degiro", "A")] == 50.0
+
+
+# --- Clasificación --------------------------------------------------------------------------------
+
+CATALOGO = {
+    "ES0144580Y14": {"region": "Europa", "sector": "Utilities", "focus": "Dividendos"},
+    "IE0032126645": {"region": "Norteamerica", "sector": "Renta variable diversificada", "focus": "Indexados"},
+}
+
+
+def test_una_accion_toma_region_sector_y_foco_del_catalogo():
+    clase = classify(pos("2026-01", "TR", "ES0144580Y14", "Iberdrola", 6), CATALOGO)
+
+    assert clase == {"region": "Europa", "sector": "Utilities", "foco": "Dividendos", "tipo": "stock"}
+
+
+def test_un_isin_del_mapa_de_fondos_se_marca_como_fondo():
+    clase = classify(pos("2026-01", "MyInvestor", "IE0032126645", "Vanguard US 500", 10), CATALOGO, {"IE0032126645"})
+
+    assert clase["tipo"] == "fund"
+
+
+def test_bitcoin_se_reconoce_por_el_nombre_porque_no_trae_isin():
+    """En el archivo se apunta como 'BTC', que no está en el catálogo de ISIN."""
+    clase = classify(pos("2026-01", "Degiro", "BTC", "Bitcoin", 0.005), CATALOGO)
+
+    assert clase["tipo"] == "crypto"
+    assert clase["sector"] == "Criptoactivo"
+
+
+def test_un_activo_desconocido_queda_sin_clasificar_en_vez_de_romper():
+    clase = classify(pos("2026-01", "TR", "XX0000000000", "Nuevo", 1), CATALOGO)
+
+    assert clase == {"region": "Sin clasificar", "sector": "Sin clasificar", "foco": "Sin clasificar", "tipo": "stock"}

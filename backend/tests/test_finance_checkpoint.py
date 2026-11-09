@@ -517,3 +517,48 @@ def test_historical_months_come_back_as_numbers_not_strings(tmp_path, monkeypatc
     for field in ("total", "💰 Ahorros", "💳 Gasto del mes", "📈 Inversiones"):
         assert isinstance(historical[field], (int, float)), f"{field} llegó como {type(historical[field])}"
     assert isinstance(historical["Mes"], str)
+
+
+def test_un_excel_que_empieza_despues_del_checkpoint_no_tira_el_historico(tmp_path, monkeypatch):
+    """Defecto real: con `fecha_inicio` en su valor por defecto (2024-10) y un Excel que solo trae
+    el tramo nuevo, se descartaba el checkpoint y se recalculaba todo desde cero sobre unos datos
+    que no tenían el histórico. Los acumulados se desplomaban en el primer mes del archivo.
+
+    Lo que decide si hay que recalcular es dónde empiezan los datos, no el parámetro.
+    """
+    client = TestClient(app)
+    repo = CsvFinanceHistoryRepository(tmp_path / "historial.csv")
+    checkpoint_repo = JsonFinanceCheckpointRepository(tmp_path / "checkpoint.json")
+    monkeypatch.setattr(backend_main, "finance_history_repository", repo)
+    monkeypatch.setattr(backend_main, "finance_checkpoint_repository", checkpoint_repo)
+    monkeypatch.setattr(
+        backend_main,
+        "transaction_history_repository",
+        CsvTransactionHistoryRepository(
+            gastos_path=tmp_path / "historial_gastos.csv", ingresos_path=tmp_path / "historial_ingresos.csv"
+        ),
+    )
+
+    chunk1 = _workbook(CHUNK1_GASTOS, CHUNK1_INGRESOS)
+    client.post(
+        "/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "historico"},
+        files={"file": ("Inicio.xlsx", chunk1.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    ahorro_cerrado = repo.load()[-1]["💰 Ahorros"]
+
+    # El Excel del tramo nuevo empieza en 2025-01, después del checkpoint, pero la fecha va sin tocar.
+    chunk2 = _workbook(CHUNK2_GASTOS, CHUNK2_INGRESOS)
+    response = client.post(
+        "/api/v1/process?fecha_inicio=2024-10-01",
+        data={"modo": "visualizar"},
+        files={"file": ("Nuevo.xlsx", chunk2.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recalculado_desde_cero"] is False
+
+    filas = response.json()["result"]["historial"]["resumen"]
+    primer_mes_nuevo = next(row for row in filas if row["Mes"] == "2025-01")
+    # Sin el checkpoint, el ahorro arrancaba de nuevo y este mes caía miles de euros por debajo.
+    assert primer_mes_nuevo["💰 Ahorros"] > float(ahorro_cerrado)

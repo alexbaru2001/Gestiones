@@ -57,6 +57,9 @@ export function ChartReadout({
   label,
   labels = [],
   periodLabel,
+  // En una serie que ya es un porcentaje, la variación relativa ("−33 %" sobre un 14,9 %) se lee
+  // como si fuera el dato: ahí basta con los puntos porcentuales.
+  showRelative = true,
   values = [],
 }) {
   const index = activeIndex ?? values.length - 1
@@ -79,7 +82,9 @@ export function ChartReadout({
           ) : (
             <>
               {formatDelta(change.delta)}
-              {change.percent === null ? '' : ` (${change.percent > 0 ? '+' : ''}${change.percent.toFixed(2).replace('.', ',')} %)`}
+              {change.percent === null || !showRelative
+                ? ''
+                : ` (${change.percent > 0 ? '+' : ''}${change.percent.toFixed(2).replace('.', ',')} %)`}
               {periodLabel ? ` · ${periodLabel}` : ''}
             </>
           )}
